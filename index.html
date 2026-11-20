@@ -67,6 +67,18 @@
       opacity: 0.45;
       transform: scale(0.97);
     }
+    .drag-over-row-top td {
+      box-shadow: inset 0 3px 0 0 #4f46e5 !important;
+    }
+    .drag-over-row-bottom td {
+      box-shadow: inset 0 -3px 0 0 #4f46e5 !important;
+    }
+    html.dark .drag-over-row-top td {
+      box-shadow: inset 0 3px 0 0 #818cf8 !important;
+    }
+    html.dark .drag-over-row-bottom td {
+      box-shadow: inset 0 -3px 0 0 #818cf8 !important;
+    }
     .comment-clamp-3 {
       display: -webkit-box;
       -webkit-line-clamp: 3;
@@ -288,6 +300,30 @@
       background: #475569;
     }
 
+    /* Preserve left accent border color across Light & Dark modes with clear Dark Mode card elevation */
+    .accent-card,
+    .accent-card:hover {
+      border-left-width: var(--accent-w, 4px) !important;
+      border-left-style: solid !important;
+      border-left-color: var(--accent-color, #4f46e5) !important;
+    }
+    html.dark .accent-card,
+    html.dark .accent-card:hover,
+    html.dark .accent-card[class*="border-"] {
+      background-color: #162033 !important;
+      border-top-color: #334155 !important;
+      border-right-color: #334155 !important;
+      border-bottom-color: #334155 !important;
+      border-left-width: var(--accent-w, 4px) !important;
+      border-left-style: solid !important;
+      border-left-color: var(--accent-color, #4f46e5) !important;
+    }
+    html.dark .accent-card-comment {
+      background-color: #0f172a !important;
+      border-color: #334155 !important;
+      color: #cbd5e1 !important;
+    }
+
     /* Clean Print / Fallback PDF Styling */
     @media print {
       @page {
@@ -506,17 +542,21 @@
             <!-- Horizon Selector (supports 1 & 2 periods as well as wider horizons) -->
             <div class="meeting-hide flex items-center gap-1.5">
               <label for="horizonSelect" class="text-slate-500 font-medium">Show:</label>
-              <select id="horizonSelect" onchange="setHorizon(this.value)"
-                class="px-2.5 py-1 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-800">
-                <option value="1">1 period</option>
-                <option value="2">2 periods</option>
-                <option value="4">4 periods</option>
-                <option value="6">6 periods</option>
-                <option value="8">8 periods</option>
-                <option value="12">12 periods</option>
-                <option value="16">16 periods</option>
-                <option value="24">24 periods</option>
-              </select>
+              <div class="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
+                <button type="button" onclick="stepHorizon(-1)" title="Show fewer periods" class="px-2 py-1 hover:bg-slate-100 text-slate-600 font-bold transition">&minus;</button>
+                <select id="horizonSelect" onchange="setHorizon(this.value)"
+                  class="px-2 py-1 border-x border-slate-200 bg-slate-50 text-xs font-semibold text-slate-800 focus:outline-none">
+                  <option value="1">1 period</option>
+                  <option value="2">2 periods</option>
+                  <option value="4">4 periods</option>
+                  <option value="6">6 periods</option>
+                  <option value="8">8 periods</option>
+                  <option value="12">12 periods</option>
+                  <option value="16">16 periods</option>
+                  <option value="24">24 periods</option>
+                </select>
+                <button type="button" onclick="stepHorizon(1)" title="Show more periods" class="px-2 py-1 hover:bg-slate-100 text-slate-600 font-bold transition">+</button>
+              </div>
             </div>
 
             <!-- Filters -->
@@ -531,11 +571,13 @@
           </div>
 
           <div class="flex flex-wrap items-center gap-2 text-xs">
-            <!-- Cell Field Color Fill vs Accent Toggle -->
-            <button id="cellColorModeBtn" onclick="toggleCellColorMode()" title="Toggle between Full Color Fill and Left Accent Border for project/department cards inside cells"
-              class="px-2.5 py-1 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 transition">
-              Card Color: Accent
-            </button>
+            <!-- Cell Card Color Mode Selector: Accent / Fill / By FTE -->
+            <div class="inline-flex items-center gap-1 rounded-xl bg-slate-100 p-1 border border-slate-200/80" title="Choose how project/department cards inside roadmap cells are colored">
+              <span class="px-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 hidden sm:inline">Color:</span>
+              <button id="card-color-accent" onclick="setCellColorMode('accent')" class="px-2 py-0.5 rounded-lg text-xs font-semibold transition">Accent</button>
+              <button id="card-color-fill" onclick="setCellColorMode('fill')" class="px-2 py-0.5 rounded-lg text-xs font-semibold transition">Fill</button>
+              <button id="card-color-fte" onclick="setCellColorMode('fte')" class="px-2 py-0.5 rounded-lg text-xs font-semibold transition">By FTE</button>
+            </div>
 
             <!-- Inline Comments Visibility Toggle -->
             <button id="commentsToggleBtn" onclick="toggleShowCellComments()" title="Show or hide inline project comments inside roadmap cells"
@@ -562,7 +604,18 @@
           <span class="flex items-center gap-1.5"><span class="text-violet-600 font-bold">◆</span>Milestone</span>
           <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-indigo-500"></span>Uneven weekly split</span>
         </div>
-        <div>Tip: Click <strong>+ Add</strong> in any cell to allocate, click cell background for comments, click a card to edit FTE, or drag cards across periods.</div>
+        <div>Tip: Drag row handles (or use &uarr;/&darr;) to reorder rows, hover cards for &minus;/+ quick FTE step, or click <strong>+ Add</strong> in any cell.</div>
+      </div>
+
+      <!-- FTE Heat-Scale Legend (visible in both Standard & Meeting View when "By FTE" color mode is active) -->
+      <div id="fteColorLegend" class="hidden flex flex-wrap items-center gap-3 px-2 py-1.5 rounded-xl bg-white border border-slate-200 text-[11px] font-semibold text-slate-600">
+        <span class="text-[10px] text-slate-400 uppercase tracking-wider font-bold">FTE % of Available Capacity:</span>
+        <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded" style="background:#64748b"></span>0% (Note)</span>
+        <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded" style="background:#0284c7"></span>&le; 20%</span>
+        <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded" style="background:#059669"></span>20 – 40%</span>
+        <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded" style="background:#4f46e5"></span>40 – 65%</span>
+        <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded" style="background:#d97706"></span>65 – 100%</span>
+        <span class="inline-flex items-center gap-1.5"><span class="w-3 h-3 rounded" style="background:#e11d48"></span>&gt; 100%</span>
       </div>
 
       <!-- Main Matrix Table Container -->
@@ -744,19 +797,35 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
           <div>
             <label class="block font-semibold text-slate-700 mb-1">Workdays per Week (1.0 FTE)</label>
-            <input id="setDaysPerWeek" type="number" step="0.5" min="1" max="7" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="stepNumericInput('setDaysPerWeek', -0.5, 1, 7, 1)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition shrink-0">&minus;</button>
+              <input id="setDaysPerWeek" type="number" step="0.5" min="1" max="7" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-center" />
+              <button type="button" onclick="stepNumericInput('setDaysPerWeek', 0.5, 1, 7, 1)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition shrink-0">+</button>
+            </div>
           </div>
           <div>
             <label class="block font-semibold text-slate-700 mb-1">Hours per Workday</label>
-            <input id="setHoursPerDay" type="number" step="0.5" min="1" max="24" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="stepNumericInput('setHoursPerDay', -0.5, 1, 24, 1)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition shrink-0">&minus;</button>
+              <input id="setHoursPerDay" type="number" step="0.5" min="1" max="24" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-center" />
+              <button type="button" onclick="stepNumericInput('setHoursPerDay', 0.5, 1, 24, 1)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition shrink-0">+</button>
+            </div>
           </div>
           <div>
             <label class="block font-semibold text-slate-700 mb-1">High-Load Warning Threshold (%)</label>
-            <input id="setWarnThreshold" type="number" step="5" min="50" max="150" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="stepNumericInput('setWarnThreshold', -5, 50, 150, 0)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition shrink-0">&minus;</button>
+              <input id="setWarnThreshold" type="number" step="5" min="50" max="150" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-center" />
+              <button type="button" onclick="stepNumericInput('setWarnThreshold', 5, 50, 150, 0)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition shrink-0">+</button>
+            </div>
           </div>
           <div>
             <label class="block font-semibold text-slate-700 mb-1">Overallocated Alert Threshold (%)</label>
-            <input id="setOverThreshold" type="number" step="5" min="80" max="200" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="stepNumericInput('setOverThreshold', -5, 80, 200, 0)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition shrink-0">&minus;</button>
+              <input id="setOverThreshold" type="number" step="5" min="80" max="200" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-center" />
+              <button type="button" onclick="stepNumericInput('setOverThreshold', 5, 80, 200, 0)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition shrink-0">+</button>
+            </div>
           </div>
           <div class="sm:col-span-2">
             <label class="block font-semibold text-slate-700 mb-1">Your Name / Role (shown in header, Change Log &amp; Sync Metadata)</label>
@@ -915,46 +984,120 @@
     }
 
     /**
-     * Computes high-contrast foreground & sub-surface colors for full-color-fill pills
-     * so any project or department hex color stays crisp and legible in Light, Dark & Projector modes.
+     * Computes high-contrast text, border, chip, and nested comment styles
+     * for color-filled project/department/FTE cards.
      */
     function getFilledCardTheme(hexColor) {
-      let hex = String(hexColor || '#4f46e5').replace('#', '').trim();
-      if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
-      const num = parseInt(hex, 16);
-      const r = isNaN(num) ? 79 : (num >> 16) & 255;
-      const g = isNaN(num) ? 70 : (num >> 8) & 255;
-      const b = isNaN(num) ? 229 : num & 255;
-
-      const toLinear = (c) => {
-        const s = c / 255;
-        return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+      let hex = String(hexColor || '#4f46e5').trim();
+      if (/^#[0-9a-fA-F]{3}$/.test(hex)) {
+        hex = '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+      }
+      if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
+        hex = '#4f46e5';
+      }
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+      const isLight = luminance > 0.62;
+      return {
+        bg: hex,
+        text: isLight ? '#0f172a' : '#ffffff',
+        mutedText: isLight ? 'rgba(15, 23, 42, 0.72)' : 'rgba(255, 255, 255, 0.85)',
+        border: isLight ? 'rgba(15, 23, 42, 0.22)' : 'rgba(255, 255, 255, 0.24)',
+        chipBg: isLight ? 'rgba(15, 23, 42, 0.12)' : 'rgba(255, 255, 255, 0.22)',
+        commentBg: isLight ? 'rgba(255, 255, 255, 0.58)' : 'rgba(15, 23, 42, 0.24)',
+        commentBorder: isLight ? 'rgba(15, 23, 42, 0.14)' : 'rgba(255, 255, 255, 0.2)',
+        commentText: isLight ? '#0f172a' : 'rgba(255, 255, 255, 0.96)',
       };
-      const lum = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
-      const contrastWithWhite = (1.0 + 0.05) / (lum + 0.05);
-      const useLightText = contrastWithWhite >= 3.2;
+    }
 
-      return useLightText
-        ? {
-            bg: `rgb(${r}, ${g}, ${b})`,
-            border: `rgba(0, 0, 0, 0.14)`,
-            text: '#ffffff',
-            mutedText: 'rgba(255, 255, 255, 0.86)',
-            commentBg: 'rgba(0, 0, 0, 0.18)',
-            commentBorder: 'rgba(255, 255, 255, 0.22)',
-            commentText: 'rgba(255, 255, 255, 0.96)',
-            chipBg: 'rgba(255, 255, 255, 0.22)',
-          }
-        : {
-            bg: `rgb(${r}, ${g}, ${b})`,
-            border: `rgba(15, 23, 42, 0.18)`,
-            text: '#0f172a',
-            mutedText: 'rgba(15, 23, 42, 0.78)',
-            commentBg: 'rgba(255, 255, 255, 0.45)',
-            commentBorder: 'rgba(15, 23, 42, 0.16)',
-            commentText: '#0f172a',
-            chipBg: 'rgba(15, 23, 42, 0.12)',
-          };
+    /**
+     * Maps an FTE allocation value to a high-contrast heat-scale hex color based
+     * on its percentage share of the department's available capacity for that period.
+     */
+    function getFteCardColor(fte, capacityFte) {
+      const val = Number(fte) || 0;
+      if (val <= 0.0001) return '#64748b'; // Note-only / 0% of capacity (Slate)
+      const cap = Number(capacityFte) || 0;
+      if (cap <= 0.0001) return '#e11d48'; // Allocation with 0 available capacity -> >100% (Rose)
+      const pct = (val / cap) * 100;
+      if (pct <= 20) return '#0284c7';     // Light share: ≤ 20% of available capacity (Sky)
+      if (pct <= 40) return '#059669';     // Moderate share: 20–40% of capacity (Emerald)
+      if (pct <= 65) return '#4f46e5';     // Substantial share: 40–65% of capacity (Indigo)
+      if (pct <= 100) return '#d97706';    // Heavy share: 65–100% of capacity (Amber)
+      return '#e11d48';                    // Exceeds available capacity: > 100% (Rose)
+    }
+
+    /**
+     * Sorted copies of departments & projects for all dropdown menus
+     * (never mutates the custom display order stored in db.departments / db.projects).
+     * Departments sort alphabetically by name; Projects sort by code when available, then name.
+     */
+    function getSortedDepartments(db = getActiveDB()) {
+      return [...(db.departments || [])].sort((a, b) =>
+        String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base', numeric: true })
+      );
+    }
+
+    function getSortedProjects(db = getActiveDB()) {
+      return [...(db.projects || [])].sort((a, b) => {
+        const codeA = String(a.code || '').trim();
+        const codeB = String(b.code || '').trim();
+        if (codeA && codeB) {
+          const cmp = codeA.localeCompare(codeB, undefined, { sensitivity: 'base', numeric: true });
+          if (cmp !== 0) return cmp;
+        } else if (codeA && !codeB) {
+          return -1;
+        } else if (!codeA && codeB) {
+          return 1;
+        }
+        return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base', numeric: true });
+      });
+    }
+
+    /**
+     * Formats a project dropdown label showing its code before its name when available.
+     */
+    function formatProjectOptionLabel(p) {
+      const code = String(p?.code || '').trim();
+      const name = String(p?.name || '').trim();
+      return code ? `[${code}] ${name}` : name;
+    }
+
+    function getManpowerStep(unit = ui.manpowerUnit) {
+      if (unit === 'days') return { step: 1, decimals: 1 };
+      if (unit === 'hours') return { step: 4, decimals: 1 };
+      return { step: 0.25, decimals: 2 };
+    }
+
+    /**
+     * Universal increment/decrement helper for numeric inputs across modals & settings.
+     */
+    function stepNumericInput(inputId, delta, min = 0, max = 999999, decimals = 2, onAfterChange = null) {
+      const el = document.getElementById(inputId);
+      if (!el) return;
+      const cur = parseFloat(el.value);
+      const base = isNaN(cur) ? 0 : cur;
+      const factor = Math.pow(10, decimals);
+      const next = Math.max(min, Math.min(max, Math.round((base + delta) * factor) / factor));
+      el.value = String(next);
+      if (typeof onAfterChange === 'function') onAfterChange(next);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    /**
+     * Shifts a YYYY-MM-DD date input forward or backward by a number of days.
+     */
+    function stepDateInput(inputId, deltaDays) {
+      const el = document.getElementById(inputId);
+      if (!el) return;
+      const base = el.value && /^\d{4}-\d{2}-\d{2}$/.test(el.value)
+        ? parseISODate(el.value)
+        : new Date();
+      base.setUTCDate(base.getUTCDate() + deltaDays);
+      el.value = dateToISODate(base);
+      el.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     /* ---------- ISO Week & Month Helpers (Weekly Source of Truth) ---------- */
@@ -1135,8 +1278,14 @@
       return ui.meetingMode ? (Number(ui.meetingHorizon) || 2) : (Number(ui.horizon) || 6);
     }
 
+    function getActiveCellColorMode() {
+      const mode = ui.meetingMode ? ui.meetingCellColorMode : ui.cellColorMode;
+      return (mode === 'fill' || mode === 'fte') ? mode : 'accent';
+    }
+
     function isCellColorFill() {
-      return (ui.meetingMode ? ui.meetingCellColorMode : ui.cellColorMode) === 'fill';
+      const m = getActiveCellColorMode();
+      return m === 'fill' || m === 'fte';
     }
 
     function createEmptyDB() {
@@ -2006,18 +2155,19 @@
       }
       document.getElementById('horizonSelect').value = String(activeHorizon);
 
-      // Cell Field Color Fill vs Accent Toggle Button
-      const colorBtn = document.getElementById('cellColorModeBtn');
-      const fillActive = isCellColorFill();
-      if (colorBtn) {
-        if (fillActive) {
-          colorBtn.className = 'px-2.5 py-1 rounded-xl border border-indigo-300 bg-indigo-50 text-indigo-700 text-xs font-bold transition';
-          colorBtn.textContent = 'Card Color: Fill';
-        } else {
-          colorBtn.className = 'px-2.5 py-1 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 transition';
-          colorBtn.textContent = 'Card Color: Accent';
-        }
-      }
+      // Cell Field Color Mode Segmented Buttons (Accent / Fill / By FTE)
+      const activeColorMode = getActiveCellColorMode();
+      const colorBtnStyle = (active) => active
+        ? 'px-2 py-0.5 rounded-lg text-xs font-bold bg-white text-indigo-700 shadow-xs transition'
+        : 'px-2 py-0.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition';
+      const btnAccent = document.getElementById('card-color-accent');
+      const btnFill = document.getElementById('card-color-fill');
+      const btnFte = document.getElementById('card-color-fte');
+      if (btnAccent) btnAccent.className = colorBtnStyle(activeColorMode === 'accent');
+      if (btnFill) btnFill.className = colorBtnStyle(activeColorMode === 'fill');
+      if (btnFte) btnFte.className = colorBtnStyle(activeColorMode === 'fte');
+      const fteLegendEl = document.getElementById('fteColorLegend');
+      if (fteLegendEl) fteLegendEl.classList.toggle('hidden', activeColorMode !== 'fte');
 
       // Drag Mode Button
       const dragBtn = document.getElementById('dragModeBtn');
@@ -2051,13 +2201,13 @@
         setupFormulaEl.textContent = `1.0 FTE = ${dpw}d/wk = ${dpw * hpd}h/wk; a 4-week month = ${dpw * 4}d / ${dpw * hpd * 4}h, a 5-week month = ${dpw * 5}d / ${dpw * hpd * 5}h`;
       }
 
-      // Populate Filter Dropdowns
+      // Populate Filter Dropdowns (departments by name; projects by code when available)
       const fDept = document.getElementById('filterDeptSelect');
       const fProj = document.getElementById('filterProjSelect');
       fDept.innerHTML = `<option value="all">All Departments (${db.departments.length})</option>` +
-        db.departments.map(d => `<option value="${d.id}" ${ui.filterDept === d.id ? 'selected' : ''}>[${escapeHtml(d.code)}] ${escapeHtml(d.name)}</option>`).join('');
+        getSortedDepartments(db).map(d => `<option value="${d.id}" ${ui.filterDept === d.id ? 'selected' : ''}>${escapeHtml(d.name)} [${escapeHtml(d.code)}]</option>`).join('');
       fProj.innerHTML = `<option value="all">All Projects (${db.projects.length})</option>` +
-        db.projects.map(p => `<option value="${p.id}" ${ui.filterProj === p.id ? 'selected' : ''}>[${escapeHtml(p.code)}] ${escapeHtml(p.name)}</option>`).join('');
+        getSortedProjects(db).map(p => `<option value="${p.id}" ${ui.filterProj === p.id ? 'selected' : ''}>${escapeHtml(formatProjectOptionLabel(p))}</option>`).join('');
 
       // Render Active Tab
       if (ui.activeTab === 'matrix') renderMatrix();
@@ -2080,7 +2230,8 @@
       const warnT = db.settings.warnThreshold || 85;
       const overT = db.settings.overThreshold || 100;
       const isMeeting = Boolean(ui.meetingMode);
-      const useColorFill = isCellColorFill();
+      const colorMode = getActiveCellColorMode(); // 'accent' | 'fill' | 'fte'
+      const useColorFill = colorMode === 'fill' || colorMode === 'fte';
       const showComments = Boolean(ui.showCellComments);
 
       const visibleDepts = db.departments.filter(d => ui.filterDept === 'all' || d.id === ui.filterDept);
@@ -2144,7 +2295,7 @@
         pillCode: 'text-[10px]',
         pillVal: 'text-[11px] font-bold',
         pillSpace: 'space-y-1',
-        pillBorderW: '3px',
+        pillBorderW: '4px',
         commentBox: 'mt-1 px-1.5 py-1 text-[10px] leading-snug comment-clamp-3',
         msBox: 'px-2 py-0.5 text-[10px] font-semibold',
         footCell: 'px-3 py-2.5 text-xs',
@@ -2163,16 +2314,14 @@
             : `<span class="font-mono font-bold text-indigo-600">${escapeHtml(we.weekShort)}:</span>`;
           parts.push(`<div class="whitespace-pre-line">${wkPrefix} ${escapeHtml(we.text)}</div>`);
         });
-
         if (filledTheme) {
           return `
-            <div class="${s.commentBox} rounded-md space-y-0.5"
-              style="background-color:${filledTheme.commentBg}; border: 1px solid ${filledTheme.commentBorder}; color:${filledTheme.commentText};">
+            <div class="${s.commentBox} rounded-lg space-y-0.5" style="background-color:${filledTheme.commentBg}; border: 1px solid ${filledTheme.commentBorder}; color:${filledTheme.commentText};">
               ${parts.join('')}
             </div>`;
         }
         return `
-          <div class="${s.commentBox} rounded-md bg-slate-50 border border-slate-200/80 text-slate-600 space-y-0.5">
+          <div class="accent-card-comment ${s.commentBox} rounded-md bg-slate-50 border border-slate-200/80 text-slate-600 space-y-0.5">
             ${parts.join('')}
           </div>`;
       };
@@ -2181,18 +2330,34 @@
         const h = formatPeriodHeader(pk, ui.timeUnit);
         const isCurrent = (ui.timeUnit === 'month' && pk === getCurrentMonthKey()) ||
                           (ui.timeUnit === 'week' && pk === getCurrentWeekKey());
-        const showSub = !isMeeting || ui.timeUnit === 'week';
         return `
           <th class="${s.thCol} text-left border-b border-l border-slate-200 ${isCurrent ? 'bg-indigo-50/70' : 'bg-slate-50'}">
             <div class="flex items-center justify-between gap-1">
               <span class="${s.thTitle} ${isCurrent ? 'text-indigo-700' : 'text-slate-800'}">${escapeHtml(h.title)}</span>
               ${isCurrent ? '<span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-indigo-600 text-white">Now</span>' : ''}
             </div>
-            ${showSub ? `<div class="${s.thSub} text-slate-500 font-medium mt-0.5">${escapeHtml(h.sub)}</div>` : ''}
+            ${!isMeeting ? `<div class="${s.thSub} text-slate-500 font-medium mt-0.5">${escapeHtml(h.sub)}</div>` : ''}
           </th>`;
       }).join('');
 
-      const bodyRows = rows.map(row => {
+      const bodyRows = rows.map((row, rowIdx) => {
+        const isFirstRow = rowIdx === 0;
+        const isLastRow = rowIdx === rows.length - 1;
+        const reorderControlsHtml = rows.length > 1
+          ? `<div class="flex flex-col items-center justify-center shrink-0 -ml-1 mr-0.5 text-slate-400 ${isMeeting ? 'opacity-0 group-hover/row:opacity-100 transition' : ''}">
+               <button type="button" draggable="false" onclick="event.stopPropagation(); moveRowOrder('${ui.axis}', '${row.id}', -1)"
+                 ${isFirstRow ? 'disabled' : ''} title="Move row up"
+                 class="leading-none px-1 py-0.5 rounded hover:bg-slate-200/80 hover:text-indigo-700 disabled:opacity-25 disabled:pointer-events-none text-[9px] transition">&#9650;</button>
+               <span draggable="true" data-drag-type="row" data-drag-row-id="${row.id}"
+                 ondragstart="handleRowDragStart(event)" ondragend="handleRowDragEnd(event)"
+                 title="Drag to reorder row"
+                 class="cursor-grab active:cursor-grabbing px-1 py-0.5 text-slate-400 hover:text-indigo-600 select-none leading-none text-[11px]">&#8942;&#8942;</span>
+               <button type="button" draggable="false" onclick="event.stopPropagation(); moveRowOrder('${ui.axis}', '${row.id}', 1)"
+                 ${isLastRow ? 'disabled' : ''} title="Move row down"
+                 class="leading-none px-1 py-0.5 rounded hover:bg-slate-200/80 hover:text-indigo-700 disabled:opacity-25 disabled:pointer-events-none text-[9px] transition">&#9660;</button>
+             </div>`
+          : '';
+
         if (ui.axis === 'department') {
           let sumA = 0, sumC = 0;
           periods.forEach(pk => {
@@ -2230,7 +2395,8 @@
               const cmtObj = getCellProjectComments(row.id, p.id, pk, ui.timeUnit, db);
               if (!a.hasData && !cmtObj.hasAny) return '';
 
-              const filledTheme = useColorFill ? getFilledCardTheme(p.color) : null;
+              const fillHex = colorMode === 'fte' ? getFteCardColor(a.hasData ? a.avgFte : 0, capFte) : p.color;
+              const filledTheme = useColorFill ? getFilledCardTheme(fillHex) : null;
               const cmtHtml = renderInlineCommentHtml(cmtObj, filledTheme);
               const fullTooltipNote = cmtObj.direct ? `\nNote: ${cmtObj.direct}` : '';
 
@@ -2244,6 +2410,7 @@
                       style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1.5px dashed ${filledTheme.border};">
                       <div class="flex items-center justify-between gap-1.5">
                         <div class="flex items-center gap-1.5 min-w-0">
+                          ${colorMode === 'fte' ? `<span class="w-2 h-2 rounded-full ring-1 ring-white/70 shrink-0" style="background:${p.color}"></span>` : ''}
                           ${!isMeeting ? `<span class="font-mono font-bold ${s.pillCode} shrink-0" style="color:${filledTheme.mutedText};">${escapeHtml(p.code)}</span>` : ''}
                           <span class="truncate font-bold">${escapeHtml(p.name)}</span>
                         </div>
@@ -2255,8 +2422,8 @@
                 return `
                   <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
                     title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — Comment Only${escapeHtml(fullTooltipNote)}"
-                    class="${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer transition"
-                    style="border-left: ${s.pillBorderW} solid ${p.color};">
+                    class="accent-card ${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer transition"
+                    style="--accent-color:${p.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${p.color};">
                     <div class="flex items-center justify-between gap-1.5">
                       <div class="flex items-center gap-1 min-w-0">
                         ${!isMeeting ? `<span class="font-mono font-bold ${s.pillCode} text-slate-500 shrink-0">${escapeHtml(p.code)}</span>` : ''}
@@ -2269,6 +2436,8 @@
               }
 
               const valStr = formatValue(fteToDisplayValue(a.avgFte, pk, ui.timeUnit));
+              const capSharePct = capFte > 0 ? Math.round((a.avgFte / capFte) * 100) : (a.avgFte > 0 ? 999 : 0);
+              const capShareTxt = `${capSharePct > 990 ? '>100%' : capSharePct + '%'} of ${capDisp} cap`;
 
               if (useColorFill) {
                 return `
@@ -2276,18 +2445,23 @@
                     data-drag-type="alloc" data-drag-dept="${row.id}" data-drag-proj="${p.id}" data-drag-period="${pk}"
                     ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                     onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')"
-                    title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${valStr} (Click to edit, drag to move/copy)${escapeHtml(fullTooltipNote)}"
+                    title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${valStr} (${capShareTxt}) • Click to edit, drag to move/copy${escapeHtml(fullTooltipNote)}"
                     class="group/pill ${s.pillBox} rounded-xl shadow-xs cursor-grab active:cursor-grabbing transition hover:brightness-95"
                     style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1px solid ${filledTheme.border};">
-                    <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center justify-between gap-1.5">
                       <div class="flex items-center gap-1.5 min-w-0">
+                        ${colorMode === 'fte' ? `<span class="w-2 h-2 rounded-full ring-1 ring-white/75 shrink-0" style="background:${p.color}" title="${escapeHtml(p.name)} color"></span>` : ''}
                         ${!isMeeting ? `<span class="font-mono font-bold ${s.pillCode} shrink-0" style="color:${filledTheme.mutedText};">${escapeHtml(p.code)}</span>` : ''}
                         <span class="truncate font-bold">${escapeHtml(p.name)}</span>
                         ${!isMeeting && a.isUneven ? `<span title="Uneven weekly split inside this month" class="w-1.5 h-1.5 rounded-full shrink-0" style="background-color:${filledTheme.text}; opacity:0.8;"></span>` : ''}
                         ${!isMeeting && cmtObj.hasAny && !showComments ? `<span title="Has comments (click cell to view)" class="shrink-0 text-[10px]" style="color:${filledTheme.mutedText};">&#9998;</span>` : ''}
                       </div>
-                      <div class="flex items-center gap-1 shrink-0">
-                        <span class="${s.pillVal} tabular-nums">${valStr}</span>
+                      <div class="flex items-center gap-0.5 shrink-0">
+                        ${!isMeeting ? `<button onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', -1)" title="Decrease allocation"
+                          class="opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded font-bold flex items-center justify-center transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&minus;</button>` : ''}
+                        <span class="${s.pillVal} tabular-nums px-0.5">${valStr}</span>
+                        ${!isMeeting ? `<button onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', 1)" title="Increase allocation"
+                          class="opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded font-bold flex items-center justify-center transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">+</button>` : ''}
                         ${!isMeeting ? `<button onclick="quickExtendAllocation(event, '${row.id}', '${p.id}', '${pk}')" title="Copy into next period"
                           class="opacity-0 group-hover/pill:opacity-100 px-1 rounded font-bold transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&rarr;</button>` : ''}
                       </div>
@@ -2301,18 +2475,22 @@
                   data-drag-type="alloc" data-drag-dept="${row.id}" data-drag-proj="${p.id}" data-drag-period="${pk}"
                   ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                   onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')"
-                  title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${valStr} (Click to edit, drag to move/copy)${escapeHtml(fullTooltipNote)}"
-                  class="group/pill ${s.pillBox} rounded-lg bg-white border border-slate-200/90 hover:border-indigo-300 shadow-2xs cursor-grab active:cursor-grabbing transition"
-                  style="border-left: ${s.pillBorderW} solid ${p.color};">
-                  <div class="flex items-center justify-between gap-1.5">
+                  title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${valStr} (${capShareTxt}) • Click to edit, drag to move/copy${escapeHtml(fullTooltipNote)}"
+                  class="accent-card group/pill ${s.pillBox} rounded-lg bg-white border border-slate-200/90 hover:border-indigo-300 shadow-2xs cursor-grab active:cursor-grabbing transition"
+                  style="--accent-color:${p.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${p.color};">
+                  <div class="flex items-center justify-between gap-1">
                     <div class="flex items-center gap-1 min-w-0">
                       ${!isMeeting ? `<span class="font-mono font-bold ${s.pillCode} text-slate-500 shrink-0">${escapeHtml(p.code)}</span>` : ''}
                       <span class="truncate font-semibold text-slate-800">${escapeHtml(p.name)}</span>
                       ${!isMeeting && a.isUneven ? '<span title="Uneven weekly split inside this month" class="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>' : ''}
                       ${!isMeeting && cmtObj.hasAny && !showComments ? '<span title="Has comments (click cell to view)" class="text-indigo-500 shrink-0 text-[10px]">&#9998;</span>' : ''}
                     </div>
-                    <div class="flex items-center gap-1 shrink-0">
-                      <span class="${s.pillVal} text-slate-900 tabular-nums">${valStr}</span>
+                    <div class="flex items-center gap-0.5 shrink-0">
+                      ${!isMeeting ? `<button onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', -1)" title="Decrease allocation"
+                        class="opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded bg-slate-100 hover:bg-rose-100 text-slate-700 hover:text-rose-700 font-bold flex items-center justify-center transition">&minus;</button>` : ''}
+                      <span class="${s.pillVal} text-slate-900 tabular-nums px-0.5">${valStr}</span>
+                      ${!isMeeting ? `<button onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', 1)" title="Increase allocation"
+                        class="opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-700 font-bold flex items-center justify-center transition">+</button>` : ''}
                       ${!isMeeting ? `<button onclick="quickExtendAllocation(event, '${row.id}', '${p.id}', '${pk}')" title="Copy into next period"
                         class="opacity-0 group-hover/pill:opacity-100 px-1 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold transition">&rarr;</button>` : ''}
                     </div>
@@ -2343,10 +2521,9 @@
                 </div>`;
             }).join('');
 
-            // Cell header: Meeting View keeps only high-signal % badge; Standard View shows full alloc/cap, Var, comment icon, progress bar
             const cellHeaderHtml = isMeeting
               ? `<div class="flex items-center justify-end mb-2">
-                   <span class="${s.pctText} tabular-nums px-2 py-0.5 rounded-lg ${pct > overT ? 'bg-rose-100 text-rose-700' : pct >= warnT ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}">
+                   <span class="px-2 py-0.5 rounded-md ${s.pctText} tabular-nums ${pct > overT ? 'bg-rose-100 text-rose-700' : pct >= warnT ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100/70 text-emerald-800'}">
                      ${pct > 990 ? '&infin;' : pct + '%'}
                    </span>
                  </div>`
@@ -2373,7 +2550,7 @@
                    <div class="h-full ${barColor} rounded-full transition-all" style="width: ${Math.min(100, pct)}%"></div>
                  </div>`;
 
-            // Restored + Add button inside every cell (hidden in Meeting View to keep projector view clutter-free)
+            // Restored + Add button inside every cell (Standard View)
             const addBtnHtml = !isMeeting
               ? `<button onclick="event.stopPropagation(); openAllocationModal('${row.id}', '', '${pk}')"
                    title="Allocate a project to ${escapeHtml(row.name)} in ${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).title)}"
@@ -2397,10 +2574,14 @@
           }).join('');
 
           return `
-            <tr class="group/row">
+            <tr class="group/row" data-row-id="${row.id}"
+              ondragover="handleRowDragOver(event, '${row.id}')"
+              ondragleave="handleRowDragLeave(event)"
+              ondrop="handleRowDrop(event, '${row.id}')">
               <td class="sticky left-0 z-10 bg-white group-hover/row:bg-slate-50/90 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top">
                 <div class="flex items-start justify-between gap-2">
-                  <div class="flex items-center gap-2.5 min-w-0">
+                  <div class="flex items-center gap-2 min-w-0">
+                    ${reorderControlsHtml}
                     <span class="${isMeeting ? 'w-3 h-9' : 'w-2.5 h-8'} rounded-full shrink-0" style="background:${row.color}"></span>
                     <div class="min-w-0">
                       <div class="${s.rowName} text-slate-900 truncate">${escapeHtml(row.name)}</div>
@@ -2439,7 +2620,9 @@
               const cmtObj = getCellProjectComments(d.id, row.id, pk, ui.timeUnit, db);
               if (!a.hasData && !cmtObj.hasAny) return '';
 
-              const filledTheme = useColorFill ? getFilledCardTheme(d.color) : null;
+              const deptCap = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
+              const fillHex = colorMode === 'fte' ? getFteCardColor(a.hasData ? a.avgFte : 0, deptCap) : d.color;
+              const filledTheme = useColorFill ? getFilledCardTheme(fillHex) : null;
               const cmtHtml = renderInlineCommentHtml(cmtObj, filledTheme);
               const fullTooltipNote = cmtObj.direct ? `\nNote: ${cmtObj.direct}` : '';
 
@@ -2451,7 +2634,10 @@
                       class="${s.pillBox} rounded-xl cursor-pointer transition hover:brightness-95 shadow-2xs"
                       style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1.5px dashed ${filledTheme.border};">
                       <div class="flex items-center justify-between gap-1.5">
-                        <span class="truncate font-bold">${escapeHtml(d.name)}</span>
+                        <div class="flex items-center gap-1.5 min-w-0">
+                          ${colorMode === 'fte' ? `<span class="w-2 h-2 rounded-full ring-1 ring-white/70 shrink-0" style="background:${d.color}"></span>` : ''}
+                          <span class="truncate font-bold">${escapeHtml(d.name)}</span>
+                        </div>
                         <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style="background-color:${filledTheme.chipBg};">Note</span>
                       </div>
                       ${cmtHtml}
@@ -2460,8 +2646,8 @@
                 return `
                   <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
                     title="[${escapeHtml(d.code)}] ${escapeHtml(d.name)} — Comment Only${escapeHtml(fullTooltipNote)}"
-                    class="${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer transition"
-                    style="border-left: ${s.pillBorderW} solid ${d.color};">
+                    class="accent-card ${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer transition"
+                    style="--accent-color:${d.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${d.color};">
                     <div class="flex items-center justify-between gap-1.5">
                       <span class="truncate font-semibold text-slate-700">${escapeHtml(d.name)}</span>
                       <span class="text-[10px] font-semibold text-indigo-600 shrink-0">Note</span>
@@ -2470,11 +2656,13 @@
                   </div>`;
               }
 
-              const deptCap = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
               const deptTot = getDeptTotalAllocatedFte(d.id, pk, ui.timeUnit, db);
               const deptPct = deptCap > 0 ? Math.round((deptTot / deptCap) * 100) : 0;
               const loadDot = deptPct > overT ? 'bg-rose-500' : deptPct >= warnT ? 'bg-amber-500' : 'bg-emerald-500';
               const valStr = formatValue(fteToDisplayValue(a.avgFte, pk, ui.timeUnit));
+              const deptCapDisp = formatValue(fteToDisplayValue(deptCap, pk, ui.timeUnit));
+              const capSharePct = deptCap > 0 ? Math.round((a.avgFte / deptCap) * 100) : (a.avgFte > 0 ? 999 : 0);
+              const capShareTxt = `${capSharePct > 990 ? '>100%' : capSharePct + '%'} of ${deptCapDisp} cap`;
 
               if (useColorFill) {
                 return `
@@ -2482,17 +2670,22 @@
                     data-drag-type="alloc" data-drag-dept="${d.id}" data-drag-proj="${row.id}" data-drag-period="${pk}"
                     ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                     onclick="event.stopPropagation(); openAllocationModal('${d.id}', '${row.id}', '${pk}')"
-                    title="[${escapeHtml(d.code)}] ${escapeHtml(d.name)}: ${valStr} (Dept load: ${deptPct}%)${escapeHtml(fullTooltipNote)}"
+                    title="[${escapeHtml(d.code)}] ${escapeHtml(d.name)}: ${valStr} (${capShareTxt} • Dept total: ${deptPct}%)${escapeHtml(fullTooltipNote)}"
                     class="group/pill ${s.pillBox} rounded-xl shadow-xs cursor-grab active:cursor-grabbing transition hover:brightness-95"
                     style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1px solid ${filledTheme.border};">
-                    <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center justify-between gap-1.5">
                       <div class="flex items-center gap-1.5 min-w-0">
-                        ${!isMeeting ? `<span class="w-2 h-2 rounded-full ${loadDot} ring-1 ring-white/70 shrink-0" title="Department utilisation: ${deptPct}%"></span>` : ''}
+                        ${colorMode === 'fte' ? `<span class="w-2 h-2 rounded-full ring-1 ring-white/75 shrink-0" style="background:${d.color}" title="${escapeHtml(d.name)} color"></span>` : ''}
+                        ${!isMeeting && colorMode !== 'fte' ? `<span class="w-2 h-2 rounded-full ${loadDot} ring-1 ring-white/70 shrink-0" title="Department utilisation: ${deptPct}%"></span>` : ''}
                         <span class="truncate font-bold">${escapeHtml(d.name)}</span>
                         ${!isMeeting && cmtObj.hasAny && !showComments ? `<span title="Has comments (click cell to view)" class="shrink-0 text-[10px]" style="color:${filledTheme.mutedText};">&#9998;</span>` : ''}
                       </div>
-                      <div class="flex items-center gap-1 shrink-0">
-                        <span class="${s.pillVal} tabular-nums">${valStr}</span>
+                      <div class="flex items-center gap-0.5 shrink-0">
+                        ${!isMeeting ? `<button onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', -1)" title="Decrease allocation"
+                          class="opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded font-bold flex items-center justify-center transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&minus;</button>` : ''}
+                        <span class="${s.pillVal} tabular-nums px-0.5">${valStr}</span>
+                        ${!isMeeting ? `<button onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', 1)" title="Increase allocation"
+                          class="opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded font-bold flex items-center justify-center transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">+</button>` : ''}
                         ${!isMeeting ? `<button onclick="quickExtendAllocation(event, '${d.id}', '${row.id}', '${pk}')" title="Copy into next period"
                           class="opacity-0 group-hover/pill:opacity-100 px-1 rounded font-bold transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&rarr;</button>` : ''}
                       </div>
@@ -2506,17 +2699,21 @@
                   data-drag-type="alloc" data-drag-dept="${d.id}" data-drag-proj="${row.id}" data-drag-period="${pk}"
                   ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                   onclick="event.stopPropagation(); openAllocationModal('${d.id}', '${row.id}', '${pk}')"
-                  title="[${escapeHtml(d.code)}] ${escapeHtml(d.name)}: ${valStr} (Dept load: ${deptPct}%)${escapeHtml(fullTooltipNote)}"
-                  class="group/pill ${s.pillBox} rounded-lg bg-white border border-slate-200/90 hover:border-indigo-300 shadow-2xs cursor-grab active:cursor-grabbing transition"
-                  style="border-left: ${s.pillBorderW} solid ${d.color};">
-                  <div class="flex items-center justify-between gap-1.5">
+                  title="[${escapeHtml(d.code)}] ${escapeHtml(d.name)}: ${valStr} (${capShareTxt} • Dept total: ${deptPct}%)${escapeHtml(fullTooltipNote)}"
+                  class="accent-card group/pill ${s.pillBox} rounded-lg bg-white border border-slate-200/90 hover:border-indigo-300 shadow-2xs cursor-grab active:cursor-grabbing transition"
+                  style="--accent-color:${d.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${d.color};">
+                  <div class="flex items-center justify-between gap-1">
                     <div class="flex items-center gap-1.5 min-w-0">
                       ${!isMeeting ? `<span class="w-2 h-2 rounded-full ${loadDot} shrink-0" title="Department utilisation: ${deptPct}%"></span>` : ''}
                       <span class="truncate font-semibold text-slate-800">${escapeHtml(d.name)}</span>
                       ${!isMeeting && cmtObj.hasAny && !showComments ? '<span title="Has comments (click cell to view)" class="text-indigo-500 shrink-0 text-[10px]">&#9998;</span>' : ''}
                     </div>
-                    <div class="flex items-center gap-1 shrink-0">
-                      <span class="${s.pillVal} text-slate-900 tabular-nums">${valStr}</span>
+                    <div class="flex items-center gap-0.5 shrink-0">
+                      ${!isMeeting ? `<button onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', -1)" title="Decrease allocation"
+                        class="opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded bg-slate-100 hover:bg-rose-100 text-slate-700 hover:text-rose-700 font-bold flex items-center justify-center transition">&minus;</button>` : ''}
+                      <span class="${s.pillVal} text-slate-900 tabular-nums px-0.5">${valStr}</span>
+                      ${!isMeeting ? `<button onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', 1)" title="Increase allocation"
+                        class="opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-700 font-bold flex items-center justify-center transition">+</button>` : ''}
                       ${!isMeeting ? `<button onclick="quickExtendAllocation(event, '${d.id}', '${row.id}', '${pk}')" title="Copy into next period"
                         class="opacity-0 group-hover/pill:opacity-100 px-1 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold transition">&rarr;</button>` : ''}
                     </div>
@@ -2537,7 +2734,7 @@
                 </div>`).join('');
 
             const cellHeaderHtml = isMeeting
-              ? (totFte > 0 ? `<div class="flex items-center justify-end mb-2"><span class="text-xs font-extrabold text-slate-600 tabular-nums">${totStr}</span></div>` : '')
+              ? (totFte > 0 ? `<div class="flex items-center justify-end mb-2"><span class="${s.pctText} text-slate-700 tabular-nums">${totStr}</span></div>` : '')
               : `<div class="flex items-center justify-between ${s.capText} text-slate-500 mb-1.5">
                    <span>Effort</span>
                    <div class="flex items-center gap-1.5">
@@ -2551,7 +2748,6 @@
                    </div>
                  </div>`;
 
-            // Restored + Add button inside every cell (Standard View)
             const addBtnHtml = !isMeeting
               ? `<button onclick="event.stopPropagation(); openAllocationModal('', '${row.id}', '${pk}')"
                    title="Allocate a department to ${escapeHtml(row.name)} in ${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).title)}"
@@ -2575,10 +2771,14 @@
           }).join('');
 
           return `
-            <tr class="group/row">
+            <tr class="group/row" data-row-id="${row.id}"
+              ondragover="handleRowDragOver(event, '${row.id}')"
+              ondragleave="handleRowDragLeave(event)"
+              ondrop="handleRowDrop(event, '${row.id}')">
               <td class="sticky left-0 z-10 bg-white group-hover/row:bg-slate-50/90 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top">
                 <div class="flex items-start justify-between gap-2">
-                  <div class="flex items-center gap-2.5 min-w-0">
+                  <div class="flex items-center gap-2 min-w-0">
+                    ${reorderControlsHtml}
                     <span class="${isMeeting ? 'w-3 h-9' : 'w-2.5 h-8'} rounded-full shrink-0" style="background:${row.color}"></span>
                     <div class="min-w-0">
                       <div class="${s.rowName} text-slate-900 truncate">${escapeHtml(row.name)}</div>
@@ -2597,28 +2797,28 @@
         }
       }).join('');
 
-      // Company Totals Footer Row (omitted in Meeting View to minimize clutter)
-      const footerHtml = isMeeting ? '' : (() => {
-        const footerCells = periods.map(pk => {
-          let totA = 0, totC = 0;
-          visibleDepts.forEach(d => {
-            totA += getDeptTotalAllocatedFte(d.id, pk, ui.timeUnit, db);
-            totC += getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
-          });
-          const pct = totC > 0 ? Math.round((totA / totC) * 100) : 0;
-          const pctCls = pct > overT ? 'text-rose-400' : pct >= warnT ? 'text-amber-300' : 'text-emerald-300';
-          return `
-            <td class="${s.footCell} border-l border-slate-700/70">
-              <div class="flex items-center justify-between font-bold">
-                <span class="tabular-nums">${formatValue(fteToDisplayValue(totA, pk, ui.timeUnit))}</span>
-                <span class="tabular-nums ${pctCls}">${pct}%</span>
-              </div>
-              <div class="${s.footSub} text-slate-400 mt-0.5">Cap: ${formatValue(fteToDisplayValue(totC, pk, ui.timeUnit))}</div>
-            </td>`;
-        }).join('');
-
+      // Company Totals Footer Row (shown in Standard View; omitted in Meeting View to keep presentation clean)
+      const footerCells = periods.map(pk => {
+        let totA = 0, totC = 0;
+        visibleDepts.forEach(d => {
+          totA += getDeptTotalAllocatedFte(d.id, pk, ui.timeUnit, db);
+          totC += getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
+        });
+        const pct = totC > 0 ? Math.round((totA / totC) * 100) : 0;
+        const pctCls = pct > overT ? 'text-rose-400' : pct >= warnT ? 'text-amber-300' : 'text-emerald-300';
         return `
-          <tfoot>
+          <td class="${s.footCell} border-l border-slate-700/70">
+            <div class="flex items-center justify-between font-bold">
+              <span class="tabular-nums">${formatValue(fteToDisplayValue(totA, pk, ui.timeUnit))}</span>
+              <span class="tabular-nums ${pctCls}">${pct}%</span>
+            </div>
+            <div class="${s.footSub} text-slate-400 mt-0.5">Cap: ${formatValue(fteToDisplayValue(totC, pk, ui.timeUnit))}</div>
+          </td>`;
+      }).join('');
+
+      const footerHtml = isMeeting
+        ? ''
+        : `<tfoot>
             <tr class="bg-slate-900 text-white">
               <td class="sticky left-0 z-20 bg-slate-900 ${s.footCell} font-bold uppercase tracking-wider sticky-col-shadow">
                 Company Total (${unitShortLabel()})
@@ -2626,7 +2826,6 @@
               ${footerCells}
             </tr>
           </tfoot>`;
-      })();
 
       wrapper.innerHTML = `
         <table class="w-full border-collapse text-left">
@@ -2645,7 +2844,100 @@
         </table>`;
     }
 
-    /* ---------- Drag-and-Drop Handlers ---------- */
+    /* ---------- Drag-and-Drop Handlers (Cells & Row Reordering) ---------- */
+
+    function handleRowDragStart(event) {
+      const rowId = event.currentTarget.dataset.dragRowId;
+      activeDragPayload = { type: 'row', rowId, axis: ui.axis };
+      const tr = event.currentTarget.closest('tr');
+      if (tr) tr.classList.add('dragging-item');
+      event.dataTransfer.effectAllowed = 'move';
+      try { event.dataTransfer.setData('text/plain', JSON.stringify(activeDragPayload)); } catch (e) {}
+    }
+
+    function handleRowDragEnd(event) {
+      const tr = event.currentTarget.closest('tr');
+      if (tr) tr.classList.remove('dragging-item');
+      document.querySelectorAll('.drag-over-row-top, .drag-over-row-bottom').forEach(el => {
+        el.classList.remove('drag-over-row-top', 'drag-over-row-bottom');
+      });
+      activeDragPayload = null;
+    }
+
+    function handleRowDragOver(event, targetRowId) {
+      if (!activeDragPayload || activeDragPayload.type !== 'row') return;
+      if (activeDragPayload.rowId === targetRowId) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      const tr = event.currentTarget;
+      const rect = tr.getBoundingClientRect();
+      const placeBefore = (event.clientY - rect.top) < rect.height / 2;
+      tr.classList.toggle('drag-over-row-top', placeBefore);
+      tr.classList.toggle('drag-over-row-bottom', !placeBefore);
+    }
+
+    function handleRowDragLeave(event) {
+      if (!activeDragPayload || activeDragPayload.type !== 'row') return;
+      const tr = event.currentTarget;
+      if (!tr.contains(event.relatedTarget)) {
+        tr.classList.remove('drag-over-row-top', 'drag-over-row-bottom');
+      }
+    }
+
+    function handleRowDrop(event, targetRowId) {
+      if (!activeDragPayload || activeDragPayload.type !== 'row') return;
+      event.preventDefault();
+      const tr = event.currentTarget;
+      const rect = tr.getBoundingClientRect();
+      const placeBefore = (event.clientY - rect.top) < rect.height / 2;
+      tr.classList.remove('drag-over-row-top', 'drag-over-row-bottom');
+
+      const srcId = activeDragPayload.rowId;
+      if (!srcId || srcId === targetRowId) return;
+
+      const db = getActiveDB();
+      const list = ui.axis === 'department' ? db.departments : db.projects;
+      const fromIdx = list.findIndex(x => x.id === srcId);
+      if (fromIdx === -1) return;
+
+      const [moved] = list.splice(fromIdx, 1);
+      let toIdx = list.findIndex(x => x.id === targetRowId);
+      if (toIdx === -1) {
+        list.push(moved);
+      } else {
+        if (!placeBefore) toIdx += 1;
+        list.splice(toIdx, 0, moved);
+      }
+
+      touchDBAndSave();
+      renderAll();
+      showToast(`Reordered "${moved.name}"`, 'success');
+    }
+
+    function moveRowOrder(axis, rowId, direction) {
+      const db = getActiveDB();
+      const list = axis === 'department' ? db.departments : db.projects;
+      const visibleIds = (axis === 'department'
+        ? db.departments.filter(d => ui.filterDept === 'all' || d.id === ui.filterDept)
+        : db.projects.filter(p => ui.filterProj === 'all' || p.id === ui.filterProj)
+      ).map(x => x.id);
+
+      const visPos = visibleIds.indexOf(rowId);
+      const targetVisPos = visPos + direction;
+      if (visPos === -1 || targetVisPos < 0 || targetVisPos >= visibleIds.length) return;
+
+      const targetId = visibleIds[targetVisPos];
+      const idxA = list.findIndex(x => x.id === rowId);
+      const idxB = list.findIndex(x => x.id === targetId);
+      if (idxA === -1 || idxB === -1) return;
+
+      const temp = list[idxA];
+      list[idxA] = list[idxB];
+      list[idxB] = temp;
+
+      touchDBAndSave();
+      renderAll();
+    }
 
     function handleDragStart(event) {
       const el = event.currentTarget;
@@ -2669,6 +2961,7 @@
     }
 
     function handleCellDragOver(event) {
+      if (activeDragPayload && activeDragPayload.type === 'row') return;
       event.preventDefault();
       event.dataTransfer.dropEffect = (ui.dragMode === 'copy' || event.altKey) ? 'copy' : 'move';
       event.currentTarget.classList.add('drag-over-cell');
@@ -2679,6 +2972,7 @@
     }
 
     function handleCellDrop(event, targetRowId, targetPeriodKey) {
+      if (activeDragPayload && activeDragPayload.type === 'row') return;
       event.preventDefault();
       event.currentTarget.classList.remove('drag-over-cell');
       if (!activeDragPayload) return;
@@ -2751,6 +3045,23 @@
       showToast(`Extended into ${nextPeriod}`, 'success');
     }
 
+    function quickStepAllocation(event, deptId, projId, periodKey, dir) {
+      event.stopPropagation();
+      const db = getActiveDB();
+      const cur = getAllocationForPeriod(deptId, projId, periodKey, ui.timeUnit, db.allocations);
+      const { step, decimals } = getManpowerStep(ui.manpowerUnit);
+      const curDisp = fteToDisplayValue(cur.avgFte, periodKey, ui.timeUnit, ui.manpowerUnit);
+      const factor = Math.pow(10, decimals);
+      const nextDisp = Math.max(0, Math.round((curDisp + dir * step) * factor) / factor);
+      const nextFte = displayValueToFte(nextDisp, periodKey, ui.timeUnit, ui.manpowerUnit);
+
+      setAllocationForPeriod(deptId, projId, periodKey, ui.timeUnit, nextFte, db);
+      const dCode = db.departments.find(d => d.id === deptId)?.code || deptId;
+      const pCode = db.projects.find(p => p.id === projId)?.code || projId;
+      recordChange('Allocation', `[${dCode} -> ${pCode}] adjusted to ${formatValue(nextDisp)} in ${periodKey}`);
+      renderAll();
+    }
+
     /* ============================================================================
      * 6. HEALTH & EVOLUTION DASHBOARD RENDERER
      * ============================================================================ */
@@ -2762,6 +3073,7 @@
       const overT = db.settings.overThreshold || 100;
       const visibleDepts = db.departments.filter(d => ui.filterDept === 'all' || d.id === ui.filterDept);
 
+      // Compute stats per period
       let totalAllocFte = 0, totalCapFte = 0, overSlots = 0, highSlots = 0;
       const stats = periods.map(pk => {
         let a = 0, c = 0;
@@ -2789,6 +3101,7 @@
       const avgPct = totalCapFte > 0 ? Math.round((totalAllocFte / totalCapFte) * 100) : 0;
       const slippedMs = db.milestones.filter(m => getMilestoneDriftDays(m) > 0 && m.status !== 'Completed').length;
 
+      // Render KPIs
       document.getElementById('healthKpis').innerHTML = `
         <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
           <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Avg Org Utilisation</div>
@@ -2811,6 +3124,7 @@
           <div class="text-[11px] text-slate-500 mt-1">${db.snapshots.length} saved baseline snapshots</div>
         </div>`;
 
+      // Render SVG Chart
       const chartBox = document.getElementById('healthSvgChart');
       if (stats.length === 0) {
         chartBox.innerHTML = '<p class="text-xs text-slate-400 py-8 text-center">No periods to chart.</p>';
@@ -2824,7 +3138,7 @@
         const maxVal = Math.max(1, ...stats.map(s => Math.max(s.allocDisp, s.capDisp))) * 1.15;
         const yScale = v => pad.top + plotH - (v / maxVal) * plotH;
         const slotW = plotW / stats.length;
-        const barW = Math.min(48, slotW * 0.52);
+        const barW = Math.min(42, slotW * 0.56);
 
         const gridStroke = ui.darkMode ? '#334155' : '#e2e8f0';
         const axisText = ui.darkMode ? '#94a3b8' : '#64748b';
@@ -2865,7 +3179,7 @@
         });
 
         const capLineHtml = `
-          ${capPoints.length > 1 ? `<polyline fill="none" stroke="${capStroke}" stroke-width="2.5" stroke-dasharray="6,4" points="${capPoints.join(' ')}" />` : ''}
+          <polyline fill="none" stroke="${capStroke}" stroke-width="2.5" stroke-dasharray="6,4" points="${capPoints.join(' ')}" />
           ${stats.map((s, idx) => {
             const cx = pad.left + idx * slotW + slotW / 2;
             const cy = yScale(s.capDisp);
@@ -2875,6 +3189,7 @@
         chartBox.innerHTML = `<svg viewBox="0 0 ${width} ${height}" class="w-full min-w-[500px] h-auto">${gridHtml}${barsHtml}${capLineHtml}</svg>`;
       }
 
+      // Per-Department Health Bars
       const deptList = document.getElementById('deptHealthList');
       if (visibleDepts.length === 0) {
         deptList.innerHTML = '<p class="text-xs text-slate-400">No departments configured.</p>';
@@ -2906,6 +3221,7 @@
         }).join('');
       }
 
+      // Snapshot Compare Selector & Table
       const sel = document.getElementById('compareSnapshotSelect');
       sel.innerHTML = `<option value="">Select Snapshot to Compare...</option>` +
         db.snapshots.map(s => `<option value="${s.id}" ${ui.compareSnapshotId === s.id ? 'selected' : ''}>${escapeHtml(s.name)} (${new Date(s.createdAt).toLocaleDateString()})</option>`).join('');
@@ -3060,17 +3376,29 @@
       if (db.departments.length === 0) {
         dBody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No departments yet. Click "+ Add Department" to start.</td></tr>`;
       } else {
-        dBody.innerHTML = db.departments.map(d => {
+        dBody.innerHTML = db.departments.map((d, idx) => {
           const overrideCount = Object.keys(db.capacityOverrides || {}).filter(k => k.startsWith(`${d.id}::`)).length;
           return `
             <tr class="hover:bg-slate-50/70">
-              <td class="px-4 py-3 font-bold text-slate-900 flex items-center gap-2">
-                <span class="w-3 h-3 rounded-full shrink-0" style="background:${d.color}"></span>
-                ${escapeHtml(d.name)}
+              <td class="px-4 py-3 font-bold text-slate-900">
+                <div class="flex items-center gap-2">
+                  <div class="inline-flex flex-col text-[9px] leading-none text-slate-400">
+                    <button type="button" onclick="moveRowOrder('department', '${d.id}', -1)" ${idx === 0 ? 'disabled' : ''} title="Move up" class="hover:text-indigo-700 disabled:opacity-25">&#9650;</button>
+                    <button type="button" onclick="moveRowOrder('department', '${d.id}', 1)" ${idx === db.departments.length - 1 ? 'disabled' : ''} title="Move down" class="hover:text-indigo-700 disabled:opacity-25">&#9660;</button>
+                  </div>
+                  <span class="w-3 h-3 rounded-full shrink-0" style="background:${d.color}"></span>
+                  <span>${escapeHtml(d.name)}</span>
+                </div>
               </td>
               <td class="px-4 py-3 font-mono font-bold text-slate-600">${escapeHtml(d.code)}</td>
               <td class="px-4 py-3 text-slate-600">${escapeHtml(d.manager || '—')}</td>
-              <td class="px-4 py-3 font-bold text-slate-900">${d.defaultCapacity} FTE</td>
+              <td class="px-4 py-3 font-bold text-slate-900">
+                <div class="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 overflow-hidden">
+                  <button type="button" onclick="quickStepDeptDefaultCapacity('${d.id}', -0.5)" title="Decrease default capacity by 0.5 FTE" class="px-2 py-0.5 hover:bg-rose-50 hover:text-rose-700 text-slate-600 font-bold transition">&minus;</button>
+                  <span class="px-2.5 py-0.5 tabular-nums border-x border-slate-200 bg-white">${d.defaultCapacity} FTE</span>
+                  <button type="button" onclick="quickStepDeptDefaultCapacity('${d.id}', 0.5)" title="Increase default capacity by 0.5 FTE" class="px-2 py-0.5 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 font-bold transition">+</button>
+                </div>
+              </td>
               <td class="px-4 py-3">
                 <button onclick="openCapacityModal('${d.id}', '${ui.timeUnit === 'month' ? ui.startMonth : ui.startWeek}')"
                   class="px-2 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-700 text-[11px] font-semibold hover:bg-sky-100 transition">
@@ -3089,11 +3417,17 @@
       if (db.projects.length === 0) {
         pBody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No projects yet. Click "+ Add Project" to start.</td></tr>`;
       } else {
-        pBody.innerHTML = db.projects.map(p => `
+        pBody.innerHTML = db.projects.map((p, idx) => `
           <tr class="hover:bg-slate-50/70">
-            <td class="px-4 py-3 font-bold text-slate-900 flex items-center gap-2">
-              <span class="w-3 h-3 rounded-full shrink-0" style="background:${p.color}"></span>
-              ${escapeHtml(p.name)}
+            <td class="px-4 py-3 font-bold text-slate-900">
+              <div class="flex items-center gap-2">
+                <div class="inline-flex flex-col text-[9px] leading-none text-slate-400">
+                  <button type="button" onclick="moveRowOrder('project', '${p.id}', -1)" ${idx === 0 ? 'disabled' : ''} title="Move up" class="hover:text-indigo-700 disabled:opacity-25">&#9650;</button>
+                  <button type="button" onclick="moveRowOrder('project', '${p.id}', 1)" ${idx === db.projects.length - 1 ? 'disabled' : ''} title="Move down" class="hover:text-indigo-700 disabled:opacity-25">&#9660;</button>
+                </div>
+                <span class="w-3 h-3 rounded-full shrink-0" style="background:${p.color}"></span>
+                <span>${escapeHtml(p.name)}</span>
+              </div>
             </td>
             <td class="px-4 py-3 font-mono font-bold text-indigo-700">${escapeHtml(p.code)}</td>
             <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-md bg-slate-100 font-semibold">${escapeHtml(p.status)}</span></td>
@@ -3153,6 +3487,16 @@
       recordChange('Settings', `Updated unit factors (${db.settings.daysPerWeek}d/wk, ${db.settings.hoursPerDay}h/d) & thresholds (${db.settings.warnThreshold}%/${db.settings.overThreshold}%)`);
       renderAll();
       showToast('Settings saved', 'success');
+    }
+
+    function quickStepDeptDefaultCapacity(deptId, delta) {
+      const db = getActiveDB();
+      const d = db.departments.find(x => x.id === deptId);
+      if (!d) return;
+      const next = Math.max(0, Math.round(((Number(d.defaultCapacity) || 0) + delta) * 100) / 100);
+      d.defaultCapacity = next;
+      recordChange('Department', `Adjusted [${d.code}] ${d.name} default capacity to ${next} FTE`);
+      renderAll();
     }
 
     /* ============================================================================
@@ -4123,7 +4467,7 @@
       const chipsHtml = suggestions.map(name => {
         const isCur = name.toLowerCase() === current.toLowerCase();
         return `
-          <button type="button" onclick="selectQuickUser(${JSON.stringify(name).replace(/"/g, '&quot;')})"
+          <button type="button" data-user-name="${escapeHtml(name)}" onclick="selectQuickUser(this.dataset.userName)"
             class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition ${isCur ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'}">
             <span class="w-5 h-5 rounded-md ${isCur ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-700'} text-[9px] font-extrabold flex items-center justify-center shrink-0">${escapeHtml(getUserInitials(name))}</span>
             <span>${escapeHtml(name)}</span>
@@ -4199,7 +4543,7 @@
       if (!primaryRow) return;
 
       const hdr = formatPeriodHeader(periodKey, ui.timeUnit);
-      const secondaryList = isDeptAxis ? db.projects : db.departments;
+      const secondaryList = isDeptAxis ? getSortedProjects(db) : getSortedDepartments(db);
       const warnT = db.settings.warnThreshold || 85;
       const overT = db.settings.overThreshold || 100;
 
@@ -4244,16 +4588,22 @@
           : '';
 
         return `
-          <div class="p-3 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2" style="border-left: 4px solid ${item.color};">
+          <div class="accent-card p-3 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2" style="--accent-color:${item.color}; --accent-w:4px; border-left: 4px solid ${item.color};">
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-1.5 min-w-0">
                 <span class="font-mono font-bold text-[11px] px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700 shrink-0">${escapeHtml(item.code)}</span>
                 <span class="font-bold text-xs text-slate-900 truncate">${escapeHtml(item.name)}</span>
               </div>
-              <div class="flex items-center gap-2 shrink-0">
-                <span class="text-xs font-bold text-slate-800 tabular-nums">${valStr}</span>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <div class="inline-flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
+                  <button type="button" onclick="stepAllocationInCellModal('${rowId}', '${deptId}', '${projId}', '${periodKey}', -1)" title="Decrease allocation"
+                    class="px-2 py-0.5 hover:bg-rose-50 hover:text-rose-700 text-slate-700 font-bold transition">&minus;</button>
+                  <span class="text-xs font-bold text-slate-800 tabular-nums px-2 border-x border-slate-200">${valStr}</span>
+                  <button type="button" onclick="stepAllocationInCellModal('${rowId}', '${deptId}', '${projId}', '${periodKey}', 1)" title="Increase allocation"
+                    class="px-2 py-0.5 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-bold transition">+</button>
+                </div>
                 <button type="button" onclick="openAllocationModal('${deptId}', '${projId}', '${periodKey}')"
-                  class="px-2 py-0.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-indigo-700 text-[11px] font-semibold transition">Edit FTE</button>
+                  class="px-2 py-0.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-indigo-700 text-[11px] font-semibold transition">Edit</button>
               </div>
             </div>
             <textarea rows="3"
@@ -4275,7 +4625,7 @@
         ? `<div class="flex items-center gap-2 pt-1">
              <select id="cellAddCommentItemSelect" class="flex-1 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-medium">
                <option value="">+ Add comments for another ${isDeptAxis ? 'project' : 'department'}...</option>
-               ${unusedItems.map(it => `<option value="${it.id}">[${escapeHtml(it.code)}] ${escapeHtml(it.name)}</option>`).join('')}
+               ${unusedItems.map(it => `<option value="${it.id}">${escapeHtml(isDeptAxis ? formatProjectOptionLabel(it) : `${it.name} [${it.code}]`)}</option>`).join('')}
              </select>
              <button type="button" onclick="addProjectCommentRowInModal('${rowId}', '${periodKey}')"
                class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold transition">Add Box</button>
@@ -4344,7 +4694,9 @@
 
       const container = document.getElementById('cellCommentsCardsContainer');
       const div = document.createElement('div');
-      div.className = 'p-3 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2';
+      div.className = 'accent-card p-3 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2';
+      div.style.setProperty('--accent-color', item.color);
+      div.style.setProperty('--accent-w', '4px');
       div.style.borderLeft = `4px solid ${item.color}`;
       div.innerHTML = `
         <div class="flex items-center justify-between gap-2">
@@ -4398,6 +4750,30 @@
       renderAll();
     }
 
+    function stepAllocationInCellModal(rowId, deptId, projId, periodKey, dir) {
+      // Preserve any unsaved comment edits typed in the modal before refreshing it
+      const db = getActiveDB();
+      document.querySelectorAll('.cell-comment-input').forEach(ta => {
+        const dId = ta.dataset.commentDept;
+        const pId = ta.dataset.commentProj;
+        if (dId && pId) setCellProjectComment(dId, pId, periodKey, ta.value, db);
+      });
+
+      const cur = getAllocationForPeriod(deptId, projId, periodKey, ui.timeUnit, db.allocations);
+      const { step, decimals } = getManpowerStep(ui.manpowerUnit);
+      const curDisp = fteToDisplayValue(cur.avgFte, periodKey, ui.timeUnit, ui.manpowerUnit);
+      const factor = Math.pow(10, decimals);
+      const nextDisp = Math.max(0, Math.round((curDisp + dir * step) * factor) / factor);
+      const nextFte = displayValueToFte(nextDisp, periodKey, ui.timeUnit, ui.manpowerUnit);
+
+      setAllocationForPeriod(deptId, projId, periodKey, ui.timeUnit, nextFte, db);
+      const dCode = db.departments.find(d => d.id === deptId)?.code || deptId;
+      const pCode = db.projects.find(p => p.id === projId)?.code || projId;
+      recordChange('Allocation', `[${dCode} -> ${pCode}] adjusted to ${formatValue(nextDisp)} in ${periodKey}`);
+      renderAll();
+      openCellDetailModal(rowId, periodKey);
+    }
+
     /* ---------- Allocation Modal ---------- */
 
     function openAllocationModal(preDept = '', preProj = '', prePeriod = '') {
@@ -4408,9 +4784,11 @@
         return;
       }
 
+      const sortedDepts = getSortedDepartments(db);
+      const sortedProjs = getSortedProjects(db);
       const periods = getVisiblePeriods();
-      const selDept = preDept || db.departments[0].id;
-      const selProj = preProj || db.projects[0].id;
+      const selDept = preDept || sortedDepts[0].id;
+      const selProj = preProj || sortedProjs[0].id;
       const selPeriod = prePeriod || periods[0];
 
       const existing = getAllocationForPeriod(selDept, selProj, selPeriod, ui.timeUnit, db.allocations);
@@ -4430,7 +4808,7 @@
             <div>
               <label class="block font-semibold text-slate-700 mb-1">Department</label>
               <select id="mAllocDept" onchange="onAllocModalContextChange()" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium">
-                ${db.departments.map(d => `<option value="${d.id}" ${d.id === selDept ? 'selected' : ''}>[${escapeHtml(d.code)}] ${escapeHtml(d.name)}</option>`).join('')}
+                ${sortedDepts.map(d => `<option value="${d.id}" ${d.id === selDept ? 'selected' : ''}>${escapeHtml(d.name)} [${escapeHtml(d.code)}]</option>`).join('')}
               </select>
             </div>
             <div>
@@ -4439,7 +4817,7 @@
                 <span id="mAllocProjCodeBadge" class="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200"></span>
               </div>
               <select id="mAllocProj" onchange="onAllocModalContextChange()" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium">
-                ${db.projects.map(p => `<option value="${p.id}" ${p.id === selProj ? 'selected' : ''}>[${escapeHtml(p.code)}] ${escapeHtml(p.name)}</option>`).join('')}
+                ${sortedProjs.map(p => `<option value="${p.id}" ${p.id === selProj ? 'selected' : ''}>${escapeHtml(formatProjectOptionLabel(p))}</option>`).join('')}
               </select>
             </div>
           </div>
@@ -4453,8 +4831,14 @@
             </div>
             <div>
               <label class="block font-semibold text-slate-700 mb-1">Allocation (${unitShortLabel()})</label>
-              <input id="mAllocValue" type="number" step="0.1" min="0" value="${dispVal}" placeholder="e.g. 1.5" oninput="refreshAllocModalPreview()"
-                class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900" />
+              <div class="flex items-center gap-1.5">
+                <button type="button" onclick="stepAllocModalValue(-1)" title="Decrease allocation"
+                  class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition shrink-0">&minus;</button>
+                <input id="mAllocValue" type="number" step="0.1" min="0" value="${dispVal}" placeholder="e.g. 1.5" oninput="refreshAllocModalPreview()"
+                  class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold text-slate-900 text-center" />
+                <button type="button" onclick="stepAllocModalValue(1)" title="Increase allocation"
+                  class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition shrink-0">+</button>
+              </div>
             </div>
           </div>
 
@@ -4466,8 +4850,16 @@
 
           <div>
             <label class="block font-semibold text-slate-700 mb-1">Repeat across consecutive ${ui.timeUnit}s</label>
-            <input id="mAllocRepeat" type="number" min="1" max="12" value="1" class="w-28 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
-            <span class="text-slate-500 ml-2">Set &gt; 1 to quickly fill upcoming ${ui.timeUnit}s</span>
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="inline-flex items-center gap-1">
+                <button type="button" onclick="stepNumericInput('mAllocRepeat', -1, 1, 12, 0)"
+                  class="w-8 h-8 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition">&minus;</button>
+                <input id="mAllocRepeat" type="number" min="1" max="12" value="1" class="w-16 px-2 py-1.5 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-center" />
+                <button type="button" onclick="stepNumericInput('mAllocRepeat', 1, 1, 12, 0)"
+                  class="w-8 h-8 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition">+</button>
+              </div>
+              <span class="text-slate-500">Set &gt; 1 to quickly fill upcoming ${ui.timeUnit}s</span>
+            </div>
           </div>
 
           <div id="mAllocConversionPreview" class="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 text-indigo-950 space-y-1"></div>
@@ -4482,6 +4874,11 @@
         </div>`);
 
       refreshAllocModalPreview();
+    }
+
+    function stepAllocModalValue(dir) {
+      const { step, decimals } = getManpowerStep(ui.manpowerUnit);
+      stepNumericInput('mAllocValue', dir * step, 0, 10000, decimals, refreshAllocModalPreview);
     }
 
     function onAllocModalContextChange() {
@@ -4517,6 +4914,9 @@
       const proj = db.projects.find(p => p.id === projId);
       if (codeBadge && proj) {
         codeBadge.textContent = `Code: ${proj.code}`;
+        codeBadge.classList.add('accent-card');
+        codeBadge.style.setProperty('--accent-color', proj.color);
+        codeBadge.style.setProperty('--accent-w', '3px');
         codeBadge.style.borderLeft = `3px solid ${proj.color}`;
       }
 
@@ -4604,8 +5004,14 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="block font-semibold text-slate-700 mb-1">Capacity (FTE Rate)</label>
-              <input id="mCapValue" type="number" step="0.25" min="0" value="${Math.round(capObj.avgFte * 100) / 100}"
-                class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold" />
+              <div class="flex items-center gap-1.5">
+                <button type="button" onclick="stepNumericInput('mCapValue', -0.25, 0, 1000, 2)"
+                  class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition shrink-0">&minus;</button>
+                <input id="mCapValue" type="number" step="0.25" min="0" value="${Math.round(capObj.avgFte * 100) / 100}"
+                  class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold text-center" />
+                <button type="button" onclick="stepNumericInput('mCapValue', 0.25, 0, 1000, 2)"
+                  class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition shrink-0">+</button>
+              </div>
             </div>
             <div>
               <label class="block font-semibold text-slate-700 mb-1">Apply Scope</label>
@@ -4693,7 +5099,13 @@
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label class="block font-semibold text-slate-700 mb-1">Default Capacity (FTE)</label>
-              <input id="mDeptCap" type="number" step="0.5" min="0" value="${d ? d.defaultCapacity : 5}" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold" />
+              <div class="flex items-center gap-1">
+                <button type="button" onclick="stepNumericInput('mDeptCap', -0.5, 0, 1000, 2)"
+                  class="w-8 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition shrink-0">&minus;</button>
+                <input id="mDeptCap" type="number" step="0.5" min="0" value="${d ? d.defaultCapacity : 5}" class="w-full px-2 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold text-center" />
+                <button type="button" onclick="stepNumericInput('mDeptCap', 0.5, 0, 1000, 2)"
+                  class="w-8 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-sm transition shrink-0">+</button>
+              </div>
             </div>
             <div>
               <label class="block font-semibold text-slate-700 mb-1">Manager / Lead</label>
@@ -4853,9 +5265,11 @@
         showToast('Please add a Project first before creating milestones.', 'warning');
         return;
       }
+      const sortedProjs = getSortedProjects(db);
+      const sortedDepts = getSortedDepartments(db);
       const ms = db.milestones.find(x => x.id === msId);
       const todayISO = new Date().toISOString().slice(0, 10);
-      const selProj = ms ? ms.projectId : (preProjId || db.projects[0].id);
+      const selProj = ms ? ms.projectId : (preProjId || sortedProjs[0].id);
       const selDept = ms ? (ms.deptId || '') : preDeptId;
       const targetDate = ms ? ms.date : (preDate || todayISO);
       const baseDate = ms ? (ms.baselineDate || ms.date) : targetDate;
@@ -4875,20 +5289,26 @@
             <div>
               <label class="block font-semibold text-slate-700 mb-1">Project</label>
               <select id="mMsProj" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium">
-                ${db.projects.map(p => `<option value="${p.id}" ${p.id === selProj ? 'selected' : ''}>[${escapeHtml(p.code)}] ${escapeHtml(p.name)}</option>`).join('')}
+                ${sortedProjs.map(p => `<option value="${p.id}" ${p.id === selProj ? 'selected' : ''}>${escapeHtml(formatProjectOptionLabel(p))}</option>`).join('')}
               </select>
             </div>
             <div>
               <label class="block font-semibold text-slate-700 mb-1">Owning Department (Optional)</label>
               <select id="mMsDept" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium">
                 <option value="">Auto (Active Depts)</option>
-                ${db.departments.map(d => `<option value="${d.id}" ${d.id === selDept ? 'selected' : ''}>[${escapeHtml(d.code)}] ${escapeHtml(d.name)}</option>`).join('')}
+                ${sortedDepts.map(d => `<option value="${d.id}" ${d.id === selDept ? 'selected' : ''}>${escapeHtml(d.name)} [${escapeHtml(d.code)}]</option>`).join('')}
               </select>
             </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label class="block font-semibold text-slate-700 mb-1">Target Date</label>
+              <div class="flex items-center justify-between mb-1">
+                <label class="block font-semibold text-slate-700">Target Date</label>
+                <div class="inline-flex items-center gap-1 text-[10px]">
+                  <button type="button" onclick="stepDateInput('mMsDate', -7)" title="Move earlier by 1 week" class="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition">&minus;1w</button>
+                  <button type="button" onclick="stepDateInput('mMsDate', 7)" title="Move later by 1 week" class="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition">+1w</button>
+                </div>
+              </div>
               <input id="mMsDate" type="date" value="${targetDate}" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-mono" />
             </div>
             <div>
@@ -5102,26 +5522,30 @@
       }
       persistUIPrefs();
       renderAll();
+      const modeNames = { accent: 'accent-border', fill: 'color-filled', fte: 'FTE-scaled' };
       showToast(
         ui.meetingMode
-          ? `Meeting View ON — clean ${ui.meetingHorizon}-period layout with color-filled cards`
+          ? `Meeting View ON — clean ${ui.meetingHorizon}-period layout with ${modeNames[getActiveCellColorMode()]} cards`
           : 'Standard View restored',
         'info'
       );
     }
 
-    function toggleCellColorMode() {
+    function setCellColorMode(mode) {
+      const valid = (mode === 'fill' || mode === 'fte') ? mode : 'accent';
       if (ui.meetingMode) {
-        ui.meetingCellColorMode = ui.meetingCellColorMode === 'fill' ? 'accent' : 'fill';
+        ui.meetingCellColorMode = valid;
       } else {
-        ui.cellColorMode = ui.cellColorMode === 'fill' ? 'accent' : 'fill';
+        ui.cellColorMode = valid;
       }
       persistUIPrefs();
       renderAll();
-      showToast(
-        isCellColorFill() ? 'Cell cards switched to Full Color Fill' : 'Cell cards switched to Accent Border',
-        'info'
-      );
+      const labels = {
+        accent: 'Accent Border',
+        fill: 'Full Color Fill',
+        fte: 'FTE (% of Available Capacity)',
+      };
+      showToast(`Cell cards switched to ${labels[valid]}`, 'info');
     }
 
     function toggleShowCellComments() {
@@ -5174,6 +5598,19 @@
       }
       persistUIPrefs();
       renderAll();
+    }
+    function stepHorizon(delta) {
+      const options = [1, 2, 4, 6, 8, 12, 16, 24];
+      const cur = getActiveHorizon();
+      let idx = options.indexOf(cur);
+      if (idx === -1) {
+        idx = options.findIndex(v => v >= cur);
+        if (idx === -1) idx = options.length - 1;
+      }
+      const nextIdx = Math.max(0, Math.min(options.length - 1, idx + delta));
+      if (options[nextIdx] !== cur) {
+        setHorizon(options[nextIdx]);
+      }
     }
     function shiftStartPeriod(delta) {
       if (ui.timeUnit === 'month') ui.startMonth = addMonthsToMonthKey(ui.startMonth, delta);
