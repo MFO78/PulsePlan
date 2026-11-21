@@ -80,7 +80,7 @@
       const showComments = Boolean(ui.showCellComments);
 
       const visibleDepts = db.departments.filter(d => ui.filterDept === 'all' || d.id === ui.filterDept);
-      const visibleProjs = db.projects.filter(p => (!p.archived || ui.filterProj === p.id) && (ui.filterProj === 'all' || p.id === ui.filterProj));
+      const visibleProjs = getSortedProjects(db).filter(p => (!p.archived || ui.filterProj === p.id) && (ui.filterProj === 'all' || p.id === ui.filterProj));
       const rows = ui.axis === 'department' ? visibleDepts : visibleProjs;
 
       if (db.departments.length === 0 || db.projects.length === 0) {
@@ -764,7 +764,7 @@
 
       const visibleDepts = db.departments.filter(d => ui.filterDept === 'all' || d.id === ui.filterDept);
       const searchQ = (ui.matrixSearch || '').trim().toLowerCase();
-      const visibleProjs = db.projects.filter(p => {
+      const visibleProjs = getSortedProjects(db).filter(p => {
         if (p.archived && ui.filterProj !== p.id) return false;
         if (ui.filterProj !== 'all' && p.id !== ui.filterProj) return false;
         if (!isMeeting && ui.filterAtRiskOnly && p.status !== 'At Risk') return false;
@@ -1045,7 +1045,7 @@
       const bodyRows = rows.map((row, rowIdx) => {
         const isFirstRow = rowIdx === 0;
         const isLastRow = rowIdx === rows.length - 1;
-        const reorderControlsHtml = rows.length > 1 && !isCompactGrid
+        const reorderControlsHtml = ui.axis === 'department' && rows.length > 1 && !isCompactGrid
           ? `<div class="flex flex-col items-center justify-center shrink-0 -ml-1 mr-0.5 text-slate-400 ${isMeeting ? 'opacity-0 group-hover/row:opacity-100 transition' : ''}">
                <button type="button" draggable="false" aria-label="Move ${escapeHtml(row.name)} up" onclick="event.stopPropagation(); moveRowOrder('${ui.axis}', '${row.id}', -1)"
                  ${isFirstRow ? 'disabled' : ''} title="Move row up"

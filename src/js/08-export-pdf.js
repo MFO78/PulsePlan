@@ -73,8 +73,9 @@
       const header = ['Department', 'Dept Code', 'Project', 'Project Code', ...periods.map(pk => `${formatPeriodHeader(pk, ui.timeUnit).title} (${unitShortLabel()})`)];
       const rows = [header.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')];
 
+      const sortedProjs = getSortedProjects(db);
       db.departments.forEach(d => {
-        db.projects.forEach(p => {
+        sortedProjs.forEach(p => {
           const vals = periods.map(pk => {
             const a = getAllocationForPeriod(d.id, p.id, pk, ui.timeUnit, db.allocations);
             return a.hasData ? formatValue(fteToDisplayValue(a.avgFte, pk, ui.timeUnit), ui.manpowerUnit, false) : '0';
@@ -1113,7 +1114,7 @@
         const colsPerPage = Math.max(4, Math.min(6, parseInt(opts.colsPerPage, 10) || 6));
 
         const visibleDepts = db.departments.filter(d => ui.filterDept === 'all' || d.id === ui.filterDept);
-        const visibleProjs = db.projects.filter(p => ui.filterProj === 'all' || p.id === ui.filterProj);
+        const visibleProjs = getSortedProjects(db).filter(p => (!p.archived || ui.filterProj === p.id) && (ui.filterProj === 'all' || p.id === ui.filterProj));
         const rows = ui.axis === 'department' ? visibleDepts : visibleProjs;
 
         const ensureSpace = (neededMm, curY) => {

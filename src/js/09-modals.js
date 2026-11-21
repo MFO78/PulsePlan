@@ -1076,11 +1076,13 @@
       if (id) {
         const p = db.projects.find(x => x.id === id);
         if (p) Object.assign(p, { name, code, status, priority, owner, color, budgetDays, archived });
+        db.projects = getSortedProjects(db);
         if (archived && ui.filterProj === id) ui.filterProj = 'all';
         if (archived && ui.spotlightProjId === id) ui.spotlightProjId = '';
         recordChange('Project', `Updated project [${code}] ${name} (${status}${budgetDays > 0 ? `, budget ${budgetDays}d` : ''}${archived ? ', archived' : ''})`);
       } else {
         db.projects.push({ id: uid('p'), name, code, status, priority, owner, color, budgetDays, archived });
+        db.projects = getSortedProjects(db);
         recordChange('Project', `Added project [${code}] ${name}${budgetDays > 0 ? ` (budget ${budgetDays}d)` : ''}`);
       }
       closeModal();

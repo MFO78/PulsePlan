@@ -289,7 +289,7 @@
 
     function computeSnapshotDiff(db, stateA, stateB, periods, timeUnit, unit = ui.manpowerUnit) {
       const visibleDepts = db.departments.filter(d => ui.filterDept === 'all' || d.id === ui.filterDept);
-      const visibleProjs = db.projects.filter(p => ui.filterProj === 'all' || p.id === ui.filterProj);
+      const visibleProjs = getSortedProjects(db).filter(p => ui.filterProj === 'all' || p.id === ui.filterProj);
       const isRateUnit = unit === 'fte';
       const divisor = (isRateUnit && periods.length > 0) ? periods.length : 1;
 
@@ -377,7 +377,7 @@
           .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
           .slice(0, 3);
         return { proj: pm.proj, totalA, totalB, delta, pct, drivers, hasChange: Math.abs(delta) > 0.005 || drivers.length > 0 };
-      }).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+      }).sort((a, b) => String(a.proj.code || '').localeCompare(String(b.proj.code || ''), undefined, { sensitivity: 'base', numeric: true }));
 
       cellChanges.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 

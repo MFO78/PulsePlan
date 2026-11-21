@@ -153,13 +153,15 @@
         { id: 'd_ops', name: 'Operations & QA', code: 'OPS', color: '#10b981', defaultCapacity: 3.5, manager: 'Liam Vance' },
       ];
 
-      db.projects = [
-        { id: 'p_nova', name: 'Project Nova (Core Platform)', code: 'NVA', color: '#4f46e5', status: 'Active', priority: 'High', owner: 'S. Chen', budgetDays: 700, archived: false },
-        { id: 'p_atlas', name: 'Atlas Mobile v3', code: 'ATL', color: '#0ea5e9', status: 'Active', priority: 'High', owner: 'M. Rossi', budgetDays: 450, archived: false },
-        { id: 'p_pulse', name: 'AI Copilot Analytics', code: 'AIC', color: '#8b5cf6', status: 'Active', priority: 'Medium', owner: 'P. Nair', budgetDays: 280, archived: false },
-        { id: 'p_cloud', name: 'Cloud EU Migration', code: 'CLD', color: '#10b981', status: 'At Risk', priority: 'Critical', owner: 'E. Rostova', budgetDays: 360, archived: false },
-        { id: 'p_brand', name: 'Enterprise Portal Refresh', code: 'EPR', color: '#f59e0b', status: 'Planned', priority: 'Low', owner: 'M. Bellini', budgetDays: 120, archived: false },
-      ];
+      db.projects = getSortedProjects({
+        projects: [
+          { id: 'p_nova', name: 'Project Nova (Core Platform)', code: 'NVA', color: '#4f46e5', status: 'Active', priority: 'High', owner: 'S. Chen', budgetDays: 700, archived: false },
+          { id: 'p_atlas', name: 'Atlas Mobile v3', code: 'ATL', color: '#0ea5e9', status: 'Active', priority: 'High', owner: 'M. Rossi', budgetDays: 450, archived: false },
+          { id: 'p_pulse', name: 'AI Copilot Analytics', code: 'AIC', color: '#8b5cf6', status: 'Active', priority: 'Medium', owner: 'P. Nair', budgetDays: 280, archived: false },
+          { id: 'p_cloud', name: 'Cloud EU Migration', code: 'CLD', color: '#10b981', status: 'At Risk', priority: 'Critical', owner: 'E. Rostova', budgetDays: 360, archived: false },
+          { id: 'p_brand', name: 'Enterprise Portal Refresh', code: 'EPR', color: '#f59e0b', status: 'Planned', priority: 'Low', owner: 'M. Bellini', budgetDays: 120, archived: false },
+        ],
+      });
 
       const setMonthAlloc = (deptId, projId, monthKey, fte) => {
         getWeeksInMonth(monthKey).forEach(wk => {
@@ -434,17 +436,19 @@
         ? src.projects
         : (src.projects && typeof src.projects === 'object' ? Object.values(src.projects) : []);
 
-      db.projects = rawProjs.filter(Boolean).map((p, idx) => {
-        const id = String(p.id || uid('p'));
-        const name = String(p.name || p.title || `Project ${idx + 1}`).trim();
-        const code = String(p.code || p.projectCode || p.shortCode || name.replace(/[^A-Za-z0-9]/g, '').slice(0, 3) || `P${idx + 1}`).toUpperCase();
-        const status = String(p.status || 'Active');
-        const priority = String(p.priority || 'Medium');
-        const owner = String(p.owner || p.lead || p.manager || '').trim();
-        const color = p.color || PALETTE[(idx + 2) % PALETTE.length];
-        const budgetDays = Math.max(0, Number(p.budgetDays ?? p.targetDays ?? 0) || 0);
-        const archived = Boolean(p.archived);
-        return { id, name, code, color, status, priority, owner, budgetDays, archived };
+      db.projects = getSortedProjects({
+        projects: rawProjs.filter(Boolean).map((p, idx) => {
+          const id = String(p.id || uid('p'));
+          const name = String(p.name || p.title || `Project ${idx + 1}`).trim();
+          const code = String(p.code || p.projectCode || p.shortCode || name.replace(/[^A-Za-z0-9]/g, '').slice(0, 3) || `P${idx + 1}`).toUpperCase();
+          const status = String(p.status || 'Active');
+          const priority = String(p.priority || 'Medium');
+          const owner = String(p.owner || p.lead || p.manager || '').trim();
+          const color = p.color || PALETTE[(idx + 2) % PALETTE.length];
+          const budgetDays = Math.max(0, Number(p.budgetDays ?? p.targetDays ?? 0) || 0);
+          const archived = Boolean(p.archived);
+          return { id, name, code, color, status, priority, owner, budgetDays, archived };
+        }),
       });
 
       const deptIds = new Set(db.departments.map(d => d.id));

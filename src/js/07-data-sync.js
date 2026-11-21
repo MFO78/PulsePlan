@@ -95,12 +95,12 @@
       }
 
       const pBody = document.getElementById('dataProjectsBody');
-      const displayedProjects = ui.showArchivedProjects ? db.projects : db.projects.filter(p => !p.archived);
+      const sortedProjectsAll = getSortedProjects(db);
+      const displayedProjects = ui.showArchivedProjects ? sortedProjectsAll : sortedProjectsAll.filter(p => !p.archived);
       if (displayedProjects.length === 0) {
         pBody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">${db.projects.length > 0 ? 'All projects are archived. Click "Show Archived" above to view them.' : 'No projects yet. Click "+ Add Project" to start.'}</td></tr>`;
       } else {
         pBody.innerHTML = displayedProjects.map((p) => {
-          const idx = db.projects.indexOf(p);
           const plannedDays = getProjectTotalPlannedDays(p.id, db);
           const budgetDays = Number(p.budgetDays) || 0;
           const pct = budgetDays > 0 ? Math.round((plannedDays / budgetDays) * 100) : 0;
@@ -117,10 +117,6 @@
             <tr class="hover:bg-slate-50/70 ${p.archived ? 'opacity-65' : ''}">
               <th scope="row" class="px-4 py-3 font-bold text-slate-900 text-left">
                 <div class="flex items-center gap-2">
-                  <div class="inline-flex flex-col text-[10px] leading-none text-slate-400">
-                    <button type="button" aria-label="Move ${escapeHtml(p.name)} up" onclick="moveRowOrder('project', '${p.id}', -1)" ${idx === 0 ? 'disabled' : ''} title="Move up" class="p-1 hover:text-indigo-700 disabled:opacity-25">&#9650;</button>
-                    <button type="button" aria-label="Move ${escapeHtml(p.name)} down" onclick="moveRowOrder('project', '${p.id}', 1)" ${idx === db.projects.length - 1 ? 'disabled' : ''} title="Move down" class="p-1 hover:text-indigo-700 disabled:opacity-25">&#9660;</button>
-                  </div>
                   <span class="w-3 h-3 rounded-full shrink-0" style="background:${p.color}" aria-hidden="true"></span>
                   <span>${escapeHtml(p.name)}</span>
                   ${p.archived ? '<span class="px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 text-[10px] font-bold uppercase">Archived</span>' : ''}
