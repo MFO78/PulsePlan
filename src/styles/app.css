@@ -1,0 +1,709 @@
+    /* ==================== SEMANTIC DESIGN TOKENS (LIGHT & DARK) ==================== */
+    :root {
+      --surface-page: #f8fafc;
+      --surface-card: #ffffff;
+      --surface-header: rgba(255, 255, 255, 0.95);
+      --surface-subtle: #f8fafc;
+      --surface-muted: #f1f5f9;
+      --surface-hover: #f1f5f9;
+      --surface-elevated: #e2e8f0;
+      --surface-inverse: #0f172a;
+      --border-subtle: #e2e8f0;
+      --border-strong: #cbd5e1;
+      --text-primary: #0f172a;
+      --text-heading: #1e293b;
+      --text-secondary: #334155;
+      --text-muted: #64748b;
+      --text-faint: #94a3b8;
+      --focus-ring: #4f46e5;
+      --matrix-now-bg: #eef2ff;
+      --spotlight-ring: #4f46e5;
+      --nav-arrow-bg: #ffffff;
+      --nav-arrow-border: #cbd5e1;
+      --nav-arrow-text: #334155;
+      --nav-arrow-hover-bg: #4f46e5;
+      --nav-arrow-hover-border: #4f46e5;
+      --sticky-col-shadow: 4px 0 12px -4px rgba(15, 23, 42, 0.08);
+      --sticky-head-shadow: 0 4px 12px -3px rgba(15, 23, 42, 0.12);
+    }
+    html.dark {
+      --surface-page: #0b1120;
+      --surface-card: #0f172a;
+      --surface-header: rgba(15, 23, 42, 0.95);
+      --surface-subtle: #162033;
+      --surface-muted: #1e293b;
+      --surface-hover: #1e293b;
+      --surface-elevated: #334155;
+      --surface-inverse: #020617;
+      --border-subtle: #1e293b;
+      --border-strong: #334155;
+      --text-primary: #f8fafc;
+      --text-heading: #f1f5f9;
+      --text-secondary: #cbd5e1;
+      --text-muted: #94a3b8;
+      --text-faint: #64748b;
+      --focus-ring: #818cf8;
+      --matrix-now-bg: #1a2244;
+      --spotlight-ring: #818cf8;
+      --nav-arrow-bg: #1e293b;
+      --nav-arrow-border: #334155;
+      --nav-arrow-text: #f1f5f9;
+      --nav-arrow-hover-bg: #4f46e5;
+      --nav-arrow-hover-border: #6366f1;
+      --sticky-col-shadow: 4px 0 14px -4px rgba(0, 0, 0, 0.55);
+      --sticky-head-shadow: 0 4px 14px -3px rgba(0, 0, 0, 0.6);
+    }
+
+    /* Base typography, dynamic viewport height & focus accessibility */
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      min-height: 100dvh;
+      -webkit-tap-highlight-color: transparent;
+    }
+    input[type="checkbox"],
+    input[type="radio"] {
+      accent-color: #4f46e5;
+    }
+    button, a, summary, [role="button"] {
+      touch-action: manipulation;
+    }
+    button:focus-visible,
+    a:focus-visible,
+    summary:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 2px;
+    }
+
+    /* Hide native <details> disclosure triangle cleanly */
+    summary.no-marker::-webkit-details-marker {
+      display: none;
+    }
+    summary.no-marker {
+      list-style: none;
+    }
+    details[open] .accordion-chevron {
+      transform: rotate(180deg);
+    }
+
+    /* Hide horizontal scrollbar on mobile period pill strip while preserving scroll-snap */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    /* Prevent iOS Safari auto-zoom on inputs/selects/textareas on small viewports */
+    @media (max-width: 767px) {
+      input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+      select,
+      textarea {
+        font-size: 16px !important;
+      }
+    }
+
+    /* Touch-first ergonomics on coarse pointers (smartphones & tablets) */
+    @media (pointer: coarse) {
+      .desktop-hover-reveal {
+        opacity: 1 !important;
+      }
+      .touch-hide-drag-grip {
+        display: none !important;
+      }
+    }
+
+    /* Native HTML5 <dialog> Bottom Sheet styling (Pattern 2) */
+    dialog.mobile-sheet {
+      margin: auto 0 0 0;
+      width: 100%;
+      max-width: 100%;
+      max-height: 86dvh;
+      border: 0;
+      border-top-left-radius: 1.5rem;
+      border-top-right-radius: 1.5rem;
+      padding: 0;
+      background: #ffffff;
+      color: #0f172a;
+      box-shadow: 0 -14px 40px -10px rgba(15, 23, 42, 0.28);
+      overscroll-behavior: contain;
+      overflow-y: auto;
+    }
+    dialog.mobile-sheet::backdrop {
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(3px);
+    }
+    @media (min-width: 768px) {
+      dialog.mobile-sheet {
+        margin: auto;
+        max-width: 32rem;
+        border-radius: 1.25rem;
+      }
+    }
+    html.dark dialog.mobile-sheet {
+      background: #0f172a !important;
+      color: #f1f5f9 !important;
+      border-top: 1px solid #1e293b;
+    }
+
+    /* Safe-area helpers for fixed bottom nav & toast positioning on mobile */
+    .mobile-bottom-nav {
+      padding-bottom: max(0.45rem, env(safe-area-inset-bottom));
+    }
+    .mobile-sheet-body {
+      padding-bottom: max(1.25rem, calc(1rem + env(safe-area-inset-bottom)));
+    }
+    @media (max-width: 767px) {
+      #toastContainer {
+        bottom: calc(4.75rem + env(safe-area-inset-bottom));
+        left: 0.75rem;
+        right: 0.75rem;
+        max-width: none;
+      }
+    }
+
+    /* Native HTML5 <meter> styling for Mod 3 Retention & Payload Gauges */
+    meter.retention-meter {
+      width: 100%;
+      height: 8px;
+      border-radius: 9999px;
+      overflow: hidden;
+      background: #e2e8f0;
+      border: 0;
+    }
+    meter.retention-meter::-webkit-meter-bar {
+      background: #e2e8f0;
+      border-radius: 9999px;
+      border: 0;
+    }
+    meter.retention-meter::-webkit-meter-optimum-value {
+      background: #10b981;
+      border-radius: 9999px;
+    }
+    meter.retention-meter::-webkit-meter-suboptimum-value {
+      background: #f59e0b;
+      border-radius: 9999px;
+    }
+    meter.retention-meter::-webkit-meter-even-less-good-value {
+      background: #ef4444;
+      border-radius: 9999px;
+    }
+    meter.retention-meter::-moz-meter-bar {
+      border-radius: 9999px;
+    }
+    html.dark meter.retention-meter,
+    html.dark meter.retention-meter::-webkit-meter-bar {
+      background: #1e293b;
+    }
+
+    /* Matrix scrollbar & sticky column shadow */
+    .matrix-scroll::-webkit-scrollbar {
+      height: 10px;
+      width: 10px;
+    }
+    .matrix-scroll::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 9999px;
+    }
+    .matrix-scroll::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+      border: 2px solid #f1f5f9;
+    }
+    .matrix-scroll::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    .matrix-snap-cols {
+      scroll-snap-type: x mandatory;
+    }
+    .matrix-snap-col {
+      scroll-snap-align: start;
+    }
+    .sticky-col-shadow {
+      box-shadow: var(--sticky-col-shadow);
+    }
+    .sticky-head-shadow {
+      box-shadow: var(--sticky-head-shadow);
+    }
+    .matrix-th-now {
+      background-color: var(--matrix-now-bg);
+    }
+    .spotlight-dimmed {
+      opacity: 0.18 !important;
+      filter: grayscale(0.75);
+      transition: opacity 160ms ease, filter 160ms ease;
+    }
+    .spotlight-active {
+      box-shadow: 0 0 0 3px var(--spotlight-ring), 0 6px 16px -2px rgba(79, 70, 229, 0.35) !important;
+      position: relative;
+      z-index: 2;
+    }
+    .bottleneck-pill-ring {
+      box-shadow: 0 0 0 1.5px #f43f5e !important;
+    }
+    .drag-over-cell {
+      outline: 2px dashed #4f46e5 !important;
+      outline-offset: -3px;
+      background-color: #eef2ff !important;
+    }
+    .dragging-item {
+      opacity: 0.45;
+      transform: scale(0.97);
+    }
+    .drag-over-row-top td,
+    .drag-over-row-top th {
+      box-shadow: inset 0 3px 0 0 #4f46e5 !important;
+    }
+    .drag-over-row-bottom td,
+    .drag-over-row-bottom th {
+      box-shadow: inset 0 -3px 0 0 #4f46e5 !important;
+    }
+    html.dark .drag-over-row-top td,
+    html.dark .drag-over-row-top th {
+      box-shadow: inset 0 3px 0 0 #818cf8 !important;
+    }
+    html.dark .drag-over-row-bottom td,
+    html.dark .drag-over-row-bottom th {
+      box-shadow: inset 0 -3px 0 0 #818cf8 !important;
+    }
+    .comment-clamp-3 {
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .comment-clamp-5 {
+      display: -webkit-box;
+      -webkit-line-clamp: 5;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+      }
+    }
+
+    /* ==================== MEETING / PROJECTOR VIEW MODE ==================== */
+    html.meeting-view .layout-container {
+      max-width: 100% !important;
+    }
+    html.meeting-view .meeting-hide {
+      display: none !important;
+    }
+    html.meeting-view #matrixWrapper table,
+    html.meeting-view #matrixFloatingHeader table {
+      font-size: 1rem;
+    }
+    html.meeting-view #matrixWrapper th,
+    html.meeting-view #matrixWrapper td,
+    html.meeting-view #matrixFloatingHeader th {
+      border-bottom-width: 1.5px;
+    }
+    html.meeting-view #matrixWrapper th + th,
+    html.meeting-view #matrixWrapper td,
+    html.meeting-view #matrixFloatingHeader th + th {
+      border-left-width: 1.5px;
+    }
+    .meeting-vertical-text {
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-height: 170px;
+    }
+    .meeting-row-accent {
+      border-left: 5px solid var(--row-accent, #4f46e5) !important;
+    }
+    .meeting-nav-arrow {
+      background-color: var(--nav-arrow-bg);
+      border: 1px solid var(--nav-arrow-border);
+      color: var(--nav-arrow-text);
+    }
+    .meeting-nav-arrow:hover {
+      background-color: var(--nav-arrow-hover-bg);
+      border-color: var(--nav-arrow-hover-border);
+      color: #ffffff;
+    }
+
+    /* ==================== DARK MODE THEME (TOKEN-DRIVEN) ==================== */
+    html.dark body {
+      background-color: var(--surface-page) !important;
+      color: var(--text-secondary) !important;
+    }
+    html.dark header,
+    html.dark #mobileBottomNav {
+      background-color: var(--surface-header) !important;
+      border-color: var(--border-subtle) !important;
+    }
+    html.dark .bg-white,
+    html.dark .bg-white\/95 {
+      background-color: var(--surface-card) !important;
+    }
+    html.dark .bg-slate-50,
+    html.dark .bg-slate-50\/50,
+    html.dark .bg-slate-50\/70,
+    html.dark .bg-slate-50\/80,
+    html.dark .bg-slate-50\/90 {
+      background-color: var(--surface-subtle) !important;
+    }
+    html.dark .bg-slate-100 {
+      background-color: var(--surface-muted) !important;
+    }
+    html.dark .bg-slate-200,
+    html.dark .bg-slate-200\/60,
+    html.dark .bg-slate-200\/80 {
+      background-color: var(--surface-elevated) !important;
+    }
+    html.dark #matrixSettingsToggleBtn:not([aria-expanded="true"]) {
+      background-color: var(--surface-muted) !important;
+      border-color: var(--border-strong) !important;
+      color: var(--text-heading) !important;
+    }
+    html.dark #matrixSettingsDrawer > div > div {
+      background-color: #131d31 !important;
+      border-color: var(--border-strong) !important;
+    }
+    html.dark #matrixSettingsDrawer .text-slate-400 {
+      color: #94a3b8 !important;
+    }
+    html.dark #matrixSettingsDrawer button:not([aria-pressed="true"]):not(#btnClearMatrixFilters) {
+      background-color: #1e293b !important;
+      border-color: #475569 !important;
+      color: #e2e8f0 !important;
+    }
+    html.dark #matrixSettingsDrawer button:not([aria-pressed="true"]):not(#btnClearMatrixFilters):hover {
+      background-color: #334155 !important;
+      color: #ffffff !important;
+    }
+    html.dark #matrixSettingsDrawer [role="group"] button:not([aria-pressed="true"]) {
+      background-color: transparent !important;
+      border-color: transparent !important;
+      color: #cbd5e1 !important;
+    }
+    html.dark #matrixSettingsDrawer [role="group"] button[aria-pressed="true"] {
+      background-color: #4f46e5 !important;
+      color: #ffffff !important;
+    }
+    html.dark #matrixSettingsDrawer #chipFilterOver[aria-pressed="true"] {
+      background-color: rgba(244, 63, 94, 0.28) !important;
+      border-color: rgba(251, 113, 133, 0.65) !important;
+      color: #fecdd3 !important;
+    }
+    html.dark #matrixSettingsDrawer #chipFilterAtRisk[aria-pressed="true"] {
+      background-color: rgba(245, 158, 11, 0.28) !important;
+      border-color: rgba(251, 191, 36, 0.65) !important;
+      color: #fde68a !important;
+    }
+    html.dark #matrixSettingsDrawer #chipFilterNotes[aria-pressed="true"],
+    html.dark #matrixSettingsDrawer #commentsToggleBtn[aria-pressed="true"],
+    html.dark #matrixSettingsDrawer #hideEmptyRowsBtn[aria-pressed="true"],
+    html.dark #matrixSettingsDrawer #dragModeBtn[aria-pressed="true"] {
+      background-color: rgba(79, 70, 229, 0.32) !important;
+      border-color: rgba(129, 140, 248, 0.7) !important;
+      color: #e0e7ff !important;
+    }
+    html.dark #matrixSettingsDrawer input,
+    html.dark #matrixSettingsDrawer select {
+      background-color: #0f172a !important;
+      border-color: #475569 !important;
+      color: #f8fafc !important;
+    }
+    html.dark #matrixSettingsDrawer input::placeholder {
+      color: #94a3b8 !important;
+    }
+    html.dark #headerWorkspacePopover {
+      background-color: #0f172a !important;
+      border-color: var(--border-strong) !important;
+    }
+    html.dark #headerWorkspacePopover > div {
+      background-color: #131d31 !important;
+      border-color: var(--border-strong) !important;
+    }
+    html.dark #headerWorkspacePopover .text-slate-400 {
+      color: #94a3b8 !important;
+    }
+    html.dark #headerWorkspacePopover button:not([aria-pressed="true"]) {
+      background-color: #1e293b !important;
+      border-color: #475569 !important;
+      color: #e2e8f0 !important;
+    }
+    html.dark #headerWorkspacePopover button:not([aria-pressed="true"]):hover {
+      background-color: #334155 !important;
+      color: #ffffff !important;
+    }
+    html.dark .bg-slate-900 {
+      background-color: var(--surface-inverse) !important;
+    }
+    html.dark .border-slate-100,
+    html.dark .border-slate-200,
+    html.dark .border-slate-200\/60,
+    html.dark .border-slate-200\/80,
+    html.dark .border-slate-200\/90,
+    html.dark .border-slate-300 {
+      border-color: var(--border-subtle) !important;
+    }
+    html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+    html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+      border-color: var(--border-subtle) !important;
+    }
+    html.dark .text-slate-900 {
+      color: var(--text-primary) !important;
+    }
+    html.dark .text-slate-800 {
+      color: var(--text-heading) !important;
+    }
+    html.dark .text-slate-700 {
+      color: var(--text-secondary) !important;
+    }
+    html.dark .text-slate-600,
+    html.dark .text-slate-500 {
+      color: var(--text-muted) !important;
+    }
+    html.dark .text-slate-400 {
+      color: var(--text-faint) !important;
+    }
+    html.dark .hover\:bg-slate-50:hover,
+    html.dark .hover\:bg-slate-50\/40:hover,
+    html.dark .hover\:bg-slate-50\/70:hover,
+    html.dark .hover\:bg-slate-100:hover,
+    html.dark .group\/row:hover .group-hover\/row\:bg-slate-50,
+    html.dark .group\/row:hover .group-hover\/row\:bg-slate-50\/90 {
+      background-color: var(--surface-hover) !important;
+    }
+    html.dark .hover\:text-slate-900:hover {
+      color: var(--text-primary) !important;
+    }
+    html.dark .bg-indigo-50,
+    html.dark .bg-indigo-50\/60,
+    html.dark .bg-indigo-50\/70 {
+      background-color: rgba(79, 70, 229, 0.18) !important;
+    }
+    html.dark .border-indigo-100,
+    html.dark .border-indigo-200,
+    html.dark .border-indigo-300 {
+      border-color: rgba(99, 102, 241, 0.4) !important;
+    }
+    html.dark .text-indigo-700,
+    html.dark .text-indigo-800,
+    html.dark .text-indigo-900,
+    html.dark .text-indigo-950 {
+      color: #a5b4fc !important;
+    }
+    html.dark .bg-violet-50,
+    html.dark .bg-violet-50\/70,
+    html.dark .bg-violet-50\/90 {
+      background-color: rgba(139, 92, 246, 0.16) !important;
+    }
+    html.dark .hover\:bg-violet-100\/90:hover {
+      background-color: rgba(139, 92, 246, 0.28) !important;
+    }
+    html.dark .border-violet-200,
+    html.dark .border-violet-200\/80,
+    html.dark .border-violet-300 {
+      border-color: rgba(139, 92, 246, 0.38) !important;
+    }
+    html.dark .text-violet-700,
+    html.dark .text-violet-800,
+    html.dark .text-violet-900,
+    html.dark .text-violet-950 {
+      color: #ddd6fe !important;
+    }
+    html.dark .bg-emerald-50,
+    html.dark .bg-emerald-50\/60 {
+      background-color: rgba(16, 185, 129, 0.15) !important;
+    }
+    html.dark .bg-emerald-100\/70,
+    html.dark .bg-emerald-100 {
+      background-color: rgba(16, 185, 129, 0.22) !important;
+    }
+    html.dark .border-emerald-200 {
+      border-color: rgba(16, 185, 129, 0.35) !important;
+    }
+    html.dark .text-emerald-700,
+    html.dark .text-emerald-800,
+    html.dark .text-emerald-900 {
+      color: #6ee7b7 !important;
+    }
+    html.dark .bg-amber-50,
+    html.dark .bg-amber-50\/40 {
+      background-color: rgba(245, 158, 11, 0.14) !important;
+    }
+    html.dark .bg-amber-100\/80,
+    html.dark .bg-amber-100,
+    html.dark .bg-amber-200\/80 {
+      background-color: rgba(245, 158, 11, 0.24) !important;
+    }
+    html.dark .border-amber-200,
+    html.dark .border-amber-300 {
+      border-color: rgba(245, 158, 11, 0.38) !important;
+    }
+    html.dark .text-amber-700,
+    html.dark .text-amber-800,
+    html.dark .text-amber-900 {
+      color: #fcd34d !important;
+    }
+    html.dark .bg-rose-50,
+    html.dark .bg-rose-50\/50,
+    html.dark .bg-rose-50\/60 {
+      background-color: rgba(244, 63, 94, 0.16) !important;
+    }
+    html.dark .bg-rose-100,
+    html.dark .bg-rose-100\/80 {
+      background-color: rgba(244, 63, 94, 0.25) !important;
+    }
+    html.dark .border-rose-200 {
+      border-color: rgba(244, 63, 94, 0.38) !important;
+    }
+    html.dark .text-rose-600,
+    html.dark .text-rose-700,
+    html.dark .text-rose-800,
+    html.dark .text-rose-900 {
+      color: #fda4af !important;
+    }
+    html.dark .bg-sky-50 {
+      background-color: rgba(14, 165, 233, 0.16) !important;
+    }
+    html.dark .border-sky-200 {
+      border-color: rgba(14, 165, 233, 0.35) !important;
+    }
+    html.dark .text-sky-700 {
+      color: #7dd3fc !important;
+    }
+    html.dark input,
+    html.dark select,
+    html.dark textarea {
+      background-color: var(--surface-subtle) !important;
+      color: var(--text-heading) !important;
+      border-color: var(--border-strong) !important;
+    }
+    html.dark select option {
+      background-color: var(--surface-card);
+      color: var(--text-heading);
+    }
+    html.dark code {
+      background-color: var(--surface-muted) !important;
+      color: var(--text-secondary) !important;
+    }
+    html.dark .drag-over-cell {
+      background-color: rgba(79, 70, 229, 0.24) !important;
+      outline-color: var(--focus-ring) !important;
+    }
+    html.dark .matrix-scroll::-webkit-scrollbar-track {
+      background: var(--surface-card);
+    }
+    html.dark .matrix-scroll::-webkit-scrollbar-thumb {
+      background: var(--border-strong);
+      border-color: var(--surface-card);
+    }
+    html.dark .matrix-scroll::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* Preserve left accent border color across Light & Dark modes with clear Dark Mode card elevation */
+    .accent-card,
+    .accent-card:hover {
+      border-left-width: var(--accent-w, 4px) !important;
+      border-left-style: solid !important;
+      border-left-color: var(--accent-color, #4f46e5) !important;
+    }
+    html.dark .accent-card,
+    html.dark .accent-card:hover,
+    html.dark .accent-card[class*="border-"] {
+      background-color: var(--surface-subtle) !important;
+      border-top-color: var(--border-strong) !important;
+      border-right-color: var(--border-strong) !important;
+      border-bottom-color: var(--border-strong) !important;
+      border-left-width: var(--accent-w, 4px) !important;
+      border-left-style: solid !important;
+      border-left-color: var(--accent-color, #4f46e5) !important;
+    }
+    html.dark .accent-card-comment {
+      background-color: var(--surface-card) !important;
+      border-color: var(--border-strong) !important;
+      color: var(--text-secondary) !important;
+    }
+
+    /* Clean Print / Meeting Slide / Fallback PDF Styling (Always Light & Full-Width Fit) */
+    @media print {
+      @page {
+        size: landscape;
+        margin: 8mm;
+      }
+      :root, html.dark {
+        --surface-page: #ffffff;
+        --surface-card: #ffffff;
+        --surface-subtle: #f8fafc;
+        --surface-muted: #f1f5f9;
+        --border-subtle: #e2e8f0;
+        --border-strong: #cbd5e1;
+        --text-primary: #0f172a;
+        --text-heading: #1e293b;
+        --text-secondary: #334155;
+        --text-muted: #64748b;
+        --matrix-now-bg: #eef2ff;
+      }
+      header, #mobileBottomNav, #demoBanner, #whatIfBanner, #externalUpdateBanner, #syncWarningBanner, #toastContainer, #modalOverlay, #matrixFloatingHeader, dialog {
+        display: none !important;
+      }
+      html.print-meeting-slide #desktopMatrixToolbar,
+      html.print-meeting-slide #mobileMatrixBar,
+      html.print-meeting-slide #meetingShortcutBar,
+      html.print-meeting-slide #matrixLegendBar,
+      html.print-meeting-slide .meeting-nav-arrow {
+        display: none !important;
+      }
+      html.print-meeting-slide #mainWorkspace {
+        max-width: 100% !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      html.print-meeting-slide #desktopMatrixCard {
+        width: 100% !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: none !important;
+        overflow: visible !important;
+      }
+      html.print-meeting-slide #matrixWrapper {
+        width: 100% !important;
+        overflow: visible !important;
+      }
+      html.print-meeting-slide #matrixWrapper table {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        table-layout: fixed !important;
+      }
+      html.print-meeting-slide #matrixWrapper col[data-sticky-col] {
+        width: 56px !important;
+      }
+      html.print-meeting-slide #matrixWrapper col[data-period-col] {
+        width: auto !important;
+      }
+      html.print-meeting-slide #matrixWrapper th,
+      html.print-meeting-slide #matrixWrapper td {
+        word-break: break-word;
+        overflow-wrap: anywhere;
+      }
+      body {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      .matrix-scroll {
+        overflow: visible !important;
+      }
+      .sticky {
+        position: static !important;
+      }
+    }
