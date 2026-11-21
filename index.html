@@ -209,6 +209,12 @@
     .sticky-col-shadow {
       box-shadow: 4px 0 12px -4px rgba(15, 23, 42, 0.08);
     }
+    .sticky-head-shadow {
+      box-shadow: 0 4px 12px -3px rgba(15, 23, 42, 0.12);
+    }
+    .matrix-th-now {
+      background-color: #eef2ff;
+    }
     .drag-over-cell {
       outline: 2px dashed #4f46e5 !important;
       outline-offset: -3px;
@@ -262,12 +268,40 @@
     html.meeting-view .meeting-hide {
       display: none !important;
     }
-    html.meeting-view #matrixWrapper table {
+    html.meeting-view #matrixWrapper table,
+    html.meeting-view #matrixFloatingHeader table {
       font-size: 1rem;
     }
     html.meeting-view #matrixWrapper th,
-    html.meeting-view #matrixWrapper td {
-      border-width: 1.5px;
+    html.meeting-view #matrixWrapper td,
+    html.meeting-view #matrixFloatingHeader th {
+      border-bottom-width: 1.5px;
+    }
+    html.meeting-view #matrixWrapper th + th,
+    html.meeting-view #matrixWrapper td,
+    html.meeting-view #matrixFloatingHeader th + th {
+      border-left-width: 1.5px;
+    }
+    .meeting-vertical-text {
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-height: 170px;
+    }
+    .meeting-row-accent {
+      border-left: 5px solid var(--row-accent, #4f46e5) !important;
+    }
+    .meeting-nav-arrow {
+      background-color: #ffffff;
+      border: 1px solid #cbd5e1;
+      color: #334155;
+    }
+    .meeting-nav-arrow:hover {
+      background-color: #4f46e5;
+      border-color: #4f46e5;
+      color: #ffffff;
     }
 
     /* ==================== DARK MODE THEME OVERRIDES ==================== */
@@ -334,6 +368,7 @@
     html.dark .hover\:bg-slate-50\/40:hover,
     html.dark .hover\:bg-slate-50\/70:hover,
     html.dark .hover\:bg-slate-100:hover,
+    html.dark .group\/row:hover .group-hover\/row\:bg-slate-50,
     html.dark .group\/row:hover .group-hover\/row\:bg-slate-50\/90 {
       background-color: #1e293b !important;
     }
@@ -452,6 +487,25 @@
     html.dark .sticky-col-shadow {
       box-shadow: 4px 0 14px -4px rgba(0, 0, 0, 0.55);
     }
+    html.dark .sticky-head-shadow {
+      box-shadow: 0 4px 14px -3px rgba(0, 0, 0, 0.6);
+    }
+    html.dark .matrix-th-now {
+      background-color: #1a2244 !important;
+    }
+    html.dark .meeting-row-accent {
+      border-left: 5px solid var(--row-accent, #4f46e5) !important;
+    }
+    html.dark .meeting-nav-arrow {
+      background-color: #1e293b !important;
+      border-color: #334155 !important;
+      color: #f1f5f9 !important;
+    }
+    html.dark .meeting-nav-arrow:hover {
+      background-color: #4f46e5 !important;
+      border-color: #6366f1 !important;
+      color: #ffffff !important;
+    }
     html.dark .drag-over-cell {
       background-color: rgba(79, 70, 229, 0.24) !important;
       outline-color: #818cf8 !important;
@@ -497,7 +551,7 @@
         size: landscape;
         margin: 10mm;
       }
-      header, #mobileBottomNav, #demoBanner, #externalUpdateBanner, #syncWarningBanner, #toastContainer, #modalOverlay, dialog {
+      header, #mobileBottomNav, #demoBanner, #externalUpdateBanner, #syncWarningBanner, #toastContainer, #modalOverlay, #matrixFloatingHeader, dialog {
         display: none !important;
       }
       body {
@@ -521,7 +575,7 @@
   </a>
 
   <!-- ==================== TOP NAVIGATION HEADER (SLIM ON MOBILE, FULL ON DESKTOP) ==================== -->
-  <header class="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/90">
+  <header class="relative z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/90">
     <div class="layout-container max-w-[1600px] mx-auto px-3 sm:px-5 py-2 md:py-2.5 flex items-center justify-between gap-2 sm:gap-3">
       <!-- Brand Identity -->
       <div class="flex items-center gap-2 min-w-0">
@@ -707,10 +761,12 @@
               <button id="unit-hours" type="button" aria-pressed="false" onclick="setManpowerUnit('hours')" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition">Hours</button>
             </div>
 
-            <!-- Quick 1 / 2 Period Switcher (highlighted in Meeting View) -->
+            <!-- Quick 1–4 Period Switcher (highlighted in Meeting View) -->
             <div id="meetingPeriodQuickToggle" role="group" aria-label="Meeting view horizon" class="hidden inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200/80">
-              <button id="quick-period-1" type="button" aria-pressed="false" onclick="setHorizon(1)" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition">1 Period</button>
-              <button id="quick-period-2" type="button" aria-pressed="true" onclick="setHorizon(2)" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition">2 Periods</button>
+              <button id="quick-period-1" type="button" aria-pressed="false" onclick="setHorizon(1)" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition">1</button>
+              <button id="quick-period-2" type="button" aria-pressed="true" onclick="setHorizon(2)" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition">2</button>
+              <button id="quick-period-3" type="button" aria-pressed="false" onclick="setHorizon(3)" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition">3</button>
+              <button id="quick-period-4" type="button" aria-pressed="false" onclick="setHorizon(4)" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition">4</button>
             </div>
           </div>
 
@@ -854,6 +910,11 @@
         <div id="matrixWrapper" class="matrix-scroll overflow-x-auto">
           <!-- Dynamically rendered by renderMatrix() -->
         </div>
+      </div>
+
+      <!-- FLOATING STICKY COLUMN HEADERS (shown only when matrix thead scrolls past top of viewport) -->
+      <div id="matrixFloatingHeader" aria-hidden="true" class="hidden fixed top-0 z-30 bg-white sticky-head-shadow">
+        <div id="matrixFloatingHeaderInner" class="overflow-x-auto no-scrollbar"></div>
       </div>
     </section>
 
@@ -1935,18 +1996,35 @@
       if (timeUnit === 'month') {
         const [y, m] = periodKey.split('-').map(Number);
         const wks = getWeeksInMonth(periodKey);
+        const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
         return {
           title: `${monthNames[m - 1]} ${y}`,
           shortTitle: `${monthNames[m - 1]} '${String(y).slice(2)}`,
-          sub: `${wks.length} wks`
+          sub: `${wks.length} wks`,
+          dateRange: `1–${lastDay} ${monthNames[m - 1]} • ${wks.length} wks`
         };
       } else {
         const mon = isoWeekKeyToMonday(periodKey);
+        const sun = new Date(mon);
+        sun.setUTCDate(mon.getUTCDate() + 6);
         const wkNum = periodKey.split('-')[1];
+        const m1 = monthNames[mon.getUTCMonth()];
+        const m2 = monthNames[sun.getUTCMonth()];
+        const y1 = mon.getUTCFullYear();
+        const y2 = sun.getUTCFullYear();
+        let dateRange;
+        if (y1 !== y2) {
+          dateRange = `${mon.getUTCDate()} ${m1} '${String(y1).slice(2)} – ${sun.getUTCDate()} ${m2} '${String(y2).slice(2)}`;
+        } else if (m1 !== m2) {
+          dateRange = `${mon.getUTCDate()} ${m1} – ${sun.getUTCDate()} ${m2}`;
+        } else {
+          dateRange = `${mon.getUTCDate()}–${sun.getUTCDate()} ${m1}`;
+        }
         return {
-          title: `${wkNum} '${String(mon.getUTCFullYear()).slice(2)}`,
-          shortTitle: `${wkNum} '${String(mon.getUTCFullYear()).slice(2)}`,
-          sub: `${mon.getUTCDate()} ${monthNames[mon.getUTCMonth()]}`
+          title: `${wkNum} '${String(y1).slice(2)}`,
+          shortTitle: `${wkNum} '${String(y1).slice(2)}`,
+          sub: `${mon.getUTCDate()} ${m1}`,
+          dateRange
         };
       }
     }
@@ -3196,8 +3274,14 @@
       const quickToggleWrap = document.getElementById('meetingPeriodQuickToggle');
       if (quickToggleWrap) {
         quickToggleWrap.classList.toggle('hidden', !ui.meetingMode);
-        setToggleBtn('quick-period-1', activeHorizon === 1);
-        setToggleBtn('quick-period-2', activeHorizon === 2);
+        const unitS = ui.timeUnit === 'month' ? 'Mo' : 'Wk';
+        const unitP = ui.timeUnit === 'month' ? 'Mos' : 'Wks';
+        [1, 2, 3, 4].forEach(n => {
+          const id = `quick-period-${n}`;
+          setToggleBtn(id, activeHorizon === n);
+          const btn = document.getElementById(id);
+          if (btn) btn.textContent = `${n} ${n === 1 ? unitS : unitP}`;
+        });
       }
 
       // Start Period Input with Safari <input type="week"> fallback
@@ -3310,6 +3394,7 @@
 
       updateSyncStatusUI();
       renderSyncWarningBanner();
+      requestAnimationFrame(updateMatrixFloatingHeaderVisibility);
     }
 
     /* ==================== END OF PART 3/6 (STITCH PART 4/6 IMMEDIATELY BELOW) ==================== */
@@ -3885,10 +3970,148 @@
      * 5B. DESKTOP / LANDSCAPE 2D ROADMAP MATRIX RENDERER & DRAG-AND-DROP
      * ============================================================================ */
 
+    let _lastMatrixAxis = null;
+    let _syncingMatrixScroll = false;
+
+    function syncMatrixFloatingHeaderMetrics() {
+      const wrapper = document.getElementById('matrixWrapper');
+      const floating = document.getElementById('matrixFloatingHeader');
+      const inner = document.getElementById('matrixFloatingHeaderInner');
+      if (!wrapper || !floating || !inner) return;
+
+      const realTable = wrapper.querySelector('table');
+      const cloneTable = inner.querySelector('table');
+      if (!realTable || !cloneTable) return;
+
+      const wrapperRect = wrapper.getBoundingClientRect();
+      const tableRect = realTable.getBoundingClientRect();
+      floating.style.left = `${wrapperRect.left}px`;
+      floating.style.width = `${wrapperRect.width}px`;
+      cloneTable.style.width = `${tableRect.width}px`;
+
+      const realThs = realTable.querySelectorAll('thead th');
+      const cloneThs = cloneTable.querySelectorAll('thead th');
+      for (let i = 0; i < realThs.length && i < cloneThs.length; i++) {
+        const w = realThs[i].getBoundingClientRect().width;
+        cloneThs[i].style.width = `${w}px`;
+        cloneThs[i].style.minWidth = `${w}px`;
+        cloneThs[i].style.maxWidth = `${w}px`;
+      }
+      inner.scrollLeft = wrapper.scrollLeft;
+    }
+
+    function updateMatrixFloatingHeaderVisibility() {
+      const floating = document.getElementById('matrixFloatingHeader');
+      const inner = document.getElementById('matrixFloatingHeaderInner');
+      const desktopCard = document.getElementById('desktopMatrixCard');
+      const wrapper = document.getElementById('matrixWrapper');
+      if (!floating || !inner || !desktopCard || !wrapper) return;
+
+      if (ui.activeTab !== 'matrix' || desktopCard.classList.contains('hidden')) {
+        floating.classList.add('hidden');
+        return;
+      }
+
+      const realTable = wrapper.querySelector('table');
+      const realThead = realTable ? realTable.querySelector('thead') : null;
+      if (!realTable || !realThead || !inner.querySelector('table')) {
+        floating.classList.add('hidden');
+        return;
+      }
+
+      const theadRect = realThead.getBoundingClientRect();
+      const tableRect = realTable.getBoundingClientRect();
+      const shouldShow = theadRect.top < 0 && tableRect.bottom > theadRect.height;
+
+      if (shouldShow) {
+        const wasHidden = floating.classList.contains('hidden');
+        if (wasHidden) floating.classList.remove('hidden');
+        const wrapperRect = wrapper.getBoundingClientRect();
+        floating.style.left = `${wrapperRect.left}px`;
+        floating.style.width = `${wrapperRect.width}px`;
+        if (wasHidden) syncMatrixFloatingHeaderMetrics();
+        inner.scrollLeft = wrapper.scrollLeft;
+      } else {
+        floating.classList.add('hidden');
+      }
+    }
+
+    function syncMatrixFloatingHeader() {
+      const wrapper = document.getElementById('matrixWrapper');
+      const floating = document.getElementById('matrixFloatingHeader');
+      const inner = document.getElementById('matrixFloatingHeaderInner');
+      if (!wrapper || !floating || !inner) return;
+
+      const realTable = wrapper.querySelector('table');
+      const realThead = realTable ? realTable.querySelector('thead') : null;
+      if (!realTable || !realThead) {
+        inner.innerHTML = '';
+        floating.classList.add('hidden');
+        return;
+      }
+
+      const cloneTable = document.createElement('table');
+      cloneTable.className = 'border-separate border-spacing-0 text-left';
+      cloneTable.style.tableLayout = 'fixed';
+      cloneTable.appendChild(realThead.cloneNode(true));
+      inner.innerHTML = '';
+      inner.appendChild(cloneTable);
+
+      syncMatrixFloatingHeaderMetrics();
+      updateMatrixFloatingHeaderVisibility();
+    }
+
+    function setupMatrixFloatingHeaderSync() {
+      const wrapper = document.getElementById('matrixWrapper');
+      const inner = document.getElementById('matrixFloatingHeaderInner');
+
+      window.addEventListener('scroll', updateMatrixFloatingHeaderVisibility, { passive: true });
+      window.addEventListener('resize', () => {
+        syncMatrixFloatingHeaderMetrics();
+        updateMatrixFloatingHeaderVisibility();
+      }, { passive: true });
+
+      if (wrapper && inner) {
+        wrapper.addEventListener('scroll', () => {
+          if (_syncingMatrixScroll) return;
+          _syncingMatrixScroll = true;
+          inner.scrollLeft = wrapper.scrollLeft;
+          _syncingMatrixScroll = false;
+        }, { passive: true });
+
+        inner.addEventListener('scroll', () => {
+          if (_syncingMatrixScroll) return;
+          _syncingMatrixScroll = true;
+          wrapper.scrollLeft = inner.scrollLeft;
+          _syncingMatrixScroll = false;
+        }, { passive: true });
+
+        if (typeof ResizeObserver === 'function') {
+          const ro = new ResizeObserver(() => {
+            requestAnimationFrame(() => {
+              syncMatrixFloatingHeaderMetrics();
+              updateMatrixFloatingHeaderVisibility();
+            });
+          });
+          ro.observe(wrapper);
+        }
+      }
+
+      if (document.fonts && typeof document.fonts.ready?.then === 'function') {
+        document.fonts.ready.then(() => {
+          syncMatrixFloatingHeaderMetrics();
+          updateMatrixFloatingHeaderVisibility();
+        });
+      }
+    }
+
     function renderMatrix() {
       const db = getActiveDB();
       const wrapper = document.getElementById('matrixWrapper');
       if (!wrapper) return;
+      const keepScroll = _lastMatrixAxis === ui.axis;
+      const prevScrollLeft = keepScroll ? wrapper.scrollLeft : 0;
+      _lastMatrixAxis = ui.axis;
       const periods = getVisiblePeriods();
       const warnT = db.settings.warnThreshold || 85;
       const overT = db.settings.overThreshold || 100;
@@ -3915,29 +4138,30 @@
               <button type="button" onclick="toggleDemoMode()" class="px-4 py-2 rounded-xl bg-amber-50 border border-amber-200 hover:bg-amber-100 text-amber-800 text-xs font-semibold transition">Explore Demo Data</button>
             </div>
           </div>`;
+        syncMatrixFloatingHeader();
         return;
       }
 
       const isCompactGrid = isMobileViewport();
       const s = isMeeting ? {
-        thCol: periods.length <= 2 ? 'px-5 py-3.5 min-w-[300px]' : 'px-4 py-3.5 min-w-[235px]',
-        thTitle: 'text-base sm:text-lg font-extrabold',
+        thCol: periods.length <= 2 ? 'px-5 py-3.5' : 'px-3.5 py-3',
+        thTitle: periods.length <= 2 ? 'text-base sm:text-lg font-extrabold' : 'text-sm sm:text-base font-extrabold',
         thSub: 'text-xs',
-        thSticky: 'px-4 py-3.5 text-sm',
-        tdSticky: 'px-4 py-4 min-w-[220px] max-w-[280px]',
-        rowName: 'text-base font-extrabold',
+        thSticky: 'px-1.5 py-3 text-[10px] text-center',
+        tdSticky: 'px-1.5 py-3',
+        rowName: 'text-sm font-extrabold',
         rowMeta: 'text-xs',
-        rowBadge: 'px-2.5 py-0.5 text-xs font-extrabold',
-        cellPad: 'p-3.5',
+        rowBadge: 'px-1.5 py-0.5 text-[10px] font-extrabold',
+        cellPad: periods.length <= 2 ? 'p-3.5' : 'p-2.5',
         capText: 'text-xs font-bold',
-        pctText: 'text-sm font-extrabold',
+        pctText: periods.length <= 2 ? 'text-sm font-extrabold' : 'text-xs font-extrabold',
         barH: 'h-2 mb-2.5',
-        pillBox: 'px-3 py-2.5 text-sm',
+        pillBox: periods.length <= 2 ? 'px-3 py-2.5 text-sm' : 'px-2.5 py-2 text-xs',
         pillCode: 'text-xs',
-        pillVal: 'text-sm font-extrabold',
-        pillSpace: 'space-y-2.5',
+        pillVal: periods.length <= 2 ? 'text-sm font-extrabold' : 'text-xs font-extrabold',
+        pillSpace: periods.length <= 2 ? 'space-y-2.5' : 'space-y-1.5',
         pillBorderW: '5px',
-        commentBox: 'mt-1.5 px-2.5 py-1.5 text-xs leading-relaxed comment-clamp-5',
+        commentBox: 'mt-1.5 px-2.5 py-1.5 text-xs leading-relaxed break-words comment-clamp-5',
         msBox: 'px-3 py-2 text-xs font-bold',
         footCell: 'px-5 py-3.5 text-sm',
         footSub: 'text-xs',
@@ -3987,17 +4211,34 @@
           </div>`;
       };
 
-      const colHeaders = periods.map(pk => {
+      const unitNoun = ui.timeUnit === 'month' ? 'month' : 'week';
+      const colHeaders = periods.map((pk, idx) => {
         const h = formatPeriodHeader(pk, ui.timeUnit);
         const isCurrent = (ui.timeUnit === 'month' && pk === getCurrentMonthKey()) ||
                           (ui.timeUnit === 'week' && pk === getCurrentWeekKey());
+        const prevArrowHtml = isMeeting && idx === 0
+          ? `<button type="button" onclick="shiftStartPeriod(-1)" title="Previous ${unitNoun}" aria-label="Previous ${unitNoun}"
+               class="meeting-nav-arrow w-8 h-8 rounded-lg font-extrabold text-lg leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">&lsaquo;</button>`
+          : '';
+        const nextArrowHtml = isMeeting && idx === periods.length - 1
+          ? `<button type="button" onclick="shiftStartPeriod(1)" title="Next ${unitNoun}" aria-label="Next ${unitNoun}"
+               class="meeting-nav-arrow w-8 h-8 rounded-lg font-extrabold text-lg leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">&rsaquo;</button>`
+          : '';
         return `
-          <th scope="col" class="${s.thCol} text-left border-b border-l border-slate-200 ${isCurrent ? 'bg-indigo-50/70' : 'bg-slate-50'}">
-            <div class="flex items-center justify-between gap-1">
-              <span class="${s.thTitle} ${isCurrent ? 'text-indigo-700' : 'text-slate-800'}">${escapeHtml(h.title)}</span>
-              ${isCurrent ? '<span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-indigo-600 text-white">Now</span>' : ''}
+          <th scope="col" class="${s.thCol} text-left border-b border-l border-slate-200 ${isCurrent ? 'matrix-th-now' : 'bg-slate-50'}">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                ${prevArrowHtml}
+                <div class="min-w-0">
+                  <div class="${s.thTitle} ${isCurrent ? 'text-indigo-700' : 'text-slate-800'} truncate leading-tight">${escapeHtml(h.title)}</div>
+                  <div class="${s.thSub} text-slate-500 font-medium mt-0.5 truncate">${escapeHtml(isMeeting ? h.dateRange : h.sub)}</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0">
+                ${isCurrent ? '<span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-indigo-600 text-white">Now</span>' : ''}
+                ${nextArrowHtml}
+              </div>
             </div>
-            ${!isMeeting ? `<div class="${s.thSub} text-slate-500 font-medium mt-0.5">${escapeHtml(h.sub)}</div>` : ''}
           </th>`;
       }).join('');
 
@@ -4238,26 +4479,37 @@
               </td>`;
           }).join('');
 
+          const deptRowHeaderHtml = isMeeting
+            ? `<th scope="row" title="${escapeHtml(row.name)} (${avgPct}% avg)"
+                 class="meeting-row-accent sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 w-[62px] min-w-[62px] max-w-[62px] ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-middle font-normal text-center"
+                 style="--row-accent:${row.color};">
+                 <div class="flex flex-col items-center justify-center gap-2">
+                   <div class="meeting-vertical-text text-xs font-extrabold text-slate-900 tracking-wide">${escapeHtml(row.name)}</div>
+                   <span class="rounded-md shrink-0 tabular-nums ${s.rowBadge} ${badgeCls}">${avgPct}%</span>
+                 </div>
+               </th>`
+            : `<th scope="row" class="sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left">
+                 <div class="flex items-start justify-between gap-1.5">
+                   <div class="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                     ${reorderControlsHtml}
+                     <span class="w-2 h-8 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
+                     <div class="min-w-0">
+                       <div class="${s.rowName} text-slate-900 truncate">${escapeHtml(isCompactGrid ? row.code : row.name)}</div>
+                       <div class="${s.rowMeta} text-slate-500 flex items-center gap-1 mt-0.5 truncate">
+                         ${isCompactGrid ? `<span class="truncate">${escapeHtml(row.name)}</span>` : `<span class="font-mono font-bold">${escapeHtml(row.code)}</span><span>&bull;</span><span>Base ${row.defaultCapacity} FTE</span>`}
+                       </div>
+                     </div>
+                   </div>
+                   <span class="rounded-md shrink-0 ${s.rowBadge} ${badgeCls}">${avgPct}%</span>
+                 </div>
+               </th>`;
+
           return `
             <tr class="group/row" data-row-id="${row.id}"
               ondragover="handleRowDragOver(event, '${row.id}')"
               ondragleave="handleRowDragLeave(event)"
               ondrop="handleRowDrop(event, '${row.id}')">
-              <th scope="row" class="sticky left-0 z-10 bg-white group-hover/row:bg-slate-50/90 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left">
-                <div class="flex items-start justify-between gap-1.5">
-                  <div class="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                    ${reorderControlsHtml}
-                    <span class="${isMeeting ? 'w-3 h-9' : 'w-2 h-8'} rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
-                    <div class="min-w-0">
-                      <div class="${s.rowName} text-slate-900 truncate">${escapeHtml(isCompactGrid ? row.code : row.name)}</div>
-                      ${!isMeeting ? `<div class="${s.rowMeta} text-slate-500 flex items-center gap-1 mt-0.5 truncate">
-                        ${isCompactGrid ? `<span class="truncate">${escapeHtml(row.name)}</span>` : `<span class="font-mono font-bold">${escapeHtml(row.code)}</span><span>&bull;</span><span>Base ${row.defaultCapacity} FTE</span>`}
-                      </div>` : ''}
-                    </div>
-                  </div>
-                  <span class="rounded-md shrink-0 ${s.rowBadge} ${badgeCls}">${avgPct}%</span>
-                </div>
-              </th>
+              ${deptRowHeaderHtml}
               ${cellsHtml}
             </tr>`;
         } else {
@@ -4427,26 +4679,37 @@
               </td>`;
           }).join('');
 
+          const projRowHeaderHtml = isMeeting
+            ? `<th scope="row" title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)}"
+                 class="meeting-row-accent sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 w-[62px] min-w-[62px] max-w-[62px] ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-middle font-normal text-center"
+                 style="--row-accent:${row.color};">
+                 <div class="flex flex-col items-center justify-center gap-1.5">
+                   <div class="meeting-vertical-text text-xs font-extrabold text-slate-900 tracking-wide">${escapeHtml(row.name)}</div>
+                   <span class="font-mono text-[10px] font-bold text-slate-500">${escapeHtml(row.code)}</span>
+                 </div>
+               </th>`
+            : `<th scope="row" class="sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left">
+                 <div class="flex items-start justify-between gap-1.5">
+                   <div class="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                     ${reorderControlsHtml}
+                     <span class="w-2 h-8 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
+                     <div class="min-w-0">
+                       <div class="${s.rowName} text-slate-900 truncate">${escapeHtml(isCompactGrid ? row.code : row.name)}</div>
+                       <div class="${s.rowMeta} text-slate-500 flex items-center gap-1 mt-0.5 truncate">
+                         ${isCompactGrid ? `<span class="truncate">${escapeHtml(row.name)}</span>` : `<span class="font-mono font-bold">${escapeHtml(row.code)}</span><span>&bull;</span><span>${Math.round(totalDays)}d</span>`}
+                       </div>
+                     </div>
+                   </div>
+                   ${!isCompactGrid ? `<span class="rounded-md shrink-0 ${s.rowBadge} ${statusCls}">${escapeHtml(row.status)}</span>` : ''}
+                 </div>
+               </th>`;
+
           return `
             <tr class="group/row" data-row-id="${row.id}"
               ondragover="handleRowDragOver(event, '${row.id}')"
               ondragleave="handleRowDragLeave(event)"
               ondrop="handleRowDrop(event, '${row.id}')">
-              <th scope="row" class="sticky left-0 z-10 bg-white group-hover/row:bg-slate-50/90 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left">
-                <div class="flex items-start justify-between gap-1.5">
-                  <div class="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                    ${reorderControlsHtml}
-                    <span class="${isMeeting ? 'w-3 h-9' : 'w-2 h-8'} rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
-                    <div class="min-w-0">
-                      <div class="${s.rowName} text-slate-900 truncate">${escapeHtml(isCompactGrid ? row.code : row.name)}</div>
-                      ${!isMeeting ? `<div class="${s.rowMeta} text-slate-500 flex items-center gap-1 mt-0.5 truncate">
-                        ${isCompactGrid ? `<span class="truncate">${escapeHtml(row.name)}</span>` : `<span class="font-mono font-bold">${escapeHtml(row.code)}</span><span>&bull;</span><span>${Math.round(totalDays)}d</span>`}
-                      </div>` : ''}
-                    </div>
-                  </div>
-                  ${!isMeeting && !isCompactGrid ? `<span class="rounded-md shrink-0 ${s.rowBadge} ${statusCls}">${escapeHtml(row.status)}</span>` : ''}
-                </div>
-              </th>
+              ${projRowHeaderHtml}
               ${cellsHtml}
             </tr>`;
         }
@@ -4482,14 +4745,25 @@
           </tfoot>`;
 
       const captionText = `Roadmap matrix grouped by ${ui.axis}, showing ${periods.length} ${ui.timeUnit}s in ${unitShortLabel()}.`;
+      const meetingColGroupHtml = isMeeting
+        ? `<colgroup>
+             <col style="width: 62px;" />
+             ${periods.map(() => '<col />').join('')}
+           </colgroup>`
+        : '';
+      const tableStyleAttr = isMeeting ? ` style="min-width: ${62 + periods.length * 240}px;"` : '';
+      const cornerLabel = isMeeting
+        ? (ui.axis === 'department' ? 'Dept' : 'Proj')
+        : (ui.axis === 'department' ? 'Departments' : 'Projects');
 
       wrapper.innerHTML = `
-        <table class="w-full border-collapse text-left">
+        <table class="w-full ${isMeeting ? 'table-fixed' : ''} border-separate border-spacing-0 text-left"${tableStyleAttr}>
           <caption class="sr-only">${escapeHtml(captionText)}</caption>
+          ${meetingColGroupHtml}
           <thead>
             <tr>
-              <th scope="col" class="sticky left-0 z-20 bg-slate-50 ${s.thSticky} border-b border-slate-200 font-extrabold text-slate-700 uppercase tracking-wider sticky-col-shadow">
-                ${ui.axis === 'department' ? 'Departments' : 'Projects'}
+              <th scope="col" class="sticky left-0 z-20 bg-slate-50 ${isMeeting ? 'w-[62px] min-w-[62px] max-w-[62px]' : ''} ${s.thSticky} border-b border-slate-200 font-extrabold text-slate-700 uppercase tracking-wider sticky-col-shadow">
+                ${cornerLabel}
               </th>
               ${colHeaders}
             </tr>
@@ -4499,6 +4773,9 @@
           </tbody>
           ${footerHtml}
         </table>`;
+
+      wrapper.scrollLeft = keepScroll ? prevScrollLeft : 0;
+      requestAnimationFrame(syncMatrixFloatingHeader);
     }
 
     /* ---------- Desktop Drag-and-Drop Handlers (Cells & Row Reordering) ---------- */
@@ -9322,7 +9599,8 @@
 
     function toggleMeetingMode() {
       ui.meetingMode = !ui.meetingMode;
-      if (ui.meetingMode && ui.meetingHorizon !== 1 && ui.meetingHorizon !== 2) {
+      const curH = Number(ui.meetingHorizon);
+      if (ui.meetingMode && (!Number.isInteger(curH) || curH < 1 || curH > 4)) {
         ui.meetingHorizon = 2;
       }
       persistUIPrefs();
@@ -9396,9 +9674,11 @@
     }
     function setManpowerUnit(unit) { ui.manpowerUnit = unit; persistUIPrefs(); renderAll(); }
     function setHorizon(val) {
-      const n = Math.max(1, Math.min(24, parseInt(val, 10) || 6));
-      if (ui.meetingMode) ui.meetingHorizon = n;
-      else ui.horizon = n;
+      if (ui.meetingMode) {
+        ui.meetingHorizon = Math.max(1, Math.min(4, parseInt(val, 10) || 2));
+      } else {
+        ui.horizon = Math.max(1, Math.min(24, parseInt(val, 10) || 6));
+      }
       persistUIPrefs();
       renderAll();
     }
@@ -9511,6 +9791,9 @@
           if (nowMobile !== _lastWasMobileViewport) {
             _lastWasMobileViewport = nowMobile;
             renderAll();
+          } else {
+            syncMatrixFloatingHeaderMetrics();
+            updateMatrixFloatingHeaderVisibility();
           }
         }, 120);
       });
@@ -9606,9 +9889,10 @@
       // 4. Retrieve previously linked shared file handle (desktop FS-API)
       rememberedFileHandle = await loadRememberedHandle();
 
-      // 5. Accessible keyboard nav, modal focus trap & responsive mobile/desktop watcher
+      // 5. Accessible keyboard nav, modal focus trap, floating column headers & responsive watcher
       setupAccessibleTablistKeyboardNav();
       setupResponsiveViewportWatcher();
+      setupMatrixFloatingHeaderSync();
 
       // 6. Auto-check linked file immediately whenever the window/tab regains focus
       window.addEventListener('focus', () => {
