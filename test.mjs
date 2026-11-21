@@ -313,6 +313,24 @@ test('Full-column layout geometry prevents half columns in Standard & Meeting vi
   assert.equal(html.includes('<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,'), true);
 });
 
+test('Projects are sorted naturally by project code everywhere', () => {
+  const res = vm.runInContext(`(() => {
+    const demoCodes = createSampleDemoDB().projects.map(p => p.code);
+    const mig = normalizeAndMigrateDB({
+      departments: [{ id: 'd1', name: 'Eng', code: 'ENG', defaultCapacity: 5 }],
+      projects: [
+        { id: 'p3', name: 'Zeta', code: 'P10' },
+        { id: 'p1', name: 'Alpha', code: 'P2' },
+        { id: 'p2', name: 'Beta', code: 'A01' },
+      ],
+    });
+    return { demoCodes, migCodes: mig.projects.map(p => p.code) };
+  })()`, ctx);
+
+  assert.deepEqual([...res.demoCodes], ['AIC', 'ATL', 'CLD', 'EPR', 'NVA']);
+  assert.deepEqual([...res.migCodes], ['A01', 'P2', 'P10']);
+});
+
 let passed = 0;
 let failed = 0;
 for (const t of tests) {
