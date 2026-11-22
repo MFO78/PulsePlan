@@ -291,25 +291,26 @@
       }
     }
 
-    /* ==================== MEETING / PROJECTOR VIEW MODE ==================== */
-    html.meeting-view .layout-container {
+    /* ==================== UNIFIED ROADMAP & FULLSCREEN PRESENT MODE ==================== */
+    html.present-mode .layout-container {
       max-width: 100% !important;
     }
-    html.meeting-view .meeting-hide {
+    html.present-mode .present-hide {
       display: none !important;
     }
-    html.meeting-view #matrixWrapper table,
-    html.meeting-view #matrixFloatingHeader table {
-      font-size: 1rem;
+    #matrixWrapper th,
+    #matrixWrapper td,
+    #matrixFloatingHeader th {
+      border-bottom-width: 1px;
     }
-    html.meeting-view #matrixWrapper th,
-    html.meeting-view #matrixWrapper td,
-    html.meeting-view #matrixFloatingHeader th {
+    html.present-mode #matrixWrapper th,
+    html.present-mode #matrixWrapper td,
+    html.present-mode #matrixFloatingHeader th {
       border-bottom-width: 1.5px;
     }
-    html.meeting-view #matrixWrapper th + th,
-    html.meeting-view #matrixWrapper td,
-    html.meeting-view #matrixFloatingHeader th + th {
+    html.present-mode #matrixWrapper th + th,
+    html.present-mode #matrixWrapper td,
+    html.present-mode #matrixFloatingHeader th + th {
       border-left-width: 1.5px;
     }
     .meeting-vertical-text {
@@ -420,23 +421,28 @@
     html.dark #matrixSettingsDrawer input::placeholder {
       color: #94a3b8 !important;
     }
-    html.dark #headerWorkspacePopover {
+    html.dark #headerWorkspacePopover,
+    html.dark #roadmapActionsPopover {
       background-color: #0f172a !important;
       border-color: var(--border-strong) !important;
     }
-    html.dark #headerWorkspacePopover > div {
+    html.dark #headerWorkspacePopover > div,
+    html.dark #roadmapActionsPopover > div {
       background-color: #131d31 !important;
       border-color: var(--border-strong) !important;
     }
-    html.dark #headerWorkspacePopover .text-slate-400 {
+    html.dark #headerWorkspacePopover .text-slate-400,
+    html.dark #roadmapActionsPopover .text-slate-400 {
       color: #94a3b8 !important;
     }
-    html.dark #headerWorkspacePopover button:not([aria-pressed="true"]) {
+    html.dark #headerWorkspacePopover button:not([aria-pressed="true"]),
+    html.dark #roadmapActionsPopover button {
       background-color: #1e293b !important;
       border-color: #475569 !important;
       color: #e2e8f0 !important;
     }
-    html.dark #headerWorkspacePopover button:not([aria-pressed="true"]):hover {
+    html.dark #headerWorkspacePopover button:not([aria-pressed="true"]):hover,
+    html.dark #roadmapActionsPopover button:hover {
       background-color: #334155 !important;
       color: #ffffff !important;
     }
@@ -655,8 +661,8 @@
         display: none !important;
       }
       html.print-meeting-slide #desktopMatrixToolbar,
+      html.print-meeting-slide #matrixSettingsDrawer,
       html.print-meeting-slide #mobileMatrixBar,
-      html.print-meeting-slide #meetingShortcutBar,
       html.print-meeting-slide #matrixLegendBar,
       html.print-meeting-slide .meeting-nav-arrow {
         display: none !important;
@@ -682,9 +688,6 @@
         max-width: 100% !important;
         min-width: 0 !important;
         table-layout: fixed !important;
-      }
-      html.print-meeting-slide #matrixWrapper col[data-sticky-col] {
-        width: 56px !important;
       }
       html.print-meeting-slide #matrixWrapper col[data-period-col] {
         width: auto !important;
