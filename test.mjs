@@ -373,6 +373,157 @@ test('Mobile Collapse All / Expand All toggles all visible accordion rows cleanl
   assert.equal(res.afterExpand, 0);
 });
 
+test('Tentative / Pipeline toggle excludes tentative projects from totals and separates Committed vs Pipeline', () => {
+  const res = vm.runInContext(`(() => {
+    const db = createEmptyDB();
+    db.departments = [{ id: 'd1', name: 'Eng', code: 'ENG', color: '#4f46e5', defaultCapacity: 5, manager: '', dayRate: 600 }];
+    db.projects = [
+      { id: 'p1', name: 'Committed', code: 'COM', color: '#4f46e5', status: 'Active', priority: 'High', owner: '', budgetDays: 0, budgetCost: 0, tentative: false, archived: false },
+      { id: 'p2', name: 'Pipeline', code: 'PIP', color: '#f59e0b', status: 'Planned', priority: 'Low', owner: '', budgetDays: 0, budgetCost: 0, tentative: true, archived: false },
+    ];
+    db.allocations['d1::p1::2026-W10'] = 3.0;
+    db.allocations['d1::p2::2026-W10'] = 1.5;
+    ui.filterProj = 'all';
+    ui.includeTentative = true;
+    const withPipe = getDeptTotalAllocatedFte('d1', '2026-W10', 'week', db);
+    const splitOn = getDeptCommittedVsTentativeFte('d1', '2026-W10', 'week', db);
+    ui.includeTentative = false;
+    const withoutPipe = getDeptTotalAllocatedFte('d1', '2026-W10', 'week', db);
+    const splitOff = getDeptCommittedVsTentativeFte('d1', '2026-W10', 'week', db);
+    ui.includeTentative = true;
+    return { withPipe, withoutPipe, splitOn, splitOff };
+  })()`, ctx);
+
+  assert.equal(res.withPipe, 4.5);
+  assert.equal(res.withoutPipe, 3.0);
+  assert.equal(res.splitOn.committed, 3.0);
+  assert.equal(res.splitOn.tentative, 1.5);
+  assert.equal(res.splitOff.tentative, 0);
+});
+
+test('Department day rates compute project cost burn & currency formatting accurately', () => {
+  const res = vm.runInContext(`(() => {
+    const raw = {
+      settings: { daysPerWeek: 5, currency: '$' },
+      departments: [
+        { id: 'd1', name: 'Eng', code: 'ENG', defaultCapacity: 5, dayRate: 800 },
+        { id: 'd2', name: 'Des', code: 'DES', defaultCapacity: 3, dayRate: 600 },
+      ],
+      projects: [{ id: 'p1', name: 'Nova', code: 'NVA', budgetCost: 50000, tentative: true }],
+      allocations: { 'd1::p1::2026-W10': 2.0, 'd2::p1::2026-W10': 1.0 },
+    };
+    const mig = normalizeAndMigrateDB(raw);
+    return {
+      currency: mig.settings.currency,
+      dayRate: mig.departments[0].dayRate,
+      budgetCost: mig.projects[0].budgetCost,
+      tentative: mig.projects[0].tentative,
+      cost: getProjectTotalPlannedCost('p1', mig),
+      formatted: formatCurrency(getProjectTotalPlannedCost('p1', mig), mig),
+    };
+  })()`, ctx);
+
+  assert.equal(res.currency, '$');
+  assert.equal(res.dayRate, 800);
+  assert.equal(res.budgetCost, 50000);
+  assert.equal(res.tentative, true);
+  assert.equal(res.cost, 11000); // (2*5*800) + (1*5*600) = 8000 + 3000
+  assert.equal(res.formatted, '$11k');
+});
+
+test('Grouped Variable Capacity Overrides merge contiguous identical weekly spans cleanly', () => {
+  const res = vm.runInContext(`(() => {
+    const db = createEmptyDB();
+    db.departments = [{ id: 'd1', name: 'Eng', code: 'ENG', color: '#4f46e5', defaultCapacity: 8.0, manager: '', dayRate: 0 }];
+    db.capacityOverrides = {
+      'd1::2026-W10': 9.5,
+      'd1::2026-W11': 9.5,
+      'd1::2026-W12': 9.5,
+      'd1::2026-W13': 10.0,
+      'd1::2026-W20': 6.0,
+    };
+    return getGroupedCapacityOverrides(db, 'all');
+  })()`, ctx);
+
+  assert.equal(res.length, 3);
+  assert.equal(res[0].startWk, '2026-W10');
+  assert.equal(res[0].endWk, '2026-W12');
+  assert.equal(res[0].weekKeys.length, 3);
+  assert.equal(res[0].deltaFte, 1.5);
+  assert.equal(res[1].startWk, '2026-W13');
+  assert.equal(res[1].fte, 10.0);
+  assert.equal(res[2].deltaFte, -2.0);
+});
+
+test('Bottleneck Resolver ranks tentative/low-priority project first and computes accurate buffer & trim', () => {
+  const res = vm.runInContext(`(() => {
+    const db = createEmptyDB();
+    db.departments = [{ id: 'd1', name: 'Eng', code: 'ENG', color: '#4f46e5', defaultCapacity: 5.0, manager: '', dayRate: 0 }];
+    db.projects = [
+      { id: 'p_crit', name: 'Core', code: 'COR', color: '#4f46e5', status: 'Active', priority: 'Critical', owner: '', budgetDays: 0, budgetCost: 0, tentative: false, archived: false },
+      { id: 'p_pipe', name: 'Proposal', code: 'PRP', color: '#f59e0b', status: 'Planned', priority: 'High', owner: '', budgetDays: 0, budgetCost: 0, tentative: true, archived: false },
+    ];
+    db.allocations['d1::p_crit::2026-W10'] = 4.0;
+    db.allocations['d1::p_pipe::2026-W10'] = 2.0;
+    ui.includeTentative = true;
+    ui.filterProj = 'all';
+    return computeBottleneckOptions('d1', '2026-W10', 'week', db);
+  })()`, ctx);
+
+  assert.equal(res.pct, 120);
+  assert.equal(res.excessFte, 1.0);
+  assert.equal(res.candidate.proj.id, 'p_pipe');
+  assert.equal(res.trimTargetFte, 1.0);
+  assert.equal(res.afterTrimPct, 100);
+  assert.equal(res.bufferCapFte, 6.0);
+  assert.equal(res.afterBufferPct, 100);
+});
+
+test('Multi-mode CSV parsers handle Variable Capacities and Milestones cleanly', () => {
+  const res = vm.runInContext(`(() => {
+    const db = createSampleDemoDB();
+    const caps = parseDelimitedCapacities('Dept, Period, Capacity\\nENG, 2026-W10, 9.5\\nDES, 2026-02, 2.5\\nBAD, 2026-W10, 5', 'fte', db);
+    const ms = parseDelimitedMilestones('Project, Title, TargetDate, BaselineDate, Dept, Status\\nNVA, Launch Gate, 2026-06-15, 2026-06-01, ENG, At Risk\\nBAD, X, 2026-06-15', db);
+    return { caps, ms };
+  })()`, ctx);
+
+  assert.equal(res.caps.valid.length, 2);
+  assert.equal(res.caps.errors.length, 1);
+  assert.equal(res.caps.valid[0].fte, 9.5);
+  assert.equal(res.ms.valid.length, 1);
+  assert.equal(res.ms.errors.length, 1);
+  assert.equal(res.ms.valid[0].title, 'Launch Gate');
+  assert.equal(res.ms.valid[0].status, 'At Risk');
+});
+
+test('Duplicate Project & Executive Briefing copy produce accurate results and PWA manifest link exists', () => {
+  const res = vm.runInContext(`(() => {
+    const db = createSampleDemoDB();
+    const beforeCount = db.projects.length;
+    const dup = duplicateProject('p_nova', { name: 'Nova Phase 2', code: 'NV2', copyAllocations: true, copyMilestones: true, tentative: true }, db);
+    const briefing = buildExecutiveBriefingText(db);
+    return {
+      beforeCount,
+      afterCount: db.projects.length,
+      dupCode: dup.project.code,
+      dupTentative: dup.project.tentative,
+      copiedAllocs: dup.copiedAllocs,
+      copiedMs: dup.copiedMs,
+      hasBriefingHeader: briefing.includes('PULSEPLAN EXECUTIVE BRIEFING'),
+      hasBottlenecksSec: briefing.includes('BOTTLENECKS'),
+    };
+  })()`, ctx);
+
+  assert.equal(res.afterCount, res.beforeCount + 1);
+  assert.equal(res.dupCode, 'NV2');
+  assert.equal(res.dupTentative, true);
+  assert.ok(res.copiedAllocs > 0);
+  assert.ok(res.copiedMs > 0);
+  assert.equal(res.hasBriefingHeader, true);
+  assert.equal(res.hasBottlenecksSec, true);
+  assert.equal(html.includes('<link rel="manifest" href="./manifest.webmanifest" />'), true);
+});
+
 let passed = 0;
 let failed = 0;
 for (const t of tests) {

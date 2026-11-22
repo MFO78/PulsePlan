@@ -181,6 +181,7 @@ function compileUtilityDecl(util) {
     'items-start': 'align-items: flex-start;',
     'items-center': 'align-items: center;',
     'items-end': 'align-items: flex-end;',
+    'items-baseline': 'align-items: baseline;',
     'items-stretch': 'align-items: stretch;',
     'justify-start': 'justify-content: flex-start;',
     'justify-center': 'justify-content: center;',
@@ -240,8 +241,10 @@ function compileUtilityDecl(util) {
     'whitespace-nowrap': 'white-space: nowrap;',
     'whitespace-pre-line': 'white-space: pre-line;',
     'break-words': 'overflow-wrap: break-word;',
+    'break-all': 'word-break: break-all;',
     antialiased: '-webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;',
     'cursor-pointer': 'cursor: pointer;',
+    'cursor-text': 'cursor: text;',
     'cursor-grab': 'cursor: grab;',
     'cursor-grabbing': 'cursor: grabbing;',
     'select-none': 'user-select: none;',
@@ -610,6 +613,7 @@ function build() {
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#0b1120" media="(prefers-color-scheme: dark)" />
   <title>PulsePlan — Company Roadmap &amp; Utilisation Planner</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="${faviconHref}" />
   <link rel="shortcut icon" type="image/svg+xml" href="${faviconHref}" />
   <link rel="apple-touch-icon" href="${faviconHref}" />
