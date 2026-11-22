@@ -98,12 +98,14 @@
       scrollbar-width: none;
     }
 
-    /* Prevent iOS Safari auto-zoom on inputs/selects/textareas on small viewports */
+    /* Prevent iOS Safari auto-zoom and mobile flex overflow on inputs/selects/textareas */
     @media (max-width: 767px) {
       input:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
       select,
       textarea {
         font-size: 16px !important;
+        min-width: 0;
+        max-width: 100%;
       }
     }
 
