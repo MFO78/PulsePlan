@@ -256,7 +256,11 @@
     function formatWeekSpanDateRange(startWk, endWk) {
       const mon = isoWeekKeyToMonday(startWk);
       const endSun = new Date(isoWeekKeyToMonday(endWk).getTime() + 6 * 86400000);
-      return `${MONTH_NAMES_SHORT[mon.getUTCMonth()]} ${mon.getUTCDate()} – ${MONTH_NAMES_SHORT[endSun.getUTCMonth()]} ${endSun.getUTCDate()}, ${endSun.getUTCFullYear()}`;
+      const y1 = mon.getUTCFullYear();
+      const y2 = endSun.getUTCFullYear();
+      const startStr = `${MONTH_NAMES_SHORT[mon.getUTCMonth()]} ${mon.getUTCDate()}`;
+      const endStr = `${MONTH_NAMES_SHORT[endSun.getUTCMonth()]} ${endSun.getUTCDate()}`;
+      return y1 === y2 ? `${startStr} – ${endStr}, ${y2}` : `${startStr}, ${y1} – ${endStr}, ${y2}`;
     }
 
     function setOverrideDeptFilter(val) {
@@ -366,8 +370,7 @@
           <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px]">
             <tr>
               <th scope="col" class="px-3.5 py-2.5 font-bold">Department</th>
-              <th scope="col" class="px-3.5 py-2.5 font-bold">Week Span</th>
-              <th scope="col" class="px-3.5 py-2.5 font-bold">Date Range</th>
+              <th scope="col" class="px-3.5 py-2.5 font-bold">Weeks &amp; Date Range</th>
               <th scope="col" class="px-3.5 py-2.5 font-bold text-right">Base FTE</th>
               <th scope="col" class="px-3.5 py-2.5 font-bold text-right">Override FTE</th>
               <th scope="col" class="px-3.5 py-2.5 font-bold text-right">Delta</th>
@@ -389,11 +392,13 @@
                       <span class="font-mono text-[10px] text-slate-400">[${escapeHtml(sp.dept.code)}]</span>
                     </span>
                   </th>
-                  <td class="px-3.5 py-2.5 font-mono font-bold text-slate-800 whitespace-nowrap">
-                    ${escapeHtml(spanLabel)}
-                    <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-sans font-bold">${sp.weekKeys.length} wk${sp.weekKeys.length === 1 ? '' : 's'}</span>
+                  <td class="px-3.5 py-2.5 whitespace-nowrap">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <span class="font-mono font-bold text-slate-800">${escapeHtml(spanLabel)}</span>
+                      <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold">${sp.weekKeys.length} wk${sp.weekKeys.length === 1 ? '' : 's'}</span>
+                      <span class="text-[11px] font-medium text-slate-500">(${escapeHtml(dateRange)})</span>
+                    </div>
                   </td>
-                  <td class="px-3.5 py-2.5 text-slate-600 whitespace-nowrap">${escapeHtml(dateRange)}</td>
                   <td class="px-3.5 py-2.5 text-right tabular-nums text-slate-500 whitespace-nowrap">${sp.baseFte} FTE</td>
                   <td class="px-3.5 py-2.5 text-right tabular-nums font-extrabold text-sky-700 whitespace-nowrap">${sp.fte} FTE</td>
                   <td class="px-3.5 py-2.5 text-right whitespace-nowrap">

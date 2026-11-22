@@ -403,8 +403,10 @@
       return `${thu.getUTCFullYear()}-${pad2(thu.getUTCMonth() + 1)}`;
     }
 
+    const MONTH_NAMES_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
     function formatPeriodHeader(periodKey, timeUnit) {
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const monthNames = MONTH_NAMES_SHORT;
       if (timeUnit === 'month') {
         const [y, m] = periodKey.split('-').map(Number);
         const wks = getWeeksInMonth(periodKey);

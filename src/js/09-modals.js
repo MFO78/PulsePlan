@@ -939,12 +939,14 @@
              <div class="space-y-1.5 max-h-32 overflow-y-auto pr-0.5">
                ${deptSpans.map(sp => {
                  const spanLbl = sp.startWk === sp.endWk ? sp.startWk : `${sp.startWk} → ${sp.endWk}`;
+                 const dateSpan = formatWeekSpanDateRange(sp.startWk, sp.endWk);
                  const dSign = sp.deltaFte > 0 ? `+${sp.deltaFte}` : String(sp.deltaFte);
                  return `
-                   <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200/80 text-[11px]">
+                   <div class="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200/80 text-[11px]">
                      <div class="min-w-0">
                        <span class="font-mono font-bold text-slate-800">${escapeHtml(spanLbl)}</span>
                        <span class="text-slate-400 ml-1">(${sp.weekKeys.length}w)</span>
+                       <div class="text-[10px] text-slate-500">${escapeHtml(dateSpan)}</div>
                      </div>
                      <div class="flex items-center gap-2 shrink-0">
                        <span class="font-extrabold text-sky-700 tabular-nums">${sp.fte} FTE <span class="text-[10px] font-semibold text-slate-500">(${dSign})</span></span>
