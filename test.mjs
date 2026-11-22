@@ -1300,6 +1300,94 @@ test('Active Variable Capacity Overrides auto-groups company-wide holidays & shu
   }
 });
 
+test('Per-dept Start/End capacity overrides with dates, unified Roadmap Cap modal (Holiday + Dept FTE), and Light Mode contrast CSS', () => {
+  assert.ok(!html.includes('id="btnAddCapacityOverride"'), 'Generic Add Override button linked to first dept is removed from Setup panel');
+  assert.ok(html.includes('html:not(.dark) body') && html.includes('--surface-page: #e8eef6'), 'Light Mode contrast & depth tokens are compiled into index.html');
+
+  const prevGetById = sandbox.document.getElementById;
+  const elMap = new Map();
+  sandbox.document.getElementById = (id) => {
+    if (!elMap.has(id)) {
+      const classes = new Set();
+      const el = makeStubEl();
+      el.id = id;
+      el.clientWidth = 1400;
+      el.options = [];
+      el.dataset = {};
+      el.classList = {
+        add: (...c) => c.forEach(x => classes.add(x)),
+        remove: (...c) => c.forEach(x => classes.delete(x)),
+        toggle: (x, f) => { if (f === undefined) { if (classes.has(x)) classes.delete(x); else classes.add(x); } else if (f) classes.add(x); else classes.delete(x); },
+        contains: (x) => classes.has(x),
+      };
+      elMap.set(id, el);
+    }
+    return elMap.get(id);
+  };
+  try {
+    const out = vm.runInContext(`(() => {
+      liveDB = createSampleDemoDB();
+      liveDB.capacityOverrides = {};
+      ui.demoMode = false;
+      ui.whatIfMode = false;
+      ui.timeUnit = 'week';
+      ui.startWeek = '2026-W47';
+      ui.horizon = 4;
+      ui.axis = 'department';
+      window.innerWidth = 1440;
+
+      // 1. Roadmap column header uses Cap -> openPeriodCapacityModal (not Hol%)
+      renderMatrix();
+      const matrixHtml = document.getElementById('matrixWrapper').innerHTML;
+
+      // 2. Per-department openCapacityModal has Start & End pickers showing calendar dates + saves range
+      openCapacityModal('d_des', '2026-W47', { forceWeeks: true, endPeriod: '2026-W49' });
+      const capModalHtml = document.getElementById('modalCard').innerHTML;
+      document.getElementById('mCapDept').value = 'd_des';
+      document.getElementById('mCapUnit').value = 'week';
+      document.getElementById('mCapStart').value = '2026-W47';
+      document.getElementById('mCapEnd').value = '2026-W49';
+      document.getElementById('mCapValue').value = '1.5';
+      saveCapacityModal();
+      const desSaved = [
+        liveDB.capacityOverrides['d_des::2026-W47'],
+        liveDB.capacityOverrides['d_des::2026-W48'],
+        liveDB.capacityOverrides['d_des::2026-W49'],
+        liveDB.capacityOverrides['d_des::2026-W50'],
+      ];
+
+      // 3. Unified openPeriodCapacityModal supports both Company Holiday/% AND Dept FTE Override
+      openPeriodCapacityModal('2026-W50', { forceWeeks: true });
+      const periodCapHtml = document.getElementById('modalCard').innerHTML;
+      setPeriodCapacityModalMode('dept');
+      document.getElementById('mHolDeptSelect').value = 'd_ops';
+      document.getElementById('mHolTimeUnit').value = 'week';
+      document.getElementById('mHolStart').value = '2026-W50';
+      document.getElementById('mHolEnd').value = '2026-W51';
+      document.getElementById('mHolDeptFte').value = '5.0';
+      applyPeriodDeptCapacityModal();
+      const opsSaved = [
+        liveDB.capacityOverrides['d_ops::2026-W50'],
+        liveDB.capacityOverrides['d_ops::2026-W51'],
+      ];
+
+      // 4. Period select options include calendar date ranges alongside week numbers
+      const wkOpts = buildPeriodSelectOptions('2026-W47', 'week', 0, 2);
+      return { matrixHtml, capModalHtml, desSaved, periodCapHtml, opsSaved, wkOptLabel: wkOpts[0].label };
+    })()`, ctx);
+
+    assert.ok(out.matrixHtml.includes("openPeriodCapacityModal('2026-W47')") && out.matrixHtml.includes('>Cap</button>'), 'Roadmap column hover shows general Cap button calling openPeriodCapacityModal');
+    assert.ok(!out.matrixHtml.includes('>Hol%</button>'), 'Old Hol%-only button label replaced by Cap');
+    assert.ok(out.capModalHtml.includes('id="mCapStart"') && out.capModalHtml.includes('id="mCapEnd"') && out.capModalHtml.includes('16–22 Nov'), 'Capacity modal lets user pick both Start and End with calendar dates');
+    assert.deepEqual([...out.desSaved], [1.5, 1.5, 1.5, undefined], 'saveCapacityModal applies exact Start..End weekly span');
+    assert.ok(out.periodCapHtml.includes('Company Holiday / %') && out.periodCapHtml.includes('Dept FTE Override'), 'Unified Cap modal lets user define either a company holiday or momentary dept FTE override');
+    assert.deepEqual([...out.opsSaved], [5.0, 5.0], 'applyPeriodDeptCapacityModal applies momentary department FTE across Start..End');
+    assert.ok(out.wkOptLabel.includes('W47') && out.wkOptLabel.includes('16–22 Nov'), 'buildPeriodSelectOptions shows calendar date range alongside ISO week');
+  } finally {
+    sandbox.document.getElementById = prevGetById;
+  }
+});
+
 let passed = 0;
 let failed = 0;
 for (const t of tests) {
