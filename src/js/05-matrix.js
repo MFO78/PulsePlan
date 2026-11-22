@@ -1092,7 +1092,7 @@
                   return `
                     <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
                       title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — Comment Only${escapeHtml(fullTooltipNote)}"
-                      class="group/pill ${spotlightCls} ${s.pillBox} rounded-xl cursor-pointer transition hover:brightness-95 shadow-2xs"
+                      class="matrix-card group/pill ${spotlightCls} ${s.pillBox} rounded-xl cursor-pointer shadow-2xs"
                       style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1.5px dashed ${filledTheme.border};">
                       <div class="flex items-center justify-between gap-1.5">
                         <div class="flex items-center gap-1.5 min-w-0">
@@ -1111,7 +1111,7 @@
                 return `
                   <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
                     title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — Comment Only${escapeHtml(fullTooltipNote)}"
-                    class="accent-card group/pill ${spotlightCls} ${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer transition"
+                    class="matrix-card accent-card group/pill ${spotlightCls} ${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer"
                     style="--accent-color:${p.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${p.color};">
                     <div class="flex items-center justify-between gap-1.5">
                       <div class="flex items-center gap-1.5 min-w-0">
@@ -1143,7 +1143,7 @@
                     onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')"
                     aria-label="${escapeHtml(p.name)}, ${valStr}, ${capShareTxt}${tierTooltip}"
                     title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${valStr} (${capShareTxt})${tierTooltip} • Click to edit, drag to move/copy${escapeHtml(fullTooltipNote)}"
-                    class="group/pill ${spotlightCls} ${s.pillBox} rounded-xl shadow-xs cursor-grab active:cursor-grabbing transition hover:brightness-95"
+                    class="matrix-card group/pill ${spotlightCls} ${s.pillBox} rounded-xl shadow-xs cursor-grab active:cursor-grabbing"
                     style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1px solid ${filledTheme.border};">
                     <div class="flex items-center justify-between gap-1.5">
                       <div class="flex items-center gap-1.5 min-w-0">
@@ -1174,7 +1174,7 @@
                   ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                   onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')"
                   title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${valStr} (${capShareTxt}) • Click to edit, drag to move/copy${escapeHtml(fullTooltipNote)}"
-                  class="accent-card group/pill ${spotlightCls} ${s.pillBox} rounded-lg bg-white border border-slate-200/90 hover:border-indigo-300 shadow-2xs cursor-grab active:cursor-grabbing transition"
+                  class="matrix-card accent-card group/pill ${spotlightCls} ${s.pillBox} rounded-lg bg-white border border-slate-200/90 hover:border-indigo-300 shadow-2xs cursor-grab active:cursor-grabbing"
                   style="--accent-color:${p.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${p.color};">
                   <div class="flex items-center justify-between gap-1">
                     <div class="flex items-center gap-1.5 min-w-0">
@@ -1342,7 +1342,7 @@
                 if (useColorFill) {
                   return `
                     <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
-                      class="${rowSpotCls} ${s.pillBox} rounded-xl cursor-pointer transition hover:brightness-95 shadow-2xs"
+                      class="matrix-card ${rowSpotCls} ${s.pillBox} rounded-xl cursor-pointer shadow-2xs"
                       style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1.5px dashed ${filledTheme.border};">
                       <div class="flex items-center justify-between gap-1.5">
                         <div class="flex items-center gap-1.5 min-w-0">
@@ -1356,7 +1356,7 @@
                 }
                 return `
                   <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
-                    class="accent-card ${rowSpotCls} ${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer transition"
+                    class="matrix-card accent-card ${rowSpotCls} ${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer"
                     style="--accent-color:${d.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${d.color};">
                     <div class="flex items-center justify-between gap-1.5">
                       <span class="truncate font-semibold text-slate-700">${escapeHtml(d.name)}</span>
@@ -1393,7 +1393,7 @@
                     ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                     onclick="event.stopPropagation(); openAllocationModal('${d.id}', '${row.id}', '${pk}')"
                     title="[${escapeHtml(d.code)}] ${escapeHtml(d.name)}: ${valStr} (${capShareTxt} • Dept total: ${deptPct}%)${isDeptOver ? ' — BOTTLENECK: Dept Overallocated' : ''}${tierTooltip}${escapeHtml(fullTooltipNote)}"
-                    class="group/pill ${rowSpotCls} ${bottleneckRingCls} ${s.pillBox} rounded-xl shadow-xs cursor-grab active:cursor-grabbing transition hover:brightness-95"
+                    class="matrix-card group/pill ${rowSpotCls} ${bottleneckRingCls} ${s.pillBox} rounded-xl shadow-xs cursor-grab active:cursor-grabbing"
                     style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1px solid ${filledTheme.border};">
                     <div class="flex items-center justify-between gap-1.5">
                       <div class="flex items-center gap-1.5 min-w-0">
@@ -1423,7 +1423,7 @@
                   ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                   onclick="event.stopPropagation(); openAllocationModal('${d.id}', '${row.id}', '${pk}')"
                   title="[${escapeHtml(d.code)}] ${escapeHtml(d.name)}: ${valStr} (${capShareTxt} • Dept total: ${deptPct}%)${isDeptOver ? ' — BOTTLENECK: Dept Overallocated' : ''}${escapeHtml(fullTooltipNote)}"
-                  class="accent-card group/pill ${rowSpotCls} ${bottleneckRingCls} ${s.pillBox} rounded-lg bg-white border border-slate-200/90 hover:border-indigo-300 shadow-2xs cursor-grab active:cursor-grabbing transition"
+                  class="matrix-card accent-card group/pill ${rowSpotCls} ${bottleneckRingCls} ${s.pillBox} rounded-lg bg-white border border-slate-200/90 hover:border-indigo-300 shadow-2xs cursor-grab active:cursor-grabbing"
                   style="--accent-color:${d.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${d.color};">
                   <div class="flex items-center justify-between gap-1">
                     <div class="flex items-center gap-1.5 min-w-0">
@@ -1478,7 +1478,7 @@
               : '';
 
             return `
-              <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 bg-white hover:bg-slate-50/70 transition cursor-pointer"
+              <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 matrix-cell-normal transition cursor-pointer"
                 ondragover="handleCellDragOver(event)" ondragleave="handleCellDragLeave(event)"
                 ondrop="handleCellDrop(event, '${row.id}', '${pk}')"
                 onclick="openCellDetailModal('${row.id}', '${pk}')">

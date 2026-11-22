@@ -208,15 +208,15 @@
               const pct = c > 0 ? Math.round((a / c) * 100) : (a > 0 ? 999 : 0);
               const aStr = formatValue(fteToDisplayValue(a, pk, ui.timeUnit));
               const cStr = formatValue(fteToDisplayValue(c, pk, ui.timeUnit));
-              let cellCls = 'bg-slate-50 text-slate-400 border-slate-200 hover:border-indigo-300';
-              if (pct > overT) cellCls = 'bg-rose-500 text-white border-rose-600 hover:brightness-95 font-extrabold';
-              else if (pct >= warnT) cellCls = 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200 font-bold';
-              else if (pct > 0) cellCls = 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100 font-bold';
+              let cellCls = 'bg-slate-50 text-slate-400 border-slate-200';
+              if (pct > overT) cellCls = 'bg-rose-500 text-white border-rose-600 font-extrabold';
+              else if (pct >= warnT) cellCls = 'bg-amber-100 text-amber-900 border-amber-300 font-bold';
+              else if (pct > 0) cellCls = 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold';
               return `
                 <td class="p-1 text-center border-b border-slate-100">
                   <button type="button" onclick="jumpToMatrixCell('${d.id}', '${pk}')"
                     title="${escapeHtml(d.name)} — ${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).title)}: ${aStr} / ${cStr} (${pct > 990 ? '>100%' : pct + '%'}) • Click to open in Roadmap"
-                    class="w-full min-w-[56px] px-2 py-1.5 rounded-lg border text-[11px] tabular-nums transition cursor-pointer ${cellCls}">
+                    class="heatmap-cell w-full min-w-[56px] px-2 py-1.5 rounded-lg border text-[11px] tabular-nums cursor-pointer ${cellCls}">
                     ${pct > 990 ? '&infin;' : pct + '%'}
                   </button>
                 </td>`;
