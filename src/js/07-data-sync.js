@@ -64,8 +64,8 @@
           const rateVal = Number(d.dayRate) || 0;
           const rateTxt = rateVal > 0 ? `${curSym.length > 1 ? curSym + ' ' : curSym}${rateVal.toLocaleString('en-US')}/d` : '—';
           const ovSummary = overrideCount > 0
-            ? `${deptSpans.length} span${deptSpans.length === 1 ? '' : 's'} (${overrideCount} wk${overrideCount === 1 ? '' : 's'}) &bull; Edit`
-            : 'None &bull; + Add';
+            ? `${deptSpans.length} span${deptSpans.length === 1 ? '' : 's'} (${overrideCount} wk${overrideCount === 1 ? '' : 's'}) &bull; + / Edit`
+            : '+ Add Override';
           return `
             <tr class="hover:bg-slate-50/70">
               <th scope="row" class="px-4 py-3 font-bold text-slate-900 text-left">
@@ -268,22 +268,8 @@
       renderCapacityOverridesTable(getActiveDB());
     }
 
-    function openAddOverrideFromSetup() {
-      const db = getActiveDB();
-      if (!db.departments || db.departments.length === 0) {
-        showToast('Add a Department first before setting variable capacity overrides.', 'warning');
-        return;
-      }
-      const targetDeptId = (ui.overrideDeptFilter && ui.overrideDeptFilter !== 'all' && db.departments.some(d => d.id === ui.overrideDeptFilter))
-        ? ui.overrideDeptFilter
-        : db.departments[0].id;
-      const anchor = ui.timeUnit === 'month' ? ui.startMonth : ui.startWeek;
-      openCapacityModal(targetDeptId, anchor);
-    }
-
-    function editCapacityOverrideSpan(deptId, startWk) {
-      const targetPk = ui.timeUnit === 'month' ? getWeekOwningMonth(startWk) : startWk;
-      openCapacityModal(deptId, targetPk);
+    function editCapacityOverrideSpan(deptId, startWk, endWk = startWk) {
+      openCapacityModal(deptId, startWk, { forceWeeks: true, endPeriod: endWk || startWk });
     }
 
     function enumerateIsoWeekSpan(startWk, endWk) {
@@ -314,8 +300,7 @@
     }
 
     function editCompanyOverrideGroup(startWk, endWk, pctFactor) {
-      const wks = enumerateIsoWeekSpan(startWk, endWk);
-      openHolidayFactorModal(startWk, { forceWeeks: true, count: Math.max(1, wks.length), pct: pctFactor });
+      openHolidayFactorModal(startWk, { forceWeeks: true, endPeriod: endWk, pct: pctFactor });
     }
 
     function resetCompanyOverrideGroup(startWk, endWk) {
@@ -445,7 +430,7 @@
       if (entries.length === 0) {
         box.innerHTML = `
           <div class="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-500">
-            No active variable capacity overrides${filterId !== 'all' ? ' for this department' : ''}. Use <strong>+ Add Override</strong>, click any cell&rsquo;s capacity readout in the Roadmap, or use <strong>Holiday / Shutdown %</strong>.
+            No active variable capacity overrides${filterId !== 'all' ? ' for this department' : ''}. Use a department&rsquo;s <strong>+ Add Override</strong> button in the table above, click <strong>Cap</strong> on any Roadmap column, or use <strong>Holiday / Shutdown %</strong>.
           </div>`;
         return;
       }
@@ -519,7 +504,7 @@
               <td class="px-3.5 py-2 text-right tabular-nums font-bold text-sky-700 whitespace-nowrap">${it.fte} FTE</td>
               <td class="px-3.5 py-2 text-right whitespace-nowrap">${formatDeltaBadge(it.deltaFte)}</td>
               <td class="px-3.5 py-2 text-right space-x-2 whitespace-nowrap">
-                <button type="button" onclick="editCapacityOverrideSpan('${it.deptId}', '${entry.startWk}')" class="text-indigo-600 hover:underline font-semibold">Edit</button>
+                <button type="button" onclick="editCapacityOverrideSpan('${it.deptId}', '${entry.startWk}', '${entry.endWk}')" class="text-indigo-600 hover:underline font-semibold">Edit</button>
                 <button type="button" onclick="resetCapacityOverrideSpan('${it.deptId}', '${entry.startWk}', '${entry.endWk}')" class="text-amber-700 hover:underline font-semibold">Reset</button>
               </td>
             </tr>`).join('');
@@ -551,7 +536,7 @@
             <td class="px-3.5 py-2.5 text-right tabular-nums font-extrabold text-sky-700 whitespace-nowrap">${entry.fte} FTE</td>
             <td class="px-3.5 py-2.5 text-right whitespace-nowrap">${formatDeltaBadge(entry.deltaFte)}</td>
             <td class="px-3.5 py-2.5 text-right space-x-2 whitespace-nowrap">
-              <button type="button" onclick="editCapacityOverrideSpan('${entry.deptId}', '${entry.startWk}')" class="text-indigo-600 hover:underline font-semibold">Edit</button>
+              <button type="button" onclick="editCapacityOverrideSpan('${entry.deptId}', '${entry.startWk}', '${entry.endWk}')" class="text-indigo-600 hover:underline font-semibold">Edit</button>
               <button type="button" onclick="resetCapacityOverrideSpan('${entry.deptId}', '${entry.startWk}', '${entry.endWk}')" class="text-amber-700 hover:underline font-semibold">Reset</button>
             </td>
           </tr>`;

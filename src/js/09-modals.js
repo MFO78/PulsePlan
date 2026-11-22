@@ -912,22 +912,117 @@
       showToast('Allocation removed', 'info', { undoable: true });
     }
 
-    /* ---------- Variable Capacity Modal (Single or Date Range) ---------- */
+    /* ---------- Variable Capacity Modal (Single or Date Range with Start & End) ---------- */
 
-    function openCapacityModal(deptId, periodKey) {
+    function collectPeriodKeysInRange(startPk, endPk, unit) {
+      const keys = [];
+      if (!startPk) return keys;
+      const safeEnd = (!endPk || endPk < startPk) ? startPk : endPk;
+      let cur = startPk;
+      let guard = 0;
+      while (cur <= safeEnd && guard < 60) {
+        keys.push(cur);
+        if (cur === safeEnd) break;
+        cur = unit === 'month' ? addMonthsToMonthKey(cur, 1) : addWeeksToWeekKey(cur, 1);
+        guard++;
+      }
+      return keys;
+    }
+
+    function buildPeriodEndSelectOptionsHtml(startPk, unit, selectedEndPk = startPk, maxSpan = 26) {
+      const opts = [];
+      let cur = startPk;
+      const limit = Math.max(maxSpan, collectPeriodKeysInRange(startPk, selectedEndPk, unit).length);
+      let matched = false;
+      for (let i = 1; i <= Math.min(52, limit); i++) {
+        const h = formatPeriodHeader(cur, unit);
+        const isSel = cur === selectedEndPk;
+        if (isSel) matched = true;
+        const unitLbl = unit === 'month' ? (i === 1 ? '1 mo' : `${i} mos`) : (i === 1 ? '1 wk' : `${i} wks`);
+        opts.push(`<option value="${cur}" ${isSel ? 'selected' : ''}>${escapeHtml(h.title)} (${escapeHtml(h.dateRange)}) &bull; ${unitLbl}</option>`);
+        cur = unit === 'month' ? addMonthsToMonthKey(cur, 1) : addWeeksToWeekKey(cur, 1);
+      }
+      if (!matched && opts.length > 0) {
+        opts[0] = opts[0].replace('<option ', '<option selected ');
+      }
+      return opts.join('');
+    }
+
+    function formatPeriodRangeSummaryText(startPk, endPk, unit) {
+      const pks = collectPeriodKeysInRange(startPk, endPk, unit);
+      if (pks.length === 0) return '';
+      const allWks = [];
+      pks.forEach(pk => {
+        const wks = unit === 'month' ? getWeeksInMonth(pk) : [pk];
+        wks.forEach(w => { if (!allWks.includes(w)) allWks.push(w); });
+      });
+      allWks.sort((a, b) => a.localeCompare(b));
+      const firstWk = allWks[0];
+      const lastWk = allWks[allWks.length - 1];
+      const dateSpan = (firstWk && lastWk) ? formatWeekSpanDateRange(firstWk, lastWk) : '';
+      const spanLbl = pks.length === 1 ? pks[0] : `${pks[0]} → ${pks[pks.length - 1]}`;
+      return `${spanLbl} (${allWks.length} wk${allWks.length === 1 ? '' : 's'}${dateSpan ? ' · ' + dateSpan : ''})`;
+    }
+
+    function syncCapacityModalEndOptions(preferredEndPk = '') {
+      const startEl = document.getElementById('mCapStart');
+      const endEl = document.getElementById('mCapEnd');
+      const unitEl = document.getElementById('mCapUnit');
+      const sumEl = document.getElementById('mCapRangeSummary');
+      if (!startEl || !endEl || !unitEl) return;
+      const unit = unitEl.value === 'month' ? 'month' : 'week';
+      const startPk = startEl.value;
+      let targetEnd = preferredEndPk || endEl.value || startPk;
+      if (targetEnd < startPk) targetEnd = startPk;
+      endEl.innerHTML = buildPeriodEndSelectOptionsHtml(startPk, unit, targetEnd, 26);
+      if (sumEl) {
+        sumEl.textContent = formatPeriodRangeSummaryText(startPk, endEl.value, unit);
+      }
+    }
+
+    function updateCapacityModalSummary() {
+      const startEl = document.getElementById('mCapStart');
+      const endEl = document.getElementById('mCapEnd');
+      const unitEl = document.getElementById('mCapUnit');
+      const sumEl = document.getElementById('mCapRangeSummary');
+      if (!startEl || !endEl || !unitEl || !sumEl) return;
+      const unit = unitEl.value === 'month' ? 'month' : 'week';
+      sumEl.textContent = formatPeriodRangeSummaryText(startEl.value, endEl.value, unit);
+    }
+
+    function setCapacityModalUnit(nextUnit) {
+      const deptId = document.getElementById('mCapDept')?.value;
+      const curStart = document.getElementById('mCapStart')?.value || '';
+      const curUnit = document.getElementById('mCapUnit')?.value === 'month' ? 'month' : 'week';
+      if (!deptId || nextUnit === curUnit) return;
+      let nextStart = curStart;
+      if (nextUnit === 'week' && /^\d{4}-\d{2}$/.test(curStart)) {
+        nextStart = getWeeksInMonth(curStart)[0] || ui.startWeek;
+      } else if (nextUnit === 'month' && /^\d{4}-W\d{2}$/.test(curStart)) {
+        nextStart = getWeekOwningMonth(curStart);
+      }
+      openCapacityModal(deptId, nextStart, { timeUnit: nextUnit });
+    }
+
+    function openCapacityModal(deptId, periodKey, opts = {}) {
       const db = getActiveDB();
       const dept = db.departments.find(d => d.id === deptId);
       if (!dept) return;
-      const capObj = getDeptCapacityForPeriod(deptId, periodKey, ui.timeUnit, db);
-      const hdr = formatPeriodHeader(periodKey, ui.timeUnit);
 
-      const endOpts = [];
-      let curPk = periodKey;
-      for (let i = 1; i <= 24; i++) {
-        const h = formatPeriodHeader(curPk, ui.timeUnit);
-        endOpts.push(`<option value="${i}" ${i === 1 ? 'selected' : ''}>${escapeHtml(h.title)}${i === 1 ? ' (single)' : ` (${i} ${ui.timeUnit}s)`}</option>`);
-        curPk = ui.timeUnit === 'month' ? addMonthsToMonthKey(curPk, 1) : addWeeksToWeekKey(curPk, 1);
+      let effectiveUnit = opts && opts.forceWeeks ? 'week' : ((opts && (opts.timeUnit === 'week' || opts.timeUnit === 'month')) ? opts.timeUnit : ui.timeUnit);
+      let startPk = periodKey || (effectiveUnit === 'month' ? ui.startMonth : ui.startWeek);
+      if (effectiveUnit === 'week' && /^\d{4}-\d{2}$/.test(startPk)) {
+        startPk = getWeeksInMonth(startPk)[0] || ui.startWeek;
+      } else if (effectiveUnit === 'month' && /^\d{4}-W\d{2}$/.test(startPk)) {
+        effectiveUnit = 'week';
       }
+      let endPk = opts && opts.endPeriod ? opts.endPeriod : startPk;
+      if (endPk < startPk) endPk = startPk;
+
+      const capObj = getDeptCapacityForPeriod(deptId, startPk, effectiveUnit, db);
+      const startOpts = buildPeriodSelectOptions(startPk, effectiveUnit, 12, 36);
+      const endOptsHtml = buildPeriodEndSelectOptionsHtml(startPk, effectiveUnit, endPk, 26);
+      const summaryTxt = formatPeriodRangeSummaryText(startPk, endPk, effectiveUnit);
 
       const deptSpans = getGroupedCapacityOverrides(db, deptId);
       const existingOverridesHtml = deptSpans.length > 0
@@ -936,7 +1031,7 @@
                <span class="font-bold text-slate-700">Active Overrides for ${escapeHtml(dept.name)} (${deptSpans.length})</span>
                <span class="text-[10px] text-slate-500">Base: ${dept.defaultCapacity} FTE</span>
              </div>
-             <div class="space-y-1.5 max-h-32 overflow-y-auto pr-0.5">
+             <div class="space-y-1.5 max-h-36 overflow-y-auto pr-0.5">
                ${deptSpans.map(sp => {
                  const spanLbl = sp.startWk === sp.endWk ? sp.startWk : `${sp.startWk} → ${sp.endWk}`;
                  const dateSpan = formatWeekSpanDateRange(sp.startWk, sp.endWk);
@@ -948,9 +1043,11 @@
                        <span class="text-slate-400 ml-1">(${sp.weekKeys.length}w)</span>
                        <div class="text-[10px] text-slate-500">${escapeHtml(dateSpan)}</div>
                      </div>
-                     <div class="flex items-center gap-2 shrink-0">
+                     <div class="flex items-center gap-1.5 shrink-0">
                        <span class="font-extrabold text-sky-700 tabular-nums">${sp.fte} FTE <span class="text-[10px] font-semibold text-slate-500">(${dSign})</span></span>
-                       <button type="button" onclick="resetCapacityOverrideSpan('${deptId}', '${sp.startWk}', '${sp.endWk}'); openCapacityModal('${deptId}', '${periodKey}');"
+                       <button type="button" onclick="openCapacityModal('${deptId}', '${sp.startWk}', { forceWeeks: true, endPeriod: '${sp.endWk}' })"
+                         class="px-1.5 py-0.5 rounded bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 font-bold text-[10px] transition">Edit</button>
+                       <button type="button" onclick="resetCapacityOverrideSpan('${deptId}', '${sp.startWk}', '${sp.endWk}'); openCapacityModal('${deptId}', '${startPk}', { timeUnit: '${effectiveUnit}' });"
                          class="px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-bold text-[10px] transition">Reset</button>
                      </div>
                    </div>`;
@@ -959,43 +1056,70 @@
            </div>`
         : '';
 
+      const unitBtnCls = (active) => active
+        ? 'px-2.5 py-1 rounded-lg bg-white text-indigo-700 font-bold shadow-xs text-[11px] transition cursor-pointer'
+        : 'px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 font-semibold text-[11px] transition cursor-pointer';
+
       showModal(`
         <div class="p-5 space-y-4 text-xs">
           <div class="w-10 h-1.5 rounded-full bg-slate-300 mx-auto sm:hidden" aria-hidden="true"></div>
-          <div class="flex items-center justify-between">
-            <h3 id="modalTitle" class="text-base font-bold text-slate-900">Variable Capacity — ${escapeHtml(dept.name)}</h3>
-            <button type="button" aria-label="Close dialog" onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none">&times;</button>
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <h3 id="modalTitle" class="text-base font-bold text-slate-900">Variable Capacity — ${escapeHtml(dept.name)}</h3>
+              <p class="text-[11px] text-slate-500 mt-0.5">Base capacity: <strong>${dept.defaultCapacity} FTE</strong>. Define exact start &amp; end range for hiring ramps, PTO dips, or contractors.</p>
+            </div>
+            <button type="button" aria-label="Close dialog" onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none shrink-0">&times;</button>
           </div>
-          <p class="text-slate-500">Default capacity is <strong>${dept.defaultCapacity} FTE</strong>. Override capacity starting <strong>${escapeHtml(hdr.title)}</strong> across one or multiple ${ui.timeUnit}s (hiring ramp, PTO dip, contractors).</p>
 
           <input type="hidden" id="mCapDept" value="${deptId}" />
-          <input type="hidden" id="mCapPeriod" value="${periodKey}" />
+          <input type="hidden" id="mCapUnit" value="${effectiveUnit}" />
+
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="font-semibold text-slate-700">Override Granularity</span>
+            <div class="inline-flex items-center p-0.5 rounded-xl bg-slate-100 border border-slate-200" role="group" aria-label="Capacity override granularity">
+              <button type="button" onclick="setCapacityModalUnit('week')" class="${unitBtnCls(effectiveUnit === 'week')}">ISO Weeks</button>
+              <button type="button" onclick="setCapacityModalUnit('month')" class="${unitBtnCls(effectiveUnit === 'month')}">Months</button>
+            </div>
+          </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label for="mCapValue" class="block font-semibold text-slate-700 mb-1">Capacity (FTE Rate)</label>
-              <div class="flex items-center gap-1.5">
-                <button type="button" aria-label="Decrease capacity" onclick="stepNumericInput('mCapValue', -0.25, 0, 1000, 2)"
-                  class="w-10 h-10 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-base transition shrink-0">&minus;</button>
-                <input id="mCapValue" type="number" inputmode="decimal" step="0.25" min="0" value="${Math.round(capObj.avgFte * 100) / 100}"
-                  class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold text-center" />
-                <button type="button" aria-label="Increase capacity" onclick="stepNumericInput('mCapValue', 0.25, 0, 1000, 2)"
-                  class="w-10 h-10 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-base transition shrink-0">+</button>
-              </div>
+              <label for="mCapStart" class="block font-semibold text-slate-700 mb-1">Start ${effectiveUnit === 'month' ? 'Month' : 'ISO Week'}</label>
+              <select id="mCapStart" onchange="syncCapacityModalEndOptions()" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium">
+                ${startOpts.map(o => `<option value="${o.key}" ${o.key === startPk ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
+              </select>
             </div>
             <div>
-              <label for="mCapEndCount" class="block font-semibold text-slate-700 mb-1">Through ${ui.timeUnit === 'month' ? 'End Month' : 'End Week'}</label>
-              <select id="mCapEndCount" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium">
-                ${endOpts.join('')}
+              <label for="mCapEnd" class="block font-semibold text-slate-700 mb-1">End ${effectiveUnit === 'month' ? 'Month' : 'ISO Week'}</label>
+              <select id="mCapEnd" onchange="updateCapacityModalSummary()" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium">
+                ${endOptsHtml}
               </select>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px]">
+            <span class="text-slate-500 font-semibold">Selected Span</span>
+            <span id="mCapRangeSummary" class="font-mono font-bold text-slate-800">${escapeHtml(summaryTxt)}</span>
+          </div>
+
+          <div>
+            <label for="mCapValue" class="block font-semibold text-slate-700 mb-1">Overridden Capacity (FTE Rate)</label>
+            <div class="flex items-center gap-1.5">
+              <button type="button" aria-label="Decrease capacity" onclick="stepNumericInput('mCapValue', -0.25, 0, 1000, 2)"
+                class="w-10 h-10 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-base transition shrink-0">&minus;</button>
+              <input id="mCapValue" type="number" inputmode="decimal" step="0.25" min="0" value="${Math.round(capObj.avgFte * 100) / 100}"
+                class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold text-center" />
+              <button type="button" aria-label="Increase capacity" onclick="stepNumericInput('mCapValue', 0.25, 0, 1000, 2)"
+                class="w-10 h-10 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-base transition shrink-0">+</button>
             </div>
           </div>
 
           ${existingOverridesHtml}
 
           <div class="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 text-[11px]">
-            <span>Need a company-wide holiday or shutdown dip?</span>
-            <button type="button" onclick="openHolidayFactorModal('${periodKey}')" class="px-2.5 py-1 rounded-lg bg-white border border-sky-200 hover:bg-sky-100 text-sky-700 font-bold transition shrink-0">Holiday % Tool</button>
+            <span>Need a company-wide holiday or shutdown dip across teams?</span>
+            <button type="button" onclick="openPeriodCapacityModal(document.getElementById('mCapStart')?.value || '${startPk}', { timeUnit: document.getElementById('mCapUnit')?.value || '${effectiveUnit}', initialMode: 'holiday' })"
+              class="px-2.5 py-1 rounded-lg bg-white border border-sky-200 hover:bg-sky-100 text-sky-700 font-bold transition shrink-0">Holiday % Tool</button>
           </div>
 
           <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
@@ -1005,47 +1129,53 @@
               <button type="button" onclick="saveCapacityModal()" class="px-4 py-2.5 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">Save Capacity</button>
             </div>
           </div>
-        </div>`);
+        </div>`, 'max-w-xl');
     }
 
     function saveCapacityModal() {
       const db = getActiveDB();
       const deptId = document.getElementById('mCapDept').value;
-      const pk = document.getElementById('mCapPeriod').value;
+      const unit = document.getElementById('mCapUnit')?.value === 'month' ? 'month' : 'week';
+      const startPk = document.getElementById('mCapStart').value;
+      const endPk = document.getElementById('mCapEnd').value || startPk;
       const val = parseFloat(document.getElementById('mCapValue').value);
-      const count = Math.max(1, Math.min(24, parseInt(document.getElementById('mCapEndCount').value, 10) || 1));
 
       if (isNaN(val) || val < 0) { showToast('Enter a valid FTE capacity.', 'warning'); return; }
 
+      const pks = collectPeriodKeysInRange(startPk, endPk, unit);
+      if (pks.length === 0) { showToast('Select a valid start and end period.', 'warning'); return; }
+
       const dept = db.departments.find(d => d.id === deptId);
       pushUndoState(`Update ${dept?.name || deptId} capacity`);
-      let curPk = pk;
-      for (let i = 0; i < count; i++) {
-        const wks = ui.timeUnit === 'month' ? getWeeksInMonth(curPk) : [curPk];
+      pks.forEach(pk => {
+        const wks = unit === 'month' ? getWeeksInMonth(pk) : [pk];
         wks.forEach(wk => { db.capacityOverrides[`${deptId}::${wk}`] = val; });
-        curPk = ui.timeUnit === 'month' ? addMonthsToMonthKey(curPk, 1) : addWeeksToWeekKey(curPk, 1);
-      }
+      });
 
-      recordChange('Capacity', `${dept?.name || deptId} capacity set to ${val} FTE (${count > 1 ? `${pk} + ${count - 1} more ${ui.timeUnit}s` : pk})`);
+      const spanTxt = pks.length > 1 ? `${pks[0]} → ${pks[pks.length - 1]}` : pks[0];
+      recordChange('Capacity', `${dept?.name || deptId} capacity set to ${val} FTE (${spanTxt})`);
       closeModal();
       renderAll();
-      showToast(`Variable capacity updated (${count} ${ui.timeUnit}${count === 1 ? '' : 's'})`, 'success', { undoable: true });
+      showToast(`Variable capacity updated (${pks.length} ${unit}${pks.length === 1 ? '' : 's'})`, 'success', { undoable: true });
     }
 
     function resetCapacityOverrideFromModal() {
       const db = getActiveDB();
       const deptId = document.getElementById('mCapDept').value;
-      const pk = document.getElementById('mCapPeriod').value;
-      const count = Math.max(1, Math.min(24, parseInt(document.getElementById('mCapEndCount')?.value, 10) || 1));
+      const unit = document.getElementById('mCapUnit')?.value === 'month' ? 'month' : 'week';
+      const startPk = document.getElementById('mCapStart').value;
+      const endPk = document.getElementById('mCapEnd').value || startPk;
+      const pks = collectPeriodKeysInRange(startPk, endPk, unit);
+      if (pks.length === 0) return;
+
       const dept = db.departments.find(d => d.id === deptId);
       pushUndoState(`Reset ${dept?.name || deptId} capacity`);
-      let curPk = pk;
-      for (let i = 0; i < count; i++) {
-        const wks = ui.timeUnit === 'month' ? getWeeksInMonth(curPk) : [curPk];
+      pks.forEach(pk => {
+        const wks = unit === 'month' ? getWeeksInMonth(pk) : [pk];
         wks.forEach(wk => { delete db.capacityOverrides[`${deptId}::${wk}`]; });
-        curPk = ui.timeUnit === 'month' ? addMonthsToMonthKey(curPk, 1) : addWeeksToWeekKey(curPk, 1);
-      }
-      recordChange('Capacity', `Reset ${dept?.name || deptId} capacity override in ${pk}${count > 1 ? ` (+${count - 1} more)` : ''} back to default`);
+      });
+      const spanTxt = pks.length > 1 ? `${pks[0]} → ${pks[pks.length - 1]}` : pks[0];
+      recordChange('Capacity', `Reset ${dept?.name || deptId} capacity override (${spanTxt}) back to default`);
       closeModal();
       renderAll();
       showToast('Capacity reset to default', 'info', { undoable: true });

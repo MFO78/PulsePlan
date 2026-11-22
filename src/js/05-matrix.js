@@ -1384,8 +1384,8 @@
           ? `<div class="opacity-0 group-hover/col:opacity-100 inline-flex items-center gap-0.5 transition shrink-0">
                <button type="button" onclick="copyPeriodToNext('${pk}')" title="Copy all visible allocations from ${escapeHtml(h.title)} into the next ${unitNoun}"
                  class="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-700 text-slate-500 text-[10px] font-semibold transition cursor-pointer">Copy&rarr;</button>
-               <button type="button" onclick="openHolidayFactorModal('${pk}')" title="Apply holiday / shutdown capacity % to ${escapeHtml(h.title)}"
-                 class="px-1 py-0.5 rounded-md bg-white border border-slate-200 hover:border-sky-300 hover:text-sky-700 text-slate-500 text-[10px] font-semibold transition cursor-pointer">Hol%</button>
+               <button type="button" onclick="openPeriodCapacityModal('${pk}')" title="Set variable capacity or company holiday / shutdown for ${escapeHtml(h.title)}"
+                 class="px-1 py-0.5 rounded-md bg-white border border-slate-200 hover:border-sky-300 hover:text-sky-700 text-slate-500 text-[10px] font-semibold transition cursor-pointer">Cap</button>
                <button type="button" onclick="clearPeriodAllocations('${pk}')" title="Clear all visible allocations in ${escapeHtml(h.title)}"
                  class="px-1 py-0.5 rounded-md bg-white border border-slate-200 hover:border-rose-300 hover:text-rose-600 text-slate-500 text-[10px] font-semibold transition cursor-pointer">&times;</button>
              </div>`

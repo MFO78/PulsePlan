@@ -32,7 +32,7 @@
       redFte: 2.5,
     };
 
-    const PULSEPLAN_BUILD_ID = '2026-11-22-v7.2';
+    const PULSEPLAN_BUILD_ID = '2026-11-22-v7.3';
     const _debugLogEntries = [];
     const MAX_DEBUG_LOG_ENTRIES = 120;
 
@@ -586,7 +586,7 @@
           ? addMonthsToMonthKey(anchorKey, i)
           : addWeeksToWeekKey(anchorKey, i);
         const h = formatPeriodHeader(pk, timeUnit);
-        options.push({ key: pk, label: `${h.title} (${h.sub})` });
+        options.push({ key: pk, label: `${h.title} (${h.dateRange || h.sub})` });
       }
       return options;
     }
