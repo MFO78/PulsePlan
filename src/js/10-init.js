@@ -653,6 +653,7 @@
           ui.filterHasNotesOnly = false;
           if (!Array.isArray(ui.recentUsers)) ui.recentUsers = [];
           if (!Array.isArray(ui.removedUsers)) ui.removedUsers = [];
+          if (!ui.linkedFilePaths || typeof ui.linkedFilePaths !== 'object' || Array.isArray(ui.linkedFilePaths)) ui.linkedFilePaths = {};
         } else {
           ui.pdfOptions = { colorMode: 'match', colsPerPage: 6, ...ui.pdfOptions };
         }

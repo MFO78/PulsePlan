@@ -62,6 +62,7 @@
       autoSaveToFile: true,
       autoReloadFromFile: true,
       pollIntervalMs: 15000,
+      linkedFilePaths: {},            // Per-device saved folder/full paths keyed by filename (browser hides local disk paths for security)
     };
 
     let liveDB = null;
@@ -72,6 +73,7 @@
 
     // Shared File Sync runtime state
     let linkedFileHandle = null;
+    let linkedFileDetectedPath = '';
     let rememberedFileHandle = null;
     let lastKnownFileModified = 0;
     let pollTimerId = null;
