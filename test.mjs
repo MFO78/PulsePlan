@@ -773,7 +773,7 @@ test('Mobile web-app meta tag, hung IndexedDB resilience, policy auto-abort dete
     const elapsed = Date.now() - t0;
 
     assert.ok(elapsed < 1000, `openSharedDatabaseFile did not hang (${elapsed}ms)`);
-    assert.ok(toasts.some(t => t.type === 'warning' && t.msg.includes('Import JSON') && t.opts?.actionLabel === 'Import JSON'), 'AbortError provides warning toast with one-click Import JSON action button');
+    assert.ok(toasts.some(t => t.type === 'warning' && t.msg.includes('Chrome 158+') && t.msg.includes('Import JSON') && t.opts?.actionLabel === 'Import JSON'), 'AbortError provides Chrome 158+ warning toast with one-click Import JSON action button');
     assert.ok(out.report.includes('PulsePlan Diagnostics Report'), 'formatDebugReport outputs structured header');
     assert.ok(out.report.includes('showOpenFilePicker AbortError'), 'Debug log records AbortError diagnostics');
   } finally {
@@ -782,6 +782,55 @@ test('Mobile web-app meta tag, hung IndexedDB resilience, policy auto-abort dete
     sandbox.window.showOpenFilePicker = prevOpenPicker;
     sandbox.window.showSaveFilePicker = prevSavePicker;
     sandbox.location = prevLoc;
+  }
+});
+
+test('Connected File full-path formatting & Sync tab display (Windows Copy-as-path quotes, folder prefix, runtime file.path)', () => {
+  const prevGetById = sandbox.document.getElementById;
+  const elMap = new Map();
+  sandbox.document.getElementById = (id) => {
+    if (!elMap.has(id)) {
+      const el = makeStubEl();
+      el.id = id;
+      el.options = [];
+      el.dataset = {};
+      elMap.set(id, el);
+    }
+    return elMap.get(id);
+  };
+  try {
+    const out = vm.runInContext(`(() => {
+      const p1 = formatLinkedFileFullPath('roadmap.json', 'G:\\\\My Drive\\\\PulsePlan');
+      const p2 = formatLinkedFileFullPath('roadmap.json', 'G:\\\\My Drive\\\\PulsePlan\\\\');
+      const p3 = formatLinkedFileFullPath('roadmap.json', '"G:\\\\My Drive\\\\PulsePlan\\\\roadmap.json"');
+      const p4 = formatLinkedFileFullPath('roadmap.json', '/Users/marco/Drive/PulsePlan');
+      const p5 = formatLinkedFileFullPath('roadmap.json', '');
+
+      ui.linkedFilePaths = { 'roadmap.json': p3 };
+      linkedFileHandle = { name: 'roadmap.json' };
+      linkedFileDetectedPath = '';
+      renderSyncTab();
+      const statusHtml = document.getElementById('syncFileStatusBox').innerHTML;
+
+      linkedFileDetectedPath = 'C:\\\\Runtime\\\\Path\\\\roadmap.json';
+      const runtimeDisplay = getConnectedFileDisplayPath('roadmap.json');
+
+      linkedFileHandle = null;
+      linkedFileDetectedPath = '';
+      ui.linkedFilePaths = {};
+      return { p1, p2, p3, p4, p5, statusHtml, runtimeDisplay };
+    })()`, ctx);
+
+    assert.equal(out.p1, 'G:\\My Drive\\PulsePlan\\roadmap.json', 'Appends filename with backslash for Windows folder');
+    assert.equal(out.p2, 'G:\\My Drive\\PulsePlan\\roadmap.json', 'Handles trailing backslash without doubling');
+    assert.equal(out.p3, 'G:\\My Drive\\PulsePlan\\roadmap.json', 'Strips Windows Copy-as-path quotes and does not duplicate filename');
+    assert.equal(out.p4, '/Users/marco/Drive/PulsePlan/roadmap.json', 'Uses forward slash for Unix/macOS paths');
+    assert.equal(out.p5, 'roadmap.json', 'Falls back to bare filename when path empty');
+    assert.equal(out.runtimeDisplay, 'C:\\Runtime\\Path\\roadmap.json', 'Prefers runtime-detected file.path when available');
+    assert.ok(out.statusHtml.includes('G:\\My Drive\\PulsePlan\\roadmap.json'), 'Sync tab Connected File displays full path');
+    assert.ok(out.statusHtml.includes('Edit path'), 'Sync tab offers Edit path button');
+  } finally {
+    sandbox.document.getElementById = prevGetById;
   }
 });
 

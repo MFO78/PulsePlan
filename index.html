@@ -163,6 +163,7 @@ img, video { max-width: 100%; height: auto; }
 .gap-4 { gap: 1rem; }
 .gap-x-2 { column-gap: 0.5rem; }
 .gap-y-0\.5 { row-gap: 0.125rem; }
+.gap-y-1 { row-gap: 0.25rem; }
 .grid-cols-1 { grid-template-columns: repeat(1, minmax(0, 1fr)); }
 .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -259,6 +260,7 @@ img, video { max-width: 100%; height: auto; }
 .shadow-sm { box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.1), 0 1px 2px -1px rgba(15, 23, 42, 0.1); }
 .shadow-xl { box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.1); }
 .shadow-xs { box-shadow: 0 1px 2px 0 rgba(15, 23, 42, 0.05); }
+.shrink { flex-shrink: 1; }
 .shrink-0 { flex-shrink: 0; }
 .snap-center { scroll-snap-align: center; }
 .snap-mandatory { --tw-scroll-snap-strictness: mandatory; }
@@ -510,6 +512,7 @@ img, video { max-width: 100%; height: auto; }
 .hover\:text-violet-700:hover { color: #6d28d9; }
 .hover\:underline:hover { text-decoration-line: underline; }
 .focus\:bg-indigo-600:focus { background-color: #4f46e5; }
+.focus\:border-indigo-400:focus { border-color: #818cf8; }
 .focus\:fixed:focus { position: fixed; }
 .focus\:font-bold:focus { font-weight: 700; }
 .focus\:left-2:focus { left: 0.5rem; }
@@ -3123,7 +3126,7 @@ img, video { max-width: 100%; height: auto; }
       redFte: 2.5,
     };
 
-    const PULSEPLAN_BUILD_ID = '2026-11-22-v4';
+    const PULSEPLAN_BUILD_ID = '2026-11-22-v5';
     const _debugLogEntries = [];
     const MAX_DEBUG_LOG_ENTRIES = 120;
 
@@ -3746,6 +3749,7 @@ img, video { max-width: 100%; height: auto; }
       autoSaveToFile: true,
       autoReloadFromFile: true,
       pollIntervalMs: 15000,
+      linkedFilePaths: {},            // Per-device saved folder/full paths keyed by filename (browser hides local disk paths for security)
     };
 
     let liveDB = null;
@@ -3756,6 +3760,7 @@ img, video { max-width: 100%; height: auto; }
 
     // Shared File Sync runtime state
     let linkedFileHandle = null;
+    let linkedFileDetectedPath = '';
     let rememberedFileHandle = null;
     let lastKnownFileModified = 0;
     let pollTimerId = null;
@@ -9214,20 +9219,127 @@ img, video { max-width: 100%; height: auto; }
       }
     }
 
+    function getDetectedChromeVersion() {
+      try {
+        const ua = (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+        const m = ua.match(/(?:Chrome|Edg)\/(\d+)/);
+        return m ? parseInt(m[1], 10) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function formatLinkedFileFullPath(fileName, rawPath = '') {
+      const name = String(fileName || '').trim();
+      let p = String(rawPath || '').trim().replace(/^["']+|["']+$/g, '').trim();
+      if (!p) return name;
+      if (!name) return p;
+      const lowerP = p.toLowerCase();
+      const lowerName = name.toLowerCase();
+      if (lowerP === lowerName || lowerP.endsWith('\\' + lowerName) || lowerP.endsWith('/' + lowerName)) {
+        return p;
+      }
+      const sep = p.includes('\\') ? '\\' : '/';
+      return p.endsWith('\\') || p.endsWith('/') ? `${p}${name}` : `${p}${sep}${name}`;
+    }
+
+    function getConnectedFileDisplayPath(fileName) {
+      const name = String(fileName || '').trim();
+      if (!name) return '';
+      if (linkedFileHandle && linkedFileHandle.name === name && linkedFileDetectedPath) {
+        return formatLinkedFileFullPath(name, linkedFileDetectedPath);
+      }
+      const saved = ui && ui.linkedFilePaths && typeof ui.linkedFilePaths === 'object' ? ui.linkedFilePaths[name] : '';
+      if (saved) return formatLinkedFileFullPath(name, saved);
+      return name;
+    }
+
+    function hasStoredPathForFile(fileName) {
+      const name = String(fileName || '').trim();
+      if (!name) return false;
+      if (linkedFileHandle && linkedFileHandle.name === name && linkedFileDetectedPath) return true;
+      return Boolean(ui && ui.linkedFilePaths && ui.linkedFilePaths[name]);
+    }
+
+    function openLinkedFilePathModal(fileName = '') {
+      const name = String(fileName || linkedFileHandle?.name || rememberedFileHandle?.name || '').trim();
+      if (!name) return;
+      const currentSaved = (ui && ui.linkedFilePaths && ui.linkedFilePaths[name]) || linkedFileDetectedPath || '';
+      const preview = formatLinkedFileFullPath(name, currentSaved);
+      showModal(`
+        <form onsubmit="saveLinkedFilePathFromModal(event)" class="p-5 space-y-4 text-xs">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <h3 id="modalTitle" class="text-base font-bold text-slate-900">Set Connected File Path</h3>
+              <p class="text-[11px] text-slate-500 mt-0.5">For security, Chrome &amp; Edge only expose the filename (<code class="font-mono">${escapeHtml(name)}</code>), not your full local disk path. Paste the folder or full path here to display it on this device.</p>
+            </div>
+            <button type="button" aria-label="Close dialog" onclick="closeModal()" class="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">&times;</button>
+          </div>
+          <input type="hidden" id="mLinkedPathFileName" value="${escapeHtml(name)}" />
+          <div class="space-y-1.5">
+            <label for="mLinkedFilePathInput" class="block font-semibold text-slate-700">Full Path or Folder Location (this device only)</label>
+            <input id="mLinkedFilePathInput" type="text" value="${escapeHtml(currentSaved)}" placeholder="e.g. G:\\My Drive\\PulsePlan\\${escapeHtml(name)}"
+              class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white font-mono text-xs text-slate-900 focus:outline-none focus:border-indigo-400" />
+            <p class="text-[11px] text-slate-500">Tip: In Windows File Explorer, right-click the JSON file &rarr; <strong>Copy as path</strong> (<code class="font-mono">Ctrl+Shift+C</code>) and paste it directly above (quotes are stripped automatically).</p>
+          </div>
+          ${currentSaved ? `<div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px]"><span class="text-slate-500">Displayed as:</span> <code class="font-mono font-bold text-slate-800 break-all">${escapeHtml(preview)}</code></div>` : ''}
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+            ${currentSaved ? `<button type="button" onclick="clearLinkedFilePathFromModal('${escapeHtml(name).replace(/'/g, "\\'")}')" class="px-3 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 font-semibold transition">Clear Path</button>` : '<span></span>'}
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="closeModal()" class="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold transition">Cancel</button>
+              <button type="submit" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition">Save Path</button>
+            </div>
+          </div>
+        </form>
+      `, 'max-w-lg');
+    }
+
+    function saveLinkedFilePathFromModal(event) {
+      if (event) event.preventDefault();
+      const name = String(document.getElementById('mLinkedPathFileName')?.value || '').trim();
+      const raw = String(document.getElementById('mLinkedFilePathInput')?.value || '').trim().replace(/^["']+|["']+$/g, '').trim();
+      if (!name) { closeModal(); return; }
+      if (!ui.linkedFilePaths || typeof ui.linkedFilePaths !== 'object') ui.linkedFilePaths = {};
+      if (raw) {
+        ui.linkedFilePaths[name] = formatLinkedFileFullPath(name, raw);
+      } else {
+        delete ui.linkedFilePaths[name];
+      }
+      persistUIPrefs();
+      closeModal();
+      renderSyncTab();
+      updateSyncStatusUI();
+      showToast(raw ? 'Saved connected file path for this device' : 'Cleared saved file path', 'success');
+    }
+
+    function clearLinkedFilePathFromModal(fileName) {
+      const name = String(fileName || '').trim();
+      if (name && ui.linkedFilePaths && ui.linkedFilePaths[name]) {
+        delete ui.linkedFilePaths[name];
+        persistUIPrefs();
+      }
+      closeModal();
+      renderSyncTab();
+      updateSyncStatusUI();
+      showToast('Cleared saved file path', 'info');
+    }
+
     async function openSharedDatabaseFile() {
       const env = getDebugEnvironmentSummary();
+      const chromeVer = getDetectedChromeVersion();
       ppDebug('INFO', 'openSharedDatabaseFile triggered', {
         protocol: env.protocol,
         isSecureContext: env.isSecureContext,
         inIframe: env.inIframe,
         hasFsApi: env.hasFsApi,
+        chromeVer,
         activeTab: env.activeTab,
         isReloadingFromFile,
       });
 
       if (!supportsFileSystemAccess()) {
         ppDebug('WARN', 'File System Access API unavailable on this browser');
-        showToast('Direct folder sync requires desktop Chrome/Edge over HTTPS. Use "Import JSON" in Sync.', 'warning');
+        showToast('Direct folder sync requires desktop Chrome 158+ / Edge over HTTPS. Use "Import JSON" in Sync.', 'warning');
         return;
       }
       if (typeof location !== 'undefined' && location.protocol === 'file:') {
@@ -9238,7 +9350,8 @@ img, video { max-width: 100%; height: auto; }
 
       const t0 = Date.now();
       let handle = null;
-      const fallbackAction = { actionLabel: 'Import JSON', onAction: () => triggerJsonImportPicker(), durationMs: 8500 };
+      const verHint = chromeVer && chromeVer < 158 ? ` (detected v${chromeVer})` : '';
+      const fallbackAction = { actionLabel: 'Import JSON', onAction: () => triggerJsonImportPicker(), durationMs: 9500 };
       try {
         ppDebug('INFO', 'Opening window.showOpenFilePicker (with .json filter)...');
         const handles = await window.showOpenFilePicker({
@@ -9260,22 +9373,22 @@ img, video { max-width: 100%; height: auto; }
             ppDebug('ERROR', 'showOpenFilePicker fallback retry failed', { name: e2?.name, message: e2?.message, elapsedMs: elapsed2 });
             if (e2 && e2.name === 'AbortError') {
               showToast(
-                'File picker closed without linking. If Chrome blocked the folder or site permission, move the file into a subfolder or use Import JSON.',
-                elapsed2 < 200 ? 'warning' : 'info',
+                `File picker closed without linking. Chrome 158+ is required on Windows${verHint} for direct file sync — update Chrome, shrink the file dialog, or click Import JSON.`,
+                'warning',
                 fallbackAction
               );
               return;
             }
-            showToast(`Could not open file picker (${e2?.name || 'Error'}: ${e2?.message || 'blocked'}).`, 'warning', fallbackAction);
+            showToast(`Could not open file picker (${e2?.name || 'Error'}: ${e2?.message || 'blocked'}). Chrome 158+ is required on Windows${verHint}.`, 'warning', fallbackAction);
             return;
           }
         } else if (e && e.name === 'AbortError') {
-          ppDebug('WARN', 'showOpenFilePicker AbortError', { elapsedMs, message: e.message || '' });
+          ppDebug('WARN', 'showOpenFilePicker AbortError', { elapsedMs, chromeVer, message: e.message || '' });
           if (elapsedMs < 200) {
-            showToast('Browser/policy auto-aborted the direct file picker. Use Import JSON instead.', 'warning', fallbackAction);
+            showToast(`Direct file picker was blocked (Chrome 158+ is required on Windows${verHint}, or browser policy blocked it). Update Chrome or click Import JSON.`, 'warning', fallbackAction);
           } else {
             showToast(
-              'File picker closed without linking. If you clicked Open and nothing loaded, Chrome/Windows may have blocked that folder (e.g. Desktop/Downloads/OneDrive root) or site File Editing permission — move the .json into a subfolder or click Import JSON.',
+              `File picker closed without linking. If you clicked Open and nothing loaded, Chrome 158+ is required on Windows${verHint} (or a folder/permission block occurred) — update Chrome, shrink the file dialog, or click Import JSON.`,
               'warning',
               fallbackAction
             );
@@ -9284,10 +9397,10 @@ img, video { max-width: 100%; height: auto; }
         } else {
           ppDebug('ERROR', 'showOpenFilePicker failed', { name: e?.name, message: e?.message, elapsedMs });
           if (e && e.name === 'SecurityError') {
-            showToast('Browser blocked direct linking to this folder (Chrome restricts Desktop/Downloads roots or iframes). Move the .json into a subfolder or click Import JSON.', 'warning', fallbackAction);
+            showToast(`Browser blocked direct linking to this folder (Chrome 158+ required${verHint}; avoid Desktop/Downloads roots). Move the .json into a subfolder or click Import JSON.`, 'warning', fallbackAction);
           } else {
             const detail = e && (e.message || e.name) ? ` (${e.name || 'Error'}: ${e.message || ''})` : '';
-            showToast(`Could not open file picker${detail}.`, 'warning', fallbackAction);
+            showToast(`Could not open file picker${detail}. Chrome 158+ is required on Windows${verHint}.`, 'warning', fallbackAction);
           }
           return;
         }
@@ -9337,9 +9450,14 @@ img, video { max-width: 100%; height: auto; }
         const elapsedMs = Date.now() - t0;
         ppDebug('WARN', 'createSharedDatabaseFile failed/aborted', { name: e?.name, message: e?.message, elapsedMs });
         if (e && e.name === 'AbortError') {
-          if (elapsedMs < 200) {
-            showToast('Browser/policy auto-aborted the save file picker. Use "Share / Save JSON" instead.', 'warning');
-          }
+          const cv = getDetectedChromeVersion();
+          const vh = cv && cv < 158 ? ` (detected v${cv})` : '';
+          showToast(
+            elapsedMs < 200
+              ? `Save file picker was blocked (Chrome 158+ is required on Windows${vh}). Use "Share / Save JSON" instead.`
+              : `Save file picker closed without creating a linked file. If you clicked Save and nothing happened, Chrome 158+ is required on Windows${vh} — update Chrome or use "Share / Save JSON".`,
+            'warning'
+          );
           return;
         }
         if (e && e.name === 'SecurityError') {
@@ -9570,6 +9688,11 @@ img, video { max-width: 100%; height: auto; }
 
           persistUIPrefs();
           linkedFileHandle = handle;
+          linkedFileDetectedPath = (file && typeof file.path === 'string' && file.path.trim())
+            ? file.path.trim()
+            : ((file && typeof file.webkitRelativePath === 'string' && (file.webkitRelativePath.includes('/') || file.webkitRelativePath.includes('\\')))
+              ? file.webkitRelativePath.trim()
+              : '');
           rememberedFileHandle = handle;
           lastKnownFileModified = file.lastModified;
           pendingAutoReload = false;
@@ -9613,6 +9736,7 @@ img, video { max-width: 100%; height: auto; }
 
     function unlinkSharedFile() {
       linkedFileHandle = null;
+      linkedFileDetectedPath = '';
       rememberedFileHandle = null;
       lastKnownFileModified = 0;
       pendingAutoReload = false;
@@ -9799,7 +9923,11 @@ img, video { max-width: 100%; height: auto; }
         if (text) text.textContent = 'Sync Error';
       } else {
         setDots('bg-emerald-500');
-        if (text) text.textContent = ui.autoReloadFromFile ? `Auto-Sync: ${linkedFileHandle.name}` : `Synced: ${linkedFileHandle.name}`;
+        const fullPath = getConnectedFileDisplayPath(linkedFileHandle.name);
+        if (text) {
+          text.textContent = ui.autoReloadFromFile ? `Auto-Sync: ${linkedFileHandle.name}` : `Synced: ${linkedFileHandle.name}`;
+          if (text.parentElement) text.parentElement.title = `Connected File: ${fullPath}`;
+        }
       }
     }
 
@@ -9827,15 +9955,25 @@ img, video { max-width: 100%; height: auto; }
       const fsNote = document.getElementById('fsApiNote');
       if (fsNote) {
         fsNote.textContent = hasFsApi
-          ? 'Your browser supports direct auto-save & live reload with Google Drive Desktop / network folders. Tip: Keep the .json inside a dedicated subfolder (not directly in Desktop/Downloads/OneDrive root) and ensure File Editing is allowed in site settings — or use Import JSON.'
+          ? 'Your browser supports direct auto-save & live reload with Google Drive Desktop / network folders (Chrome 158+ required on Windows; keep the .json in a subfolder, or use Import JSON).'
           : 'Mobile / Portable Mode: Your changes save automatically on this device. Use "Share / Save JSON" to send directly to Google Drive, iCloud Files, or Teams, and "Import JSON" to load updates.';
       }
 
       if (linkedFileHandle) {
+        const displayPath = getConnectedFileDisplayPath(linkedFileHandle.name);
+        const hasFullPath = hasStoredPathForFile(linkedFileHandle.name);
+        const safeNameArg = escapeHtml(linkedFileHandle.name).replace(/'/g, "\\'");
         badge.className = 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-100 text-emerald-800 whitespace-nowrap shrink-0';
         badge.textContent = ui.autoReloadFromFile ? 'Auto-Sync Active' : 'Live Linked';
         statusBox.innerHTML = `
-          <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5"><span class="text-slate-500 shrink-0">Connected File:</span><span class="font-mono font-bold text-slate-900 break-all text-right">${escapeHtml(linkedFileHandle.name)}</span></div>
+          <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+            <span class="text-slate-500 shrink-0">Connected File:</span>
+            <div class="flex flex-wrap items-baseline justify-end gap-x-2 gap-y-0.5 min-w-0">
+              <span class="font-mono font-bold text-slate-900 break-all text-right" title="${escapeHtml(displayPath)}">${escapeHtml(displayPath)}</span>
+              <button type="button" onclick="openLinkedFilePathModal('${safeNameArg}')" class="text-[11px] font-semibold text-indigo-600 hover:underline whitespace-nowrap shrink-0">${hasFullPath ? 'Edit path' : '+ Set path'}</button>
+            </div>
+          </div>
+          ${!hasFullPath ? '<div class="text-[10px] text-slate-400 text-right leading-snug">Browsers hide full local paths (<code class="font-mono">C:\\...</code>) for security — click <strong>+ Set path</strong> to record its folder on this device.</div>' : ''}
           <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5"><span class="text-slate-500 shrink-0">Revision:</span><span class="font-semibold text-slate-800">Rev ${db.meta?.revision || 1}</span></div>
           <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5"><span class="text-slate-500 shrink-0">Last Saved:</span><span class="text-slate-700 break-words text-right">${new Date(db.meta?.lastModifiedAt || Date.now()).toLocaleString()} by ${escapeHtml(db.meta?.lastModifiedBy || ui.userName)}</span></div>`;
         if (btnReconnect) btnReconnect.classList.add('hidden');
@@ -9848,6 +9986,7 @@ img, video { max-width: 100%; height: auto; }
           <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5"><span class="text-slate-500 shrink-0">Last Updated:</span><span class="text-slate-700 text-right">${new Date(db.meta?.lastModifiedAt || Date.now()).toLocaleString()}</span></div>
           <div class="text-[11px] text-slate-600 pt-1 leading-relaxed">Tap <strong>Share / Save JSON</strong> below to push updates straight to Google Drive, Files, or Teams, or tap <strong>Import JSON</strong> to open a colleague&rsquo;s latest file.</div>`;
       } else {
+        const remDisplayPath = rememberedFileHandle ? getConnectedFileDisplayPath(rememberedFileHandle.name) : '';
         badge.className = syncWarningState.type === 'missing'
           ? 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-700 whitespace-nowrap shrink-0'
           : 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-100 text-amber-800 whitespace-nowrap shrink-0';
@@ -9855,7 +9994,7 @@ img, video { max-width: 100%; height: auto; }
         statusBox.innerHTML = `
           <div class="text-slate-700 break-words">
             ${rememberedFileHandle
-              ? `Last linked file: <code class="font-mono font-bold break-all">${escapeHtml(rememberedFileHandle.name)}</code> — click <strong>Reconnect Remembered File</strong> or relink it.`
+              ? `Last linked file: <code class="font-mono font-bold break-all">${escapeHtml(remDisplayPath)}</code> — click <strong>Reconnect Remembered File</strong> or relink it.`
               : 'Currently saving to browser storage only. Link a shared <code class="font-mono">.json</code> file in your Google Drive Desktop or network folder to sync with your team.'}
           </div>`;
         if (btnReconnect) btnReconnect.classList.toggle('hidden', !rememberedFileHandle);
@@ -14026,6 +14165,7 @@ img, video { max-width: 100%; height: auto; }
           ui.filterHasNotesOnly = false;
           if (!Array.isArray(ui.recentUsers)) ui.recentUsers = [];
           if (!Array.isArray(ui.removedUsers)) ui.removedUsers = [];
+          if (!ui.linkedFilePaths || typeof ui.linkedFilePaths !== 'object' || Array.isArray(ui.linkedFilePaths)) ui.linkedFilePaths = {};
         } else {
           ui.pdfOptions = { colorMode: 'match', colsPerPage: 6, ...ui.pdfOptions };
         }
