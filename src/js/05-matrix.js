@@ -1057,11 +1057,9 @@
             const allocFte = getDeptTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
             const pct = capFte > 0 ? Math.round((allocFte / capFte) * 100) : (allocFte > 0 ? 999 : 0);
 
-            const cellBg = pct > overT ? 'bg-rose-50/50' : pct >= warnT ? 'bg-amber-50/40' : 'bg-white';
-            const cellHoverBg = pct > overT ? 'hover:bg-rose-50' : pct >= warnT ? 'hover:bg-amber-50' : 'hover:bg-slate-50/70';
+            const cellToneCls = pct > overT ? 'matrix-cell-over' : pct >= warnT ? 'matrix-cell-warn' : 'matrix-cell-normal';
             const barColor = pct > overT ? 'bg-rose-500' : pct >= warnT ? 'bg-amber-500' : 'bg-emerald-500';
-            const pctColorCls = pct > overT ? 'text-rose-600' : pct >= warnT ? 'text-amber-700' : 'text-emerald-700';
-            const pctBadgeCls = pct > overT ? 'bg-rose-100 text-rose-700' : pct >= warnT ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
+            const pctBadgeCls = pct > overT ? 'matrix-pct-over' : pct >= warnT ? 'matrix-pct-warn' : 'matrix-pct-ok';
 
             const allocDisp = formatValue(fteToDisplayValue(allocFte, pk, ui.timeUnit), ui.manpowerUnit, false);
             const capDisp = formatValue(fteToDisplayValue(capFte, pk, ui.timeUnit), ui.manpowerUnit, true);
@@ -1085,9 +1083,9 @@
               const spotSizeCls = isWideCols ? 'w-5 h-5 text-xs' : 'w-4 h-4 text-[10px]';
               const spotlightBtn = useColorFill
                 ? `<button type="button" onclick="event.stopPropagation(); toggleSpotlightProject('${p.id}')" title="${spotlightId === p.id ? 'Clear project spotlight' : 'Spotlight this project across all departments'}" aria-label="Spotlight ${escapeHtml(p.name)}"
-                     class="${spotVisCls} ${spotlightId === p.id ? 'ring-1 ring-white/80' : ''} ${spotSizeCls} rounded font-bold flex items-center justify-center transition shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&#9678;</button>`
+                     class="${spotVisCls} ${spotSizeCls} rounded font-bold flex items-center justify-center transition shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&#9678;</button>`
                 : `<button type="button" onclick="event.stopPropagation(); toggleSpotlightProject('${p.id}')" title="${spotlightId === p.id ? 'Clear project spotlight' : 'Spotlight this project across all departments'}" aria-label="Spotlight ${escapeHtml(p.name)}"
-                     class="${spotVisCls} ${spotlightId === p.id ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-700'} ${spotSizeCls} rounded font-bold flex items-center justify-center transition shrink-0">&#9678;</button>`;
+                     class="${spotVisCls} ${spotlightId === p.id ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-700'} ${spotSizeCls} rounded font-bold flex items-center justify-center transition shrink-0">&#9678;</button>`;
 
               if (!a.hasData && cmtObj.hasAny) {
                 if (useColorFill) {
@@ -1242,7 +1240,7 @@
                        <svg class="w-3 h-3" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>
                        ${cmtCount > 0 ? `<span>${cmtCount}</span>` : ''}
                      </button>
-                     <span class="${s.pctText} tabular-nums ${pctColorCls}">
+                     <span class="px-1.5 py-0.5 rounded-md ${s.pctText} tabular-nums ${pctBadgeCls}">
                        ${pct > 990 ? '&infin;' : pct + '%'}
                      </span>
                    </div>
@@ -1260,7 +1258,7 @@
               : '';
 
             return `
-              <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 ${cellBg} transition cursor-pointer ${cellHoverBg}"
+              <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 ${cellToneCls} transition cursor-pointer"
                 ondragover="handleCellDragOver(event)" ondragleave="handleCellDragLeave(event)"
                 ondrop="handleCellDrop(event, '${row.id}', '${pk}')"
                 onclick="openCellDetailModal('${row.id}', '${pk}')">
@@ -1321,7 +1319,7 @@
             });
           });
           const statusCls = row.status === 'At Risk' ? 'bg-rose-100 text-rose-700' : row.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600';
-          const rowSpotCls = spotlightId && spotlightId === row.id ? 'spotlight-active' : '';
+          const rowSpotCls = spotlightId ? (spotlightId === row.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
 
           const cellsHtml = periods.map(pk => {
             const totFte = getProjTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
@@ -1533,7 +1531,7 @@
                </th>`;
 
           return `
-            <tr class="group/row ${spotlightId && spotlightId !== row.id ? 'spotlight-dimmed' : ''}" data-row-id="${row.id}"
+            <tr class="group/row" data-row-id="${row.id}"
               ondragover="handleRowDragOver(event, '${row.id}')"
               ondragleave="handleRowDragLeave(event)"
               ondrop="handleRowDrop(event, '${row.id}')">
