@@ -201,6 +201,22 @@
         right: 0.75rem;
         max-width: none;
       }
+      #mainWorkspace > section,
+      #mobileMatrixDeck,
+      #mobileMatrixDeck details,
+      #mobileMatrixDeck summary,
+      #modalCard,
+      dialog.mobile-sheet {
+        max-width: 100%;
+        overflow-wrap: break-word;
+      }
+      #headerWorkspacePopover {
+        max-width: calc(100vw - 1.25rem);
+      }
+      .mobile-wrap-anywhere {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
     }
 
     /* Native HTML5 <meter> styling for Mod 3 Retention & Payload Gauges */
@@ -483,6 +499,111 @@
     .bottleneck-pill-ring {
       box-shadow: 0 0 0 1.5px #f43f5e !important;
     }
+    /* Tentative / Pipeline project card styling (hatched + dashed border) */
+    .tentative-card {
+      background-image: repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 6px,
+        rgba(99, 102, 241, 0.06) 6px,
+        rgba(99, 102, 241, 0.06) 11px
+      ) !important;
+      border-style: dashed !important;
+    }
+    html.dark .tentative-card {
+      background-image: repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 6px,
+        rgba(165, 180, 252, 0.08) 6px,
+        rgba(165, 180, 252, 0.08) 11px
+      ) !important;
+    }
+    .tentative-card-filled {
+      background-image: repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 6px,
+        rgba(255, 255, 255, 0.13) 6px,
+        rgba(255, 255, 255, 0.13) 11px
+      ) !important;
+      border-style: dashed !important;
+    }
+    /* Inline numeric quick-edit input on Roadmap cards */
+    .inline-val-input {
+      width: 4.1rem;
+      padding: 0.1rem 0.25rem;
+      border-radius: 0.375rem;
+      border: 1.5px solid #4f46e5 !important;
+      background-color: #ffffff !important;
+      color: #0f172a !important;
+      font-size: 0.75rem !important;
+      font-weight: 800;
+      text-align: center;
+      line-height: 1.25;
+      box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.22);
+    }
+    html.dark .inline-val-input {
+      background-color: #0f172a !important;
+      color: #f8fafc !important;
+      border-color: #818cf8 !important;
+    }
+    /* Executive Timeline / Gantt View */
+    .timeline-cell {
+      padding: 0.45rem 0 !important;
+      vertical-align: middle;
+    }
+    .timeline-bar {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.35rem;
+      min-height: 2.15rem;
+      padding: 0.28rem 0.55rem;
+      font-size: 0.7rem;
+      font-weight: 700;
+      transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
+    }
+    .timeline-bar:hover {
+      filter: brightness(1.06);
+      box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.22);
+      z-index: 3;
+    }
+    .timeline-bar-single {
+      margin: 0 0.35rem;
+      border-radius: 0.625rem;
+    }
+    .timeline-bar-start {
+      margin-left: 0.35rem;
+      margin-right: 0;
+      border-top-left-radius: 0.625rem;
+      border-bottom-left-radius: 0.625rem;
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+    .timeline-bar-mid {
+      margin: 0;
+      border-radius: 0;
+    }
+    .timeline-bar-end {
+      margin-left: 0;
+      margin-right: 0.35rem;
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+      border-top-right-radius: 0.625rem;
+      border-bottom-right-radius: 0.625rem;
+    }
+    .timeline-bar-tentative {
+      background-image: repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 6px,
+        rgba(255, 255, 255, 0.18) 6px,
+        rgba(255, 255, 255, 0.18) 11px
+      ) !important;
+      border-style: dashed !important;
+    }
     .drag-over-cell {
       outline: 2px dashed #4f46e5 !important;
       outline-offset: -3px;
@@ -645,6 +766,7 @@
     html.dark #matrixSettingsDrawer #chipFilterNotes[aria-pressed="true"],
     html.dark #matrixSettingsDrawer #commentsToggleBtn[aria-pressed="true"],
     html.dark #matrixSettingsDrawer #hideEmptyRowsBtn[aria-pressed="true"],
+    html.dark #matrixSettingsDrawer #tentativeToggleBtn[aria-pressed="true"],
     html.dark #matrixSettingsDrawer #dragModeBtn[aria-pressed="true"] {
       background-color: rgba(79, 70, 229, 0.32) !important;
       border-color: rgba(129, 140, 248, 0.7) !important;
@@ -856,16 +978,20 @@
     html.dark #healthCapacityHeatmap .bg-rose-500:hover {
       background-color: rgba(225, 29, 72, 0.50) !important;
     }
-    html.dark .bg-sky-50 {
+    html.dark .bg-sky-50,
+    html.dark .bg-sky-50\/70 {
       background-color: rgba(14, 165, 233, 0.16) !important;
     }
+    html.dark .hover\:bg-sky-50:hover,
     html.dark .hover\:bg-sky-100:hover {
       background-color: rgba(14, 165, 233, 0.26) !important;
     }
     html.dark .border-sky-200 {
       border-color: rgba(14, 165, 233, 0.35) !important;
     }
-    html.dark .text-sky-700 {
+    html.dark .text-sky-700,
+    html.dark .text-sky-800,
+    html.dark .text-sky-900 {
       color: #7dd3fc !important;
     }
     html.dark input,
