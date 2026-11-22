@@ -175,6 +175,7 @@ function compileUtilityDecl(util) {
     'flex-col': 'flex-direction: column;',
     'flex-row': 'flex-direction: row;',
     'flex-wrap': 'flex-wrap: wrap;',
+    'flex-nowrap': 'flex-wrap: nowrap;',
     'shrink-0': 'flex-shrink: 0;',
     shrink: 'flex-shrink: 1;',
     grow: 'flex-grow: 1;',

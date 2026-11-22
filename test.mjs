@@ -524,6 +524,128 @@ test('Duplicate Project & Executive Briefing copy produce accurate results and P
   assert.equal(html.includes('<link rel="manifest" href="./manifest.webmanifest" />'), true);
 });
 
+test('End-to-end DOM render smoke test across all tabs, subtabs, views, and modals (zero ReferenceErrors)', () => {
+  const bodyHtml = fs.readFileSync('src/html/body.html', 'utf8');
+  const domIds = [...new Set([...bodyHtml.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]))];
+  const elMap = new Map();
+  const makeStatefulEl = (id) => {
+    const attrs = new Map();
+    const classes = new Set();
+    const el = {
+      id,
+      tagName: 'DIV',
+      style: { setProperty: noop },
+      className: '',
+      innerHTML: '',
+      textContent: '',
+      value: '',
+      checked: false,
+      disabled: false,
+      open: false,
+      options: [],
+      dataset: {},
+      clientWidth: 1200,
+      scrollLeft: 0,
+      classList: {
+        add: (...c) => c.forEach(x => classes.add(x)),
+        remove: (...c) => c.forEach(x => classes.delete(x)),
+        toggle: (x, f) => { if (f === undefined) { if (classes.has(x)) classes.delete(x); else classes.add(x); } else if (f) classes.add(x); else classes.delete(x); },
+        contains: (x) => classes.has(x),
+      },
+      setAttribute: (k, v) => attrs.set(k, String(v)),
+      getAttribute: (k) => attrs.get(k) ?? null,
+      addEventListener: noop,
+      removeEventListener: noop,
+      dispatchEvent: noop,
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      appendChild: noop,
+      remove: noop,
+      focus: noop,
+      select: noop,
+      showModal: () => { el.open = true; },
+      close: () => { el.open = false; },
+      closest: () => null,
+      scrollTo: noop,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 1200, height: 400, bottom: 400 }),
+    };
+    return el;
+  };
+  domIds.forEach(id => elMap.set(id, makeStatefulEl(id)));
+
+  const prevGetById = sandbox.document.getElementById;
+  sandbox.document.getElementById = (id) => {
+    if (!elMap.has(id)) elMap.set(id, makeStatefulEl(id));
+    return elMap.get(id);
+  };
+  try {
+    const out = vm.runInContext(`(() => {
+      liveDB = createSampleDemoDB();
+      ui.demoMode = false;
+      ui.whatIfMode = false;
+      ui.timeUnit = 'month';
+      ui.horizon = 4;
+
+      // Roadmap desktop + mobile across all 3 axes
+      window.innerWidth = 1440;
+      ui.activeTab = 'matrix';
+      ['department', 'project', 'timeline'].forEach(ax => { ui.axis = ax; renderAll(); });
+      window.innerWidth = 375;
+      ui.mobileLayoutMode = 'cards';
+      ['department', 'project', 'timeline'].forEach(ax => { ui.axis = ax; renderAll(); });
+
+      // Health desktop + mobile + all 5 snapshot compare subtabs
+      window.innerWidth = 1440;
+      ui.activeTab = 'health';
+      ui.compareSnapshotId = liveDB.snapshots[0].id;
+      renderAll();
+      ['deptPeriod', 'project', 'cells', 'milestones', 'capacity'].forEach(st => { ui.compareSubTab = st; renderSnapshotComparison(); });
+      selectHealthChartBar(0);
+
+      // Setup & Data tab across all 4 subtabs (verify Depts, Overrides w/ dates, Projects, Milestones ALL populate!)
+      ui.activeTab = 'data';
+      ['departments', 'projects', 'milestones', 'settings'].forEach(sub => { ui.dataSubTab = sub; renderAll(); });
+      const deptsHtml = document.getElementById('dataDepartmentsBody').innerHTML;
+      const overridesHtml = document.getElementById('dataCapacityOverridesTable').innerHTML;
+      const projsHtml = document.getElementById('dataProjectsBody').innerHTML;
+      const msHtml = document.getElementById('dataMilestonesBody').innerHTML;
+
+      // Sync tab + key modals
+      ui.activeTab = 'sync';
+      renderAll();
+      openDeptModal('d_eng');
+      openProjectModal('p_nova');
+      openMilestoneModal('ms_1');
+      openAllocationModal('d_eng', 'p_nova', ui.startMonth);
+      openCapacityModal('d_eng', ui.startMonth);
+      const capModalHtml = document.getElementById('modalCard').innerHTML;
+      ui.axis = 'department';
+      openCellDetailModal('d_eng', ui.startMonth);
+      ui.axis = 'timeline';
+      openCellDetailModal('p_nova', ui.startMonth);
+      openBottleneckResolverModal('d_eng', addMonthsToMonthKey(ui.startMonth, 1));
+      openSyncConflictModal({ lastModifiedBy: 'Elena', revision: 9 }, Date.now(), createSampleDemoDB());
+      openCsvImportModal('allocations');
+      openCsvImportModal('capacities');
+      openCsvImportModal('milestones');
+      openDuplicateProjectModal('p_nova');
+      openManualModal();
+      closeModal();
+
+      return { deptsHtml, overridesHtml, projsHtml, msHtml, capModalHtml };
+    })()`, ctx);
+
+    assert.ok(out.deptsHtml.includes('Engineering'), 'Departments table rendered');
+    assert.ok(out.overridesHtml.includes('9.5 FTE'), 'Variable capacity overrides panel rendered');
+    assert.ok(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\b/.test(out.overridesHtml), 'Overrides panel includes calendar date range beside week numbers');
+    assert.ok(out.projsHtml.includes('Project Nova'), 'Projects table rendered');
+    assert.ok(out.msHtml.includes('Nova Beta Cut'), 'Milestones table rendered');
+    assert.ok(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\b/.test(out.capModalHtml), 'Capacity modal active overrides include calendar date range');
+  } finally {
+    sandbox.document.getElementById = prevGetById;
+  }
+});
+
 let passed = 0;
 let failed = 0;
 for (const t of tests) {
