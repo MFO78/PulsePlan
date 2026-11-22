@@ -465,6 +465,7 @@ img, video { max-width: 100%; height: auto; }
 .pb-3\.5 { padding-bottom: 0.875rem; }
 .pb-\[calc\(5\.25rem\+env\(safe-area-inset-bottom\)\)\] { padding-bottom: calc(5.25rem + env(safe-area-inset-bottom)); }
 .pl-1 { padding-left: 0.25rem; }
+.pl-11 { padding-left: 2.75rem; }
 .pl-2\.5 { padding-left: 0.625rem; }
 .pl-4 { padding-left: 1rem; }
 .pr-0\.5 { padding-right: 0.125rem; }
@@ -472,6 +473,7 @@ img, video { max-width: 100%; height: auto; }
 .pr-1\.5 { padding-right: 0.375rem; }
 .pr-2 { padding-right: 0.5rem; }
 .pr-3 { padding-right: 0.75rem; }
+.pr-3\.5 { padding-right: 0.875rem; }
 .pt-0\.5 { padding-top: 0.125rem; }
 .pt-1 { padding-top: 0.25rem; }
 .pt-1\.5 { padding-top: 0.375rem; }
@@ -2604,7 +2606,7 @@ img, video { max-width: 100%; height: auto; }
                 <h2 class="text-sm font-bold text-slate-900">Active Variable Capacity Overrides</h2>
                 <span id="capacityOverridesCountBadge" class="px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold">0 overrides</span>
               </div>
-              <p class="text-xs text-slate-500 mt-0.5">Consecutive weeks with identical overridden capacity are grouped into clean spans. Edit or reset any span back to base FTE.</p>
+              <p class="text-xs text-slate-500 mt-0.5">Company-wide holidays &amp; shutdowns are detected and grouped automatically (even when created per department). Expand any company row to view or edit individual department FTEs.</p>
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <label for="overrideDeptFilter" class="sr-only">Filter variable overrides by department</label>
@@ -2612,6 +2614,11 @@ img, video { max-width: 100%; height: auto; }
                 class="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700">
                 <option value="all">All Departments</option>
               </select>
+              <button id="btnToggleExpandAllOverrides" type="button" aria-expanded="false" onclick="toggleAllOverrideGroups()"
+                class="hidden items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition cursor-pointer">
+                <span id="btnToggleExpandAllOverridesIcon" aria-hidden="true">&#9656;</span>
+                <span id="btnToggleExpandAllOverridesLabel">Expand All</span>
+              </button>
               <button id="btnAddCapacityOverride" type="button" onclick="openAddOverrideFromSetup()"
                 class="px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-700 text-xs font-bold transition">+ Add Override</button>
               <button id="btnClearCapacityOverrides" type="button" onclick="confirmClearCapacityOverrides()"
@@ -3263,7 +3270,7 @@ img, video { max-width: 100%; height: auto; }
       redFte: 2.5,
     };
 
-    const PULSEPLAN_BUILD_ID = '2026-11-22-v7.1';
+    const PULSEPLAN_BUILD_ID = '2026-11-22-v7.2';
     const _debugLogEntries = [];
     const MAX_DEBUG_LOG_ENTRIES = 120;
 
@@ -3888,6 +3895,7 @@ img, video { max-width: 100%; height: auto; }
       pollIntervalMs: 15000,
       linkedFilePaths: {},            // Per-device saved folder/full paths keyed by filename (browser hides local disk paths for security)
       welcomeSeen: false,             // First-use welcome/setup splash screen flag
+      expandedOverrideGroups: [],     // In-memory expanded company-wide override group IDs in Setup & Data
     };
 
     const VALID_HORIZONS = [1, 2, 3, 4, 6, 12, 18, 24];
@@ -4797,8 +4805,186 @@ img, video { max-width: 100%; height: auto; }
       return spans;
     }
 
+    function getStructuredCapacityOverrides(db = getActiveDB(), deptFilter = 'all') {
+      const overrides = db?.capacityOverrides || {};
+      const depts = db?.departments || [];
+      const deptMap = new Map(depts.map(d => [d.id, d]));
+      const deptOrder = new Map(depts.map((d, i) => [d.id, i]));
+      const byWeek = new Map();
+
+      Object.entries(overrides).forEach(([key, val]) => {
+        const parts = key.split('::');
+        const deptId = parts[0];
+        const wk = parts[1];
+        if (!deptId || !wk || !/^\d{4}-W\d{2}$/.test(wk)) return;
+        if (!deptMap.has(deptId)) return;
+        const numVal = Math.round((Number(val) || 0) * 1000) / 1000;
+        if (!byWeek.has(wk)) byWeek.set(wk, new Map());
+        byWeek.get(wk).set(deptId, numVal);
+      });
+
+      const sortedWeeks = [...byWeek.keys()].sort((a, b) => a.localeCompare(b));
+      const companyWeekMap = new Map();
+
+      // Automatically detect company-wide holiday / shutdown superposition weeks across ALL departments
+      if (depts.length >= 2) {
+        const totalBaseAll = depts.reduce((acc, d) => acc + (Number(d.defaultCapacity) || 0), 0);
+        if (totalBaseAll > 0) {
+          sortedWeeks.forEach(wk => {
+            const wkMap = byWeek.get(wk);
+            if (!wkMap || wkMap.size < depts.length) return;
+            const allReduced = depts.every(d => {
+              if (!wkMap.has(d.id)) return false;
+              const baseFte = Number(d.defaultCapacity) || 0;
+              const fte = wkMap.get(d.id);
+              return baseFte > 0 ? (fte < baseFte - 0.001) : (fte <= 0.001);
+            });
+            if (allReduced) {
+              companyWeekMap.set(wk, wkMap);
+            }
+          });
+        }
+      }
+
+      // Merge contiguous company-wide weeks that have identical per-department FTE overrides
+      const companyGroups = [];
+      let curCo = null;
+      const finalizeCompanyGroup = (grp) => {
+        const items = depts.map(d => {
+          const baseFte = Number(d.defaultCapacity) || 0;
+          const fte = grp.valuesByDept.get(d.id);
+          const deltaFte = Math.round((fte - baseFte) * 100) / 100;
+          const pct = baseFte > 0 ? Math.round((fte / baseFte) * 100) : 0;
+          return { deptId: d.id, dept: d, baseFte, fte, deltaFte, pct };
+        });
+        const totalBaseFte = Math.round(items.reduce((acc, it) => acc + it.baseFte, 0) * 100) / 100;
+        const totalFte = Math.round(items.reduce((acc, it) => acc + it.fte, 0) * 100) / 100;
+        const totalDeltaFte = Math.round((totalFte - totalBaseFte) * 100) / 100;
+        const overallPct = totalBaseFte > 0 ? Math.round((totalFte / totalBaseFte) * 100) : 0;
+        const isShutdown = totalFte <= 0.001;
+        const isUniformPct = !isShutdown && items.every(it => {
+          if (it.baseFte <= 0) return true;
+          const expected = Math.round((it.baseFte * (overallPct / 100)) * 20) / 20;
+          return Math.abs(it.fte - expected) <= 0.051 || Math.abs(it.pct - overallPct) <= 2;
+        });
+        const eventType = isShutdown ? 'shutdown' : (isUniformPct ? 'holiday' : 'mixed-holiday');
+        const label = isShutdown ? 'Company Shutdown' : (isUniformPct ? 'Company Holiday' : 'Company-Wide Holiday / Dip');
+        const pctLabel = isShutdown ? '0%' : (isUniformPct ? `${overallPct}%` : `~${overallPct}% avg`);
+        return {
+          kind: 'company',
+          id: `co__${grp.startWk}__${grp.endWk}`,
+          startWk: grp.startWk,
+          endWk: grp.endWk,
+          weekKeys: grp.weekKeys,
+          eventType,
+          label,
+          pctLabel,
+          pctFactor: overallPct,
+          totalBaseFte,
+          totalFte,
+          totalDeltaFte,
+          items,
+        };
+      };
+
+      [...companyWeekMap.keys()].sort((a, b) => a.localeCompare(b)).forEach(wk => {
+        const wkMap = companyWeekMap.get(wk);
+        const sameAsPrev = curCo
+          && addWeeksToWeekKey(curCo.endWk, 1) === wk
+          && depts.every(d => Math.abs((curCo.valuesByDept.get(d.id) || 0) - (wkMap.get(d.id) || 0)) < 0.001);
+        if (sameAsPrev) {
+          curCo.endWk = wk;
+          curCo.weekKeys.push(wk);
+        } else {
+          if (curCo) companyGroups.push(finalizeCompanyGroup(curCo));
+          curCo = { startWk: wk, endWk: wk, weekKeys: [wk], valuesByDept: wkMap };
+        }
+      });
+      if (curCo) companyGroups.push(finalizeCompanyGroup(curCo));
+
+      // Single-department filter: show that department's spans with subtle company-wide badges when overlapping
+      if (deptFilter !== 'all') {
+        const companyByWk = new Map();
+        companyGroups.forEach(cg => cg.weekKeys.forEach(wk => companyByWk.set(wk, cg)));
+        return getGroupedCapacityOverrides(db, deptFilter).map(sp => {
+          const coMatches = sp.weekKeys.map(wk => companyByWk.get(wk)).filter(Boolean);
+          let companyBadge = '';
+          if (coMatches.length === sp.weekKeys.length && coMatches.length > 0) {
+            const first = coMatches[0];
+            companyBadge = coMatches.every(c => c.id === first.id)
+              ? `${first.label} (${first.pctLabel})`
+              : 'Company-Wide Holiday';
+          } else if (coMatches.length > 0) {
+            companyBadge = `Incl. ${coMatches.length} company wk${coMatches.length === 1 ? '' : 's'}`;
+          }
+          return {
+            ...sp,
+            kind: 'dept',
+            id: `dept__${sp.deptId}__${sp.startWk}__${sp.endWk}`,
+            companyBadge,
+          };
+        });
+      }
+
+      // All-Departments view: extract remaining non-company-wide overrides into per-department contiguous spans
+      const byDeptRemaining = new Map();
+      sortedWeeks.forEach(wk => {
+        if (companyWeekMap.has(wk)) return;
+        const wkMap = byWeek.get(wk);
+        wkMap.forEach((fte, deptId) => {
+          if (!byDeptRemaining.has(deptId)) byDeptRemaining.set(deptId, []);
+          byDeptRemaining.get(deptId).push({ weekKey: wk, fte });
+        });
+      });
+
+      const deptSpans = [];
+      depts.forEach(dept => {
+        const list = byDeptRemaining.get(dept.id);
+        if (!list || list.length === 0) return;
+        list.sort((a, b) => a.weekKey.localeCompare(b.weekKey));
+        let cur = null;
+        list.forEach(item => {
+          const isContiguous = cur && addWeeksToWeekKey(cur.endWk, 1) === item.weekKey && Math.abs(cur.fte - item.fte) < 0.001;
+          if (isContiguous) {
+            cur.endWk = item.weekKey;
+            cur.weekKeys.push(item.weekKey);
+          } else {
+            if (cur) deptSpans.push(cur);
+            const baseFte = Number(dept.defaultCapacity) || 0;
+            cur = {
+              kind: 'dept',
+              id: '',
+              deptId: dept.id,
+              dept,
+              startWk: item.weekKey,
+              endWk: item.weekKey,
+              weekKeys: [item.weekKey],
+              fte: item.fte,
+              baseFte,
+              deltaFte: Math.round((item.fte - baseFte) * 100) / 100,
+              companyBadge: '',
+            };
+          }
+        });
+        if (cur) deptSpans.push(cur);
+      });
+      deptSpans.forEach(sp => { sp.id = `dept__${sp.deptId}__${sp.startWk}__${sp.endWk}`; });
+
+      const combined = [...companyGroups, ...deptSpans];
+      combined.sort((a, b) => {
+        const wkCmp = a.startWk.localeCompare(b.startWk);
+        if (wkCmp !== 0) return wkCmp;
+        if (a.kind !== b.kind) return a.kind === 'company' ? -1 : 1;
+        if (a.kind === 'dept' && b.kind === 'dept') {
+          return (deptOrder.get(a.deptId) ?? 999) - (deptOrder.get(b.deptId) ?? 999);
+        }
+        return a.endWk.localeCompare(b.endWk);
+      });
+      return combined;
+    }
+
     function persistUIPrefs() {
-      const toSave = { ...ui, whatIfMode: false, presentMode: false };
+      const toSave = { ...ui, whatIfMode: false, presentMode: false, expandedOverrideGroups: [] };
       safeSetStorage(STORAGE_KEYS.UI_PREFS, JSON.stringify(toSave));
     }
 
@@ -9572,17 +9758,76 @@ img, video { max-width: 100%; height: auto; }
       openCapacityModal(deptId, targetPk);
     }
 
+    function enumerateIsoWeekSpan(startWk, endWk) {
+      const out = [];
+      if (!startWk || !endWk || startWk > endWk) return out;
+      let cur = startWk;
+      let guard = 0;
+      while (cur <= endWk && guard < 260) {
+        out.push(cur);
+        if (cur === endWk) break;
+        cur = addWeeksToWeekKey(cur, 1);
+        guard++;
+      }
+      return out;
+    }
+
     function resetCapacityOverrideSpan(deptId, startWk, endWk) {
       const db = getActiveDB();
       const dept = db.departments.find(d => d.id === deptId);
-      const spans = getGroupedCapacityOverrides(db, deptId);
-      const match = spans.find(sp => sp.startWk === startWk && sp.endWk === endWk);
-      if (!match) return;
+      const wks = enumerateIsoWeekSpan(startWk, endWk).filter(wk => Object.prototype.hasOwnProperty.call(db.capacityOverrides || {}, `${deptId}::${wk}`));
+      if (wks.length === 0) return;
+      const baseFte = Number(dept?.defaultCapacity) || 0;
       pushUndoState(`Reset ${dept?.code || deptId} capacity override (${startWk})`);
-      match.weekKeys.forEach(wk => { delete db.capacityOverrides[`${deptId}::${wk}`]; });
-      recordChange('Capacity', `Reset [${dept?.code || deptId}] variable capacity override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''}) back to base ${match.baseFte} FTE`);
+      wks.forEach(wk => { delete db.capacityOverrides[`${deptId}::${wk}`]; });
+      recordChange('Capacity', `Reset [${dept?.code || deptId}] variable capacity override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''}) back to base ${baseFte} FTE`);
       renderAll();
-      showToast(`Reset ${match.weekKeys.length} week${match.weekKeys.length === 1 ? '' : 's'} to base ${match.baseFte} FTE`, 'info', { undoable: true });
+      showToast(`Reset ${wks.length} week${wks.length === 1 ? '' : 's'} to base ${baseFte} FTE`, 'info', { undoable: true });
+    }
+
+    function editCompanyOverrideGroup(startWk, endWk, pctFactor) {
+      const wks = enumerateIsoWeekSpan(startWk, endWk);
+      openHolidayFactorModal(startWk, { forceWeeks: true, count: Math.max(1, wks.length), pct: pctFactor });
+    }
+
+    function resetCompanyOverrideGroup(startWk, endWk) {
+      const db = getActiveDB();
+      const wks = enumerateIsoWeekSpan(startWk, endWk);
+      if (wks.length === 0) return;
+      let removed = 0;
+      pushUndoState(`Reset company-wide override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''})`);
+      (db.departments || []).forEach(d => {
+        wks.forEach(wk => {
+          const key = `${d.id}::${wk}`;
+          if (Object.prototype.hasOwnProperty.call(db.capacityOverrides || {}, key)) {
+            delete db.capacityOverrides[key];
+            removed++;
+          }
+        });
+      });
+      if (removed === 0) return;
+      recordChange('Capacity', `Reset company-wide capacity override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''}, ${wks.length} wk${wks.length === 1 ? '' : 's'}) across all departments`);
+      renderAll();
+      showToast(`Reset company-wide override (${wks.length} wk${wks.length === 1 ? '' : 's'}) for all departments`, 'info', { undoable: true });
+    }
+
+    function toggleOverrideGroup(groupId) {
+      if (!Array.isArray(ui.expandedOverrideGroups)) ui.expandedOverrideGroups = [];
+      const idx = ui.expandedOverrideGroups.indexOf(groupId);
+      if (idx >= 0) ui.expandedOverrideGroups.splice(idx, 1);
+      else ui.expandedOverrideGroups.push(groupId);
+      renderCapacityOverridesTable(getActiveDB());
+    }
+
+    function toggleAllOverrideGroups() {
+      const db = getActiveDB();
+      const entries = getStructuredCapacityOverrides(db, ui.overrideDeptFilter || 'all');
+      const groupIds = entries.filter(e => e.kind === 'company').map(e => e.id);
+      if (groupIds.length === 0) return;
+      if (!Array.isArray(ui.expandedOverrideGroups)) ui.expandedOverrideGroups = [];
+      const allExpanded = groupIds.every(id => ui.expandedOverrideGroups.includes(id));
+      ui.expandedOverrideGroups = allExpanded ? [] : [...groupIds];
+      renderCapacityOverridesTable(db);
     }
 
     function confirmClearCapacityOverrides() {
@@ -9615,47 +9860,181 @@ img, video { max-width: 100%; height: auto; }
       const badge = document.getElementById('capacityOverridesCountBadge');
       const filterSel = document.getElementById('overrideDeptFilter');
       const clearBtn = document.getElementById('btnClearCapacityOverrides');
+      const expandAllBtn = document.getElementById('btnToggleExpandAllOverrides');
+      const expandAllIcon = document.getElementById('btnToggleExpandAllOverridesIcon');
+      const expandAllLabel = document.getElementById('btnToggleExpandAllOverridesLabel');
       if (!box) return;
 
       if (ui.overrideDeptFilter !== 'all' && !db.departments.some(d => d.id === ui.overrideDeptFilter)) {
         ui.overrideDeptFilter = 'all';
       }
 
-      const allSpans = getGroupedCapacityOverrides(db, 'all');
-      const allWeeksTotal = allSpans.reduce((acc, sp) => acc + sp.weekKeys.length, 0);
+      const allRawSpans = getGroupedCapacityOverrides(db, 'all');
+      const allStructured = getStructuredCapacityOverrides(db, 'all');
+      const filterId = ui.overrideDeptFilter || 'all';
 
       if (filterSel) {
-        filterSel.innerHTML = `<option value="all">All Departments (${allSpans.length})</option>` +
+        filterSel.innerHTML = `<option value="all">All Departments (${allStructured.length})</option>` +
           db.departments.map(d => {
-            const cnt = allSpans.filter(sp => sp.deptId === d.id).length;
-            return `<option value="${d.id}" ${ui.overrideDeptFilter === d.id ? 'selected' : ''}>${escapeHtml(d.name)} [${escapeHtml(d.code)}]${cnt > 0 ? ` (${cnt})` : ''}</option>`;
+            const cnt = allRawSpans.filter(sp => sp.deptId === d.id).length;
+            return `<option value="${d.id}" ${filterId === d.id ? 'selected' : ''}>${escapeHtml(d.name)} [${escapeHtml(d.code)}]${cnt > 0 ? ` (${cnt})` : ''}</option>`;
           }).join('');
       }
 
-      const spans = getGroupedCapacityOverrides(db, ui.overrideDeptFilter || 'all');
-      const shownWeeks = spans.reduce((acc, sp) => acc + sp.weekKeys.length, 0);
+      const entries = filterId === 'all' ? allStructured : getStructuredCapacityOverrides(db, filterId);
+      const companyGroups = entries.filter(e => e.kind === 'company');
+      const deptRows = entries.filter(e => e.kind === 'dept');
+      const shownWeeks = entries.reduce((acc, e) => acc + e.weekKeys.length, 0);
+
+      if (!Array.isArray(ui.expandedOverrideGroups)) ui.expandedOverrideGroups = [];
+      const validGroupSet = new Set(companyGroups.map(g => g.id));
+      ui.expandedOverrideGroups = ui.expandedOverrideGroups.filter(id => validGroupSet.has(id));
+      const allGroupsExpanded = companyGroups.length > 0 && companyGroups.every(g => ui.expandedOverrideGroups.includes(g.id));
+
+      if (expandAllBtn) {
+        const showExpandToggle = companyGroups.length > 0;
+        expandAllBtn.classList.toggle('hidden', !showExpandToggle);
+        expandAllBtn.classList.toggle('inline-flex', showExpandToggle);
+        expandAllBtn.setAttribute('aria-expanded', String(allGroupsExpanded));
+        if (expandAllIcon) expandAllIcon.textContent = allGroupsExpanded ? '▾' : '▸';
+        if (expandAllLabel) expandAllLabel.textContent = allGroupsExpanded ? 'Collapse All' : 'Expand All';
+      }
 
       if (badge) {
-        badge.textContent = allWeeksTotal > 0
-          ? `${spans.length} span${spans.length === 1 ? '' : 's'} • ${shownWeeks} wk${shownWeeks === 1 ? '' : 's'}`
-          : '0 overrides';
+        if (entries.length === 0) {
+          badge.textContent = '0 overrides';
+        } else if (companyGroups.length > 0) {
+          const parts = [`${companyGroups.length} company`];
+          if (deptRows.length > 0) parts.push(`${deptRows.length} dept`);
+          parts.push(`${shownWeeks} wk${shownWeeks === 1 ? '' : 's'}`);
+          badge.textContent = parts.join(' • ');
+        } else {
+          badge.textContent = `${deptRows.length} span${deptRows.length === 1 ? '' : 's'} • ${shownWeeks} wk${shownWeeks === 1 ? '' : 's'}`;
+        }
       }
-      if (clearBtn) clearBtn.classList.toggle('hidden', spans.length === 0);
+      if (clearBtn) clearBtn.classList.toggle('hidden', entries.length === 0);
 
-      if (spans.length === 0) {
+      if (entries.length === 0) {
         box.innerHTML = `
           <div class="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-500">
-            No active variable capacity overrides${ui.overrideDeptFilter !== 'all' ? ' for this department' : ''}. Use <strong>+ Add Override</strong>, click any cell&rsquo;s capacity readout in the Roadmap, or use <strong>Holiday / Shutdown %</strong>.
+            No active variable capacity overrides${filterId !== 'all' ? ' for this department' : ''}. Use <strong>+ Add Override</strong>, click any cell&rsquo;s capacity readout in the Roadmap, or use <strong>Holiday / Shutdown %</strong>.
           </div>`;
         return;
       }
 
+      const formatDeltaBadge = (deltaFte) => {
+        const cls = deltaFte > 0.005
+          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+          : deltaFte < -0.005
+            ? 'bg-amber-50 text-amber-800 border-amber-200'
+            : 'bg-slate-100 text-slate-600 border-slate-200';
+        const txt = deltaFte > 0.005 ? `+${deltaFte} FTE` : deltaFte < -0.005 ? `${deltaFte} FTE` : '0 FTE';
+        return `<span class="px-2 py-0.5 rounded-md border text-[11px] font-bold tabular-nums ${cls}">${txt}</span>`;
+      };
+
+      const rowsHtml = entries.map(entry => {
+        const spanLabel = entry.startWk === entry.endWk ? entry.startWk : `${entry.startWk} → ${entry.endWk}`;
+        const dateRange = formatWeekSpanDateRange(entry.startWk, entry.endWk);
+
+        if (entry.kind === 'company') {
+          const isExpanded = ui.expandedOverrideGroups.includes(entry.id);
+          const isShutdown = entry.eventType === 'shutdown';
+          const pillCls = isShutdown
+            ? 'bg-rose-50 text-rose-700 border-rose-200'
+            : 'bg-violet-50 text-violet-800 border-violet-200';
+          const rowBgCls = isShutdown ? 'bg-rose-50/50 hover:bg-rose-50' : 'bg-violet-50/70 hover:bg-violet-50';
+          const mainRow = `
+            <tr class="${rowBgCls} transition" data-override-group-id="${escapeHtml(entry.id)}">
+              <th scope="row" class="px-3.5 py-2.5 font-bold text-slate-900 whitespace-nowrap cursor-pointer" onclick="toggleOverrideGroup('${escapeHtml(entry.id)}')">
+                <div class="inline-flex items-center gap-1.5">
+                  <button type="button" aria-expanded="${isExpanded}" aria-label="${isExpanded ? 'Collapse' : 'Expand'} ${escapeHtml(entry.label)} (${escapeHtml(spanLabel)})"
+                    onclick="event.stopPropagation(); toggleOverrideGroup('${escapeHtml(entry.id)}')"
+                    class="w-6 h-6 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 flex items-center justify-center text-[11px] font-bold transition shrink-0 cursor-pointer">${isExpanded ? '&#9662;' : '&#9656;'}</button>
+                  <span class="px-2 py-0.5 rounded-md border text-[10px] font-extrabold ${pillCls}">${escapeHtml(entry.label)}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] font-extrabold text-slate-700 tabular-nums">${escapeHtml(entry.pctLabel)}</span>
+                  <span class="text-[10px] font-semibold text-slate-500">(${entry.items.length} depts)</span>
+                </div>
+              </th>
+              <td class="px-3.5 py-2.5 whitespace-nowrap cursor-pointer" onclick="toggleOverrideGroup('${escapeHtml(entry.id)}')">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <span class="font-mono font-bold text-slate-800">${escapeHtml(spanLabel)}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-600 text-[10px] font-bold">${entry.weekKeys.length} wk${entry.weekKeys.length === 1 ? '' : 's'}</span>
+                  <span class="text-[11px] font-medium text-slate-500">(${escapeHtml(dateRange)})</span>
+                </div>
+              </td>
+              <td class="px-3.5 py-2.5 text-right tabular-nums text-slate-600 font-semibold whitespace-nowrap">${entry.totalBaseFte} FTE</td>
+              <td class="px-3.5 py-2.5 text-right tabular-nums font-extrabold ${isShutdown ? 'text-rose-700' : 'text-violet-700'} whitespace-nowrap">${entry.totalFte} FTE</td>
+              <td class="px-3.5 py-2.5 text-right whitespace-nowrap">${formatDeltaBadge(entry.totalDeltaFte)}</td>
+              <td class="px-3.5 py-2.5 text-right space-x-2 whitespace-nowrap">
+                <button type="button" onclick="editCompanyOverrideGroup('${entry.startWk}', '${entry.endWk}', ${entry.pctFactor})" class="text-indigo-600 hover:underline font-semibold">Edit %</button>
+                <button type="button" onclick="resetCompanyOverrideGroup('${entry.startWk}', '${entry.endWk}')" class="text-amber-700 hover:underline font-semibold">Reset All</button>
+              </td>
+            </tr>`;
+
+          if (!isExpanded) return mainRow;
+
+          const subRows = entry.items.map(it => `
+            <tr class="bg-slate-50/70 hover:bg-slate-100" data-override-group-child="${escapeHtml(entry.id)}">
+              <th scope="row" class="pl-11 pr-3.5 py-2 font-semibold text-slate-800 whitespace-nowrap">
+                <span class="inline-flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full shrink-0" style="background:${it.dept.color}" aria-hidden="true"></span>
+                  <span>${escapeHtml(it.dept.name)}</span>
+                  <span class="font-mono text-[10px] text-slate-400">[${escapeHtml(it.dept.code)}]</span>
+                  <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold tabular-nums">${it.pct}%</span>
+                </span>
+              </th>
+              <td class="px-3.5 py-2 text-[11px] text-slate-400 whitespace-nowrap">
+                <span class="font-mono">${escapeHtml(spanLabel)}</span>
+                <span class="ml-1">&middot; ${entry.weekKeys.length} wk${entry.weekKeys.length === 1 ? '' : 's'}</span>
+              </td>
+              <td class="px-3.5 py-2 text-right tabular-nums text-slate-500 whitespace-nowrap">${it.baseFte} FTE</td>
+              <td class="px-3.5 py-2 text-right tabular-nums font-bold text-sky-700 whitespace-nowrap">${it.fte} FTE</td>
+              <td class="px-3.5 py-2 text-right whitespace-nowrap">${formatDeltaBadge(it.deltaFte)}</td>
+              <td class="px-3.5 py-2 text-right space-x-2 whitespace-nowrap">
+                <button type="button" onclick="editCapacityOverrideSpan('${it.deptId}', '${entry.startWk}')" class="text-indigo-600 hover:underline font-semibold">Edit</button>
+                <button type="button" onclick="resetCapacityOverrideSpan('${it.deptId}', '${entry.startWk}', '${entry.endWk}')" class="text-amber-700 hover:underline font-semibold">Reset</button>
+              </td>
+            </tr>`).join('');
+
+          return mainRow + subRows;
+        }
+
+        const coChip = entry.companyBadge
+          ? `<span class="px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200 text-[9px] font-bold">${escapeHtml(entry.companyBadge)}</span>`
+          : '';
+        return `
+          <tr class="hover:bg-slate-50/70">
+            <th scope="row" class="px-3.5 py-2.5 font-bold text-slate-900 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1.5">
+                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${entry.dept.color}" aria-hidden="true"></span>
+                <span>${escapeHtml(entry.dept.name)}</span>
+                <span class="font-mono text-[10px] text-slate-400">[${escapeHtml(entry.dept.code)}]</span>
+                ${coChip}
+              </span>
+            </th>
+            <td class="px-3.5 py-2.5 whitespace-nowrap">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="font-mono font-bold text-slate-800">${escapeHtml(spanLabel)}</span>
+                <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold">${entry.weekKeys.length} wk${entry.weekKeys.length === 1 ? '' : 's'}</span>
+                <span class="text-[11px] font-medium text-slate-500">(${escapeHtml(dateRange)})</span>
+              </div>
+            </td>
+            <td class="px-3.5 py-2.5 text-right tabular-nums text-slate-500 whitespace-nowrap">${entry.baseFte} FTE</td>
+            <td class="px-3.5 py-2.5 text-right tabular-nums font-extrabold text-sky-700 whitespace-nowrap">${entry.fte} FTE</td>
+            <td class="px-3.5 py-2.5 text-right whitespace-nowrap">${formatDeltaBadge(entry.deltaFte)}</td>
+            <td class="px-3.5 py-2.5 text-right space-x-2 whitespace-nowrap">
+              <button type="button" onclick="editCapacityOverrideSpan('${entry.deptId}', '${entry.startWk}')" class="text-indigo-600 hover:underline font-semibold">Edit</button>
+              <button type="button" onclick="resetCapacityOverrideSpan('${entry.deptId}', '${entry.startWk}', '${entry.endWk}')" class="text-amber-700 hover:underline font-semibold">Reset</button>
+            </td>
+          </tr>`;
+      }).join('');
+
       box.innerHTML = `
         <table class="w-full text-left text-xs">
-          <caption class="sr-only">Active variable capacity overrides grouped into contiguous weekly spans</caption>
+          <caption class="sr-only">Active variable capacity overrides with automatic company-wide holiday and shutdown grouping</caption>
           <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px]">
             <tr>
-              <th scope="col" class="px-3.5 py-2.5 font-bold">Department</th>
+              <th scope="col" class="px-3.5 py-2.5 font-bold">Scope / Department</th>
               <th scope="col" class="px-3.5 py-2.5 font-bold">Weeks &amp; Date Range</th>
               <th scope="col" class="px-3.5 py-2.5 font-bold text-right">Base FTE</th>
               <th scope="col" class="px-3.5 py-2.5 font-bold text-right">Override FTE</th>
@@ -9664,38 +10043,7 @@ img, video { max-width: 100%; height: auto; }
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
-            ${spans.map(sp => {
-              const spanLabel = sp.startWk === sp.endWk ? sp.startWk : `${sp.startWk} → ${sp.endWk}`;
-              const dateRange = formatWeekSpanDateRange(sp.startWk, sp.endWk);
-              const deltaCls = sp.deltaFte > 0.005 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : sp.deltaFte < -0.005 ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200';
-              const deltaTxt = sp.deltaFte > 0.005 ? `+${sp.deltaFte} FTE` : sp.deltaFte < -0.005 ? `${sp.deltaFte} FTE` : '0 FTE';
-              return `
-                <tr class="hover:bg-slate-50/70">
-                  <th scope="row" class="px-3.5 py-2.5 font-bold text-slate-900 whitespace-nowrap">
-                    <span class="inline-flex items-center gap-1.5">
-                      <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${sp.dept.color}" aria-hidden="true"></span>
-                      <span>${escapeHtml(sp.dept.name)}</span>
-                      <span class="font-mono text-[10px] text-slate-400">[${escapeHtml(sp.dept.code)}]</span>
-                    </span>
-                  </th>
-                  <td class="px-3.5 py-2.5 whitespace-nowrap">
-                    <div class="flex flex-wrap items-center gap-1.5">
-                      <span class="font-mono font-bold text-slate-800">${escapeHtml(spanLabel)}</span>
-                      <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold">${sp.weekKeys.length} wk${sp.weekKeys.length === 1 ? '' : 's'}</span>
-                      <span class="text-[11px] font-medium text-slate-500">(${escapeHtml(dateRange)})</span>
-                    </div>
-                  </td>
-                  <td class="px-3.5 py-2.5 text-right tabular-nums text-slate-500 whitespace-nowrap">${sp.baseFte} FTE</td>
-                  <td class="px-3.5 py-2.5 text-right tabular-nums font-extrabold text-sky-700 whitespace-nowrap">${sp.fte} FTE</td>
-                  <td class="px-3.5 py-2.5 text-right whitespace-nowrap">
-                    <span class="px-2 py-0.5 rounded-md border text-[11px] font-bold tabular-nums ${deltaCls}">${deltaTxt}</span>
-                  </td>
-                  <td class="px-3.5 py-2.5 text-right space-x-2 whitespace-nowrap">
-                    <button type="button" onclick="editCapacityOverrideSpan('${sp.deptId}', '${sp.startWk}')" class="text-indigo-600 hover:underline font-semibold">Edit</button>
-                    <button type="button" onclick="resetCapacityOverrideSpan('${sp.deptId}', '${sp.startWk}', '${sp.endWk}')" class="text-amber-700 hover:underline font-semibold">Reset</button>
-                  </td>
-                </tr>`;
-            }).join('')}
+            ${rowsHtml}
           </tbody>
         </table>`;
     }
@@ -15086,6 +15434,7 @@ img, video { max-width: 100%; height: auto; }
           ui.filterHasNotesOnly = false;
           if (!Array.isArray(ui.recentUsers)) ui.recentUsers = [];
           if (!Array.isArray(ui.removedUsers)) ui.removedUsers = [];
+          if (!Array.isArray(ui.expandedOverrideGroups)) ui.expandedOverrideGroups = [];
           if (!ui.linkedFilePaths || typeof ui.linkedFilePaths !== 'object' || Array.isArray(ui.linkedFilePaths)) ui.linkedFilePaths = {};
         } else {
           ui.pdfOptions = { colorMode: 'match', colsPerPage: 6, ...ui.pdfOptions };
@@ -15723,14 +16072,17 @@ img, video { max-width: 100%; height: auto; }
       return { updatedWeeks, deptCount: targets.length };
     }
 
-    function openHolidayFactorModal(prePeriod = '') {
+    function openHolidayFactorModal(prePeriod = '', opts = {}) {
       const db = getActiveDB();
       if (db.departments.length === 0) {
         showToast('Add at least one Department first.', 'warning');
         return;
       }
-      const anchor = prePeriod || (ui.timeUnit === 'month' ? ui.startMonth : ui.startWeek);
-      const startOpts = buildPeriodSelectOptions(anchor, ui.timeUnit, 4, 20);
+      const effectiveUnit = opts && opts.forceWeeks ? 'week' : ui.timeUnit;
+      const anchor = prePeriod || (effectiveUnit === 'month' ? ui.startMonth : ui.startWeek);
+      const startOpts = buildPeriodSelectOptions(anchor, effectiveUnit, 4, 24);
+      const initCount = Math.max(1, Math.min(24, parseInt(opts?.count, 10) || 1));
+      const initPct = (opts && opts.pct !== undefined && !isNaN(Number(opts.pct))) ? Math.max(0, Math.min(200, Math.round(Number(opts.pct)))) : 80;
       const deptChecks = db.departments.map(d => `
         <label class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer text-xs font-semibold text-slate-700">
           <input type="checkbox" data-holiday-dept="1" class="rounded text-indigo-600" value="${d.id}" checked />
@@ -15749,19 +16101,20 @@ img, video { max-width: 100%; height: auto; }
             <button type="button" aria-label="Close dialog" onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none">&times;</button>
           </div>
 
+          <input type="hidden" id="mHolTimeUnit" value="${effectiveUnit}" />
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label for="mHolStart" class="block font-semibold text-slate-700 mb-1">Start ${ui.timeUnit === 'month' ? 'Month' : 'ISO Week'}</label>
+              <label for="mHolStart" class="block font-semibold text-slate-700 mb-1">Start ${effectiveUnit === 'month' ? 'Month' : 'ISO Week'}</label>
               <select id="mHolStart" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium">
                 ${startOpts.map(o => `<option value="${o.key}" ${o.key === anchor ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
               </select>
             </div>
             <div>
-              <label for="mHolCount" class="block font-semibold text-slate-700 mb-1">Duration (${ui.timeUnit}s)</label>
+              <label for="mHolCount" class="block font-semibold text-slate-700 mb-1">Duration (${effectiveUnit}s)</label>
               <div class="flex items-center gap-1.5">
-                <button type="button" onclick="stepNumericInput('mHolCount', -1, 1, 12, 0)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 font-bold">&minus;</button>
-                <input id="mHolCount" type="number" inputmode="numeric" min="1" max="12" value="1" class="w-full px-2 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold text-center" />
-                <button type="button" onclick="stepNumericInput('mHolCount', 1, 1, 12, 0)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 font-bold">+</button>
+                <button type="button" onclick="stepNumericInput('mHolCount', -1, 1, 24, 0)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 font-bold">&minus;</button>
+                <input id="mHolCount" type="number" inputmode="numeric" min="1" max="24" value="${initCount}" class="w-full px-2 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold text-center" />
+                <button type="button" onclick="stepNumericInput('mHolCount', 1, 1, 24, 0)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 font-bold">+</button>
               </div>
             </div>
           </div>
@@ -15774,7 +16127,7 @@ img, video { max-width: 100%; height: auto; }
               <button type="button" onclick="document.getElementById('mHolPct').value='80'" class="px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-700 font-bold text-[11px]">80% 4-Day Wk</button>
               <button type="button" onclick="document.getElementById('mHolPct').value='100'" class="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold text-[11px]">100% Reset</button>
             </div>
-            <input id="mHolPct" type="number" inputmode="numeric" min="0" max="200" step="5" value="80" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold" />
+            <input id="mHolPct" type="number" inputmode="numeric" min="0" max="200" step="5" value="${initPct}" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold" />
           </div>
 
           <div>
@@ -15792,7 +16145,8 @@ img, video { max-width: 100%; height: auto; }
     function applyHolidayFactorModal() {
       const db = getActiveDB();
       const startPk = document.getElementById('mHolStart')?.value;
-      const count = Math.max(1, Math.min(12, parseInt(document.getElementById('mHolCount')?.value, 10) || 1));
+      const effectiveUnit = document.getElementById('mHolTimeUnit')?.value === 'week' ? 'week' : (document.getElementById('mHolTimeUnit')?.value === 'month' ? 'month' : ui.timeUnit);
+      const count = Math.max(1, Math.min(24, parseInt(document.getElementById('mHolCount')?.value, 10) || 1));
       const pct = parseFloat(document.getElementById('mHolPct')?.value);
       const deptIds = [...document.querySelectorAll('input[data-holiday-dept]:checked')].map(el => el.value);
 
@@ -15800,8 +16154,8 @@ img, video { max-width: 100%; height: auto; }
       if (deptIds.length === 0) { showToast('Select at least one department.', 'warning'); return; }
 
       pushUndoState(`Apply ${pct}% capacity factor`);
-      const res = applyHolidayFactor(deptIds, startPk, count, ui.timeUnit, pct, db);
-      recordChange('Capacity', `Applied ${pct}% capacity factor to ${res.deptCount} dept(s) starting ${startPk} (${count} ${ui.timeUnit}${count === 1 ? '' : 's'})`);
+      const res = applyHolidayFactor(deptIds, startPk, count, effectiveUnit, pct, db);
+      recordChange('Capacity', `Applied ${pct}% capacity factor to ${res.deptCount} dept(s) starting ${startPk} (${count} ${effectiveUnit}${count === 1 ? '' : 's'})`);
       closeModal();
       renderAll();
       showToast(`Updated capacity for ${res.deptCount} department${res.deptCount === 1 ? '' : 's'} (${pct}%)`, 'success', { undoable: true });

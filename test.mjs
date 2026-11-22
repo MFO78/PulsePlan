@@ -1180,6 +1180,126 @@ test('Enhanced Timeline bars, Rich Detailed Row Labels, and Welcome & Setup Spla
   }
 });
 
+test('Active Variable Capacity Overrides auto-groups company-wide holidays & shutdowns (including separate superpositions) with expand/collapse all', () => {
+  const prevGetById = sandbox.document.getElementById;
+  const elMap = new Map();
+  sandbox.document.getElementById = (id) => {
+    if (!elMap.has(id)) {
+      const classes = new Set(['hidden']);
+      const el = makeStubEl();
+      el.id = id;
+      el.options = [];
+      el.dataset = {};
+      el.classList = {
+        add: (...c) => c.forEach(x => classes.add(x)),
+        remove: (...c) => c.forEach(x => classes.delete(x)),
+        toggle: (x, f) => { if (f === undefined) { if (classes.has(x)) classes.delete(x); else classes.add(x); } else if (f) classes.add(x); else classes.delete(x); },
+        contains: (x) => classes.has(x),
+      };
+      elMap.set(id, el);
+    }
+    return elMap.get(id);
+  };
+  try {
+    const out = vm.runInContext(`(() => {
+      liveDB = createSampleDemoDB();
+      liveDB.capacityOverrides = {};
+      ui.demoMode = false;
+      ui.whatIfMode = false;
+      ui.overrideDeptFilter = 'all';
+      ui.expandedOverrideGroups = [];
+
+      // 1. Company Shutdown (0%) across 2 consecutive weeks W52-W53 via Holiday tool
+      applyHolidayFactor(liveDB.departments.map(d => d.id), '2026-W52', 2, 'week', 0, liveDB);
+
+      // 2. Separately-created overlapping 50% Holiday superposition on W33 (ENG spans W32-W34; other 3 depts only W33)
+      liveDB.capacityOverrides['d_eng::2026-W32'] = 4.0;
+      liveDB.capacityOverrides['d_eng::2026-W33'] = 4.0;
+      liveDB.capacityOverrides['d_eng::2026-W34'] = 4.0;
+      liveDB.capacityOverrides['d_des::2026-W33'] = 1.5;
+      liveDB.capacityOverrides['d_dat::2026-W33'] = 2.0;
+      liveDB.capacityOverrides['d_ops::2026-W33'] = 1.75;
+
+      // 3. Separately-created mixed-rate company-wide dip on W40
+      liveDB.capacityOverrides['d_eng::2026-W40'] = 6.0; // 75%
+      liveDB.capacityOverrides['d_des::2026-W40'] = 1.5; // 50%
+      liveDB.capacityOverrides['d_dat::2026-W40'] = 3.0; // 75%
+      liveDB.capacityOverrides['d_ops::2026-W40'] = 2.0; // 57%
+
+      // 4. Company-wide capacity INCREASE on W20 should NOT be grouped as holiday/shutdown
+      liveDB.capacityOverrides['d_eng::2026-W20'] = 9.0;
+      liveDB.capacityOverrides['d_des::2026-W20'] = 4.0;
+      liveDB.capacityOverrides['d_dat::2026-W20'] = 5.0;
+      liveDB.capacityOverrides['d_ops::2026-W20'] = 4.5;
+
+      const structured = getStructuredCapacityOverrides(liveDB, 'all');
+      const companies = structured.filter(e => e.kind === 'company');
+      const depts = structured.filter(e => e.kind === 'dept');
+
+      // Render collapsed by default
+      renderCapacityOverridesTable(liveDB);
+      const htmlCollapsed = document.getElementById('dataCapacityOverridesTable').innerHTML;
+      const expandBtnVisible = !document.getElementById('btnToggleExpandAllOverrides').classList.contains('hidden');
+      const labelCollapsed = document.getElementById('btnToggleExpandAllOverridesLabel').textContent;
+
+      // Expand All -> reveals department FTE breakdown rows
+      toggleAllOverrideGroups();
+      const htmlExpanded = document.getElementById('dataCapacityOverridesTable').innerHTML;
+      const labelExpanded = document.getElementById('btnToggleExpandAllOverridesLabel').textContent;
+
+      // Collapse All -> hides sub-rows again
+      toggleAllOverrideGroups();
+      const htmlReCollapsed = document.getElementById('dataCapacityOverridesTable').innerHTML;
+      const labelReCollapsed = document.getElementById('btnToggleExpandAllOverridesLabel').textContent;
+
+      // Reset single department slice inside W33 superposition (ENG only) -> W33 ungroups for remaining 3 depts, ENG W32 & W34 preserved
+      resetCapacityOverrideSpan('d_eng', '2026-W33', '2026-W33');
+      const afterSliceReset = getStructuredCapacityOverrides(liveDB, 'all');
+      const engW32Still = liveDB.capacityOverrides['d_eng::2026-W32'];
+      const engW33Gone = !Object.prototype.hasOwnProperty.call(liveDB.capacityOverrides, 'd_eng::2026-W33');
+      const engW34Still = liveDB.capacityOverrides['d_eng::2026-W34'];
+
+      // Reset entire Company Shutdown group W52-W53
+      resetCompanyOverrideGroup('2026-W52', '2026-W53');
+      const shutdownRemaining = liveDB.departments.some(d => liveDB.capacityOverrides[d.id + '::2026-W52'] !== undefined || liveDB.capacityOverrides[d.id + '::2026-W53'] !== undefined);
+
+      return {
+        companies, depts, htmlCollapsed, expandBtnVisible, labelCollapsed,
+        htmlExpanded, labelExpanded, htmlReCollapsed, labelReCollapsed,
+        afterSliceResetCompanies: afterSliceReset.filter(e => e.kind === 'company').length,
+        engW32Still, engW33Gone, engW34Still, shutdownRemaining,
+      };
+    })()`, ctx);
+
+    assert.equal(out.companies.length, 3, 'Detects 3 company-wide groups: W33 (50% holiday superposition), W40 (mixed dip), W52-W53 (0% shutdown)');
+    const w33 = out.companies.find(c => c.startWk === '2026-W33');
+    const w40 = out.companies.find(c => c.startWk === '2026-W40');
+    const w52 = out.companies.find(c => c.startWk === '2026-W52');
+    assert.ok(w33 && w33.label === 'Company Holiday' && w33.pctLabel === '50%' && w33.items.length === 4, 'W33 superposition detected as Company Holiday (50%) across 4 depts');
+    assert.ok(w40 && w40.label === 'Company-Wide Holiday / Dip' && w40.items.length === 4, 'W40 mixed-rate dip grouped into expandable company row');
+    assert.ok(w52 && w52.label === 'Company Shutdown' && w52.endWk === '2026-W53' && w52.weekKeys.length === 2 && w52.totalFte === 0, 'W52-W53 merged into single 2-week Company Shutdown (0%)');
+    assert.ok(out.depts.some(d => d.deptId === 'd_eng' && d.startWk === '2026-W32' && d.endWk === '2026-W32'), 'ENG W32 outside superposition remains an individual dept span');
+    assert.ok(out.depts.some(d => d.deptId === 'd_eng' && d.startWk === '2026-W34' && d.endWk === '2026-W34'), 'ENG W34 outside superposition remains an individual dept span');
+    assert.equal(out.depts.filter(d => d.startWk === '2026-W20').length, 4, 'W20 capacity increases are NOT grouped as holiday/shutdown');
+
+    assert.equal(out.expandBtnVisible, true, 'Expand/Collapse All button is visible when company-wide groups exist');
+    assert.equal(out.labelCollapsed, 'Expand All', 'Button shows Expand All when groups are collapsed');
+    assert.ok(!out.htmlCollapsed.includes('data-override-group-child'), 'Department sub-rows are hidden when collapsed');
+    assert.equal(out.labelExpanded, 'Collapse All', 'Button toggles to Collapse All when all groups are expanded');
+    assert.ok(out.htmlExpanded.includes('data-override-group-child') && out.htmlExpanded.includes('1.75 FTE'), 'Expanding reveals per-department overridden FTE values');
+    assert.equal(out.labelReCollapsed, 'Expand All', 'Clicking Collapse All collapses all groups back');
+    assert.ok(!out.htmlReCollapsed.includes('data-override-group-child'), 'Department sub-rows are hidden again after Collapse All');
+
+    assert.equal(out.engW32Still, 4.0, 'Resetting ENG W33 slice preserves ENG W32');
+    assert.equal(out.engW33Gone, true, 'Resetting ENG W33 slice removes ENG W33');
+    assert.equal(out.engW34Still, 4.0, 'Resetting ENG W33 slice preserves ENG W34');
+    assert.equal(out.afterSliceResetCompanies, 2, 'Removing one dept from W33 cleanly ungroups W33 while leaving W40 and W52-W53 grouped');
+    assert.equal(out.shutdownRemaining, false, 'resetCompanyOverrideGroup removes all dept overrides across W52-W53');
+  } finally {
+    sandbox.document.getElementById = prevGetById;
+  }
+});
+
 let passed = 0;
 let failed = 0;
 for (const t of tests) {
