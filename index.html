@@ -9030,24 +9030,38 @@ img, video { max-width: 100%; height: auto; }
 
     async function openSharedDatabaseFile() {
       if (!supportsFileSystemAccess()) {
-        showToast('Direct folder sync requires desktop Chrome/Edge. Use Share/Save & Import JSON in Sync.', 'warning');
+        showToast('Direct folder sync requires desktop Chrome/Edge over HTTPS. Use "Import JSON" in Sync.', 'warning');
+        return;
+      }
+      if (typeof location !== 'undefined' && location.protocol === 'file:') {
+        showToast('Browser security blocks direct folder linking on local file:// pages. Open PulsePlan via HTTPS or use "Import JSON" in Sync.', 'warning');
         return;
       }
       try {
         const [handle] = await window.showOpenFilePicker({
-          types: [{ description: 'PulsePlan JSON Database', accept: { 'application/json': ['.json'] } }],
+          types: [{ description: 'PulsePlan JSON Database', accept: { 'application/json': ['.json'], 'text/plain': ['.json'] } }],
           multiple: false,
         });
         if (handle) await attachAndLoadFileHandle(handle, false);
       } catch (e) {
-        if (e.name !== 'AbortError') {
-          showToast('Could not open file picker. Use Import JSON instead.', 'warning');
+        if (e && e.name === 'AbortError') return;
+        console.error('openSharedDatabaseFile failed:', e);
+        if (e && e.name === 'SecurityError') {
+          showToast('Browser blocked direct linking to this folder (Chrome restricts Desktop/Downloads roots). Move the .json into a subfolder or use "Import JSON".', 'warning');
+        } else {
+          const detail = e && (e.message || e.name) ? ` (${e.name || 'Error'}: ${e.message || ''})` : '';
+          showToast(`Could not open file picker${detail}. Use "Import JSON" instead.`, 'warning');
         }
       }
     }
 
     async function createSharedDatabaseFile() {
       if (!supportsFileSystemAccess()) {
+        downloadJsonBackup();
+        return;
+      }
+      if (typeof location !== 'undefined' && location.protocol === 'file:') {
+        showToast('Direct folder linking is blocked on local file:// pages — downloading a JSON backup instead.', 'warning');
         downloadJsonBackup();
         return;
       }
@@ -9058,6 +9072,8 @@ img, video { max-width: 100%; height: auto; }
         });
         if (!handle) return;
         ui.demoMode = false;
+        ui.whatIfMode = false;
+        whatIfDB = null;
         persistUIPrefs();
         linkedFileHandle = handle;
         rememberedFileHandle = handle;
@@ -9068,8 +9084,12 @@ img, video { max-width: 100%; height: auto; }
         renderAll();
         showToast(`Created & linked "${handle.name}" for auto-save`, 'success');
       } catch (e) {
-        if (e.name !== 'AbortError') {
-          showToast('Could not create linked file (use Share/Save JSON instead).', 'warning');
+        if (e && e.name === 'AbortError') return;
+        console.error('createSharedDatabaseFile failed:', e);
+        if (e && e.name === 'SecurityError') {
+          showToast('Browser blocked saving directly in this folder (Chrome restricts Desktop/Downloads roots). Choose a subfolder or use "Share / Save JSON".', 'warning');
+        } else {
+          showToast(`Could not create linked file (${e?.name || 'Error'}). Use "Share / Save JSON" instead.`, 'warning');
         }
       }
     }
@@ -9085,8 +9105,14 @@ img, video { max-width: 100%; height: auto; }
           showToast('Permission denied to access the remembered sync file.', 'warning');
         }
       } catch (e) {
-        setSyncWarning('missing', rememberedFileHandle.name);
-        showToast(`Sync file "${rememberedFileHandle.name}" could not be found or accessed.`, 'error');
+        console.error('reconnectRememberedFile failed:', e);
+        if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
+          setSyncWarning('permission', rememberedFileHandle.name);
+          showToast(`Browser blocked permission for "${rememberedFileHandle.name}". Click "Choose Different File" or use "Import JSON".`, 'warning');
+        } else {
+          setSyncWarning('missing', rememberedFileHandle.name);
+          showToast(`Sync file "${rememberedFileHandle.name}" could not be found or accessed (${e?.name || 'Error'}).`, 'error');
+        }
       }
     }
 
@@ -9177,52 +9203,86 @@ img, video { max-width: 100%; height: auto; }
       try {
         file = await handle.getFile();
       } catch (e) {
+        console.error('Sync file handle.getFile failed:', e);
         linkedFileHandle = null;
-        setSyncWarning('missing', handle.name);
-        showToast(`Warning: Sync file "${handle.name}" was not found or is unreachable.`, 'error');
+        if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
+          setSyncWarning('permission', handle.name);
+          if (!isSilentAutoReload) showToast(`Permission required to read "${handle.name}". Click Reconnect or choose the file again.`, 'warning');
+        } else {
+          setSyncWarning('missing', handle.name);
+          if (!isSilentAutoReload) showToast(`Warning: Sync file "${handle.name}" was not found or is unreachable (${e?.name || 'Error'}).`, 'error');
+        }
         return;
       }
 
       isReloadingFromFile = true;
       try {
-        const rawText = (await file.text()).replace(/^\uFEFF/, '');
-        const parsed = JSON.parse(rawText);
-        const migrated = normalizeAndMigrateDB(parsed);
-        if (!migrated) {
-          if (!isSilentAutoReload) showToast('Selected JSON file is not a valid PulsePlan database.', 'error');
+        let migrated = null;
+        try {
+          const rawText = (await file.text()).replace(/^\uFEFF/, '');
+          const parsed = JSON.parse(rawText);
+          migrated = normalizeAndMigrateDB(parsed);
+          if (!migrated) {
+            if (!isSilentAutoReload) showToast(`"${handle.name}" is not a valid PulsePlan database (missing departments/projects).`, 'error');
+            return;
+          }
+        } catch (err) {
+          console.error('Sync file parse/migrate error:', err);
+          if (!isSilentAutoReload) {
+            showToast(`Failed to parse "${handle.name}": ${err?.message || 'invalid JSON'}`, 'error');
+          }
           return;
         }
-        liveDB = migrated;
-        ui.demoMode = false;
-        clearUndoHistory();
 
-        const shifted = isSilentAutoReload ? false : syncHorizonAfterDBLoad(liveDB);
+        try {
+          liveDB = migrated;
+          ui.demoMode = false;
+          ui.whatIfMode = false;
+          whatIfDB = null;
+          clearUndoHistory();
 
-        persistUIPrefs();
-        linkedFileHandle = handle;
-        rememberedFileHandle = handle;
-        lastKnownFileModified = file.lastModified;
-        pendingAutoReload = false;
-        syncWarningState = { type: null, fileName: '', dismissed: false };
-        document.getElementById('externalUpdateBanner').classList.add('hidden');
-        if (!isSilentAutoReload) await saveRememberedHandle(handle);
-        safeSetStorage(STORAGE_KEYS.LIVE_DB, JSON.stringify(liveDB));
-        startFilePolling();
-        renderAll();
+          let shifted = false;
+          if (!isSilentAutoReload) {
+            try {
+              shifted = syncHorizonAfterDBLoad(liveDB);
+            } catch (hErr) {
+              console.error('Horizon alignment error after DB load:', hErr);
+            }
+          }
 
-        if (isSilentAutoReload) {
-          const who = liveDB.meta?.lastModifiedBy || 'a teammate';
-          showToast(`Auto-reloaded latest changes from "${handle.name}" (${who}, Rev ${liveDB.meta?.revision || '?'})`, 'info');
-        } else {
-          const allocCount = Object.keys(liveDB.allocations).length;
-          showToast(
-            `${isAutoReconnect ? 'Auto-reconnected' : 'Connected'} to "${handle.name}" (${liveDB.departments.length} depts, ${liveDB.projects.length} projects, ${allocCount} wk allocs${shifted ? ' — jumped to data start' : ''})`,
-            'success'
-          );
+          persistUIPrefs();
+          linkedFileHandle = handle;
+          rememberedFileHandle = handle;
+          lastKnownFileModified = file.lastModified;
+          pendingAutoReload = false;
+          syncWarningState = { type: null, fileName: '', dismissed: false };
+          document.getElementById('externalUpdateBanner')?.classList.add('hidden');
+          if (!isSilentAutoReload) await saveRememberedHandle(handle);
+          safeSetStorage(STORAGE_KEYS.LIVE_DB, JSON.stringify(liveDB));
+          startFilePolling();
+
+          try {
+            renderAll();
+          } catch (renderErr) {
+            console.error('Post-load renderAll error:', renderErr);
+            if (!isSilentAutoReload) showToast(`Loaded "${handle.name}", but a view render error occurred (${renderErr?.message || 'Error'}).`, 'warning');
+            return;
+          }
+
+          if (isSilentAutoReload) {
+            const who = liveDB.meta?.lastModifiedBy || 'a teammate';
+            showToast(`Auto-reloaded latest changes from "${handle.name}" (${who}, Rev ${liveDB.meta?.revision || '?'})`, 'info');
+          } else {
+            const allocCount = Object.keys(liveDB.allocations).length;
+            showToast(
+              `${isAutoReconnect ? 'Auto-reconnected' : 'Connected'} to "${handle.name}" (${liveDB.departments.length} depts, ${liveDB.projects.length} projects, ${allocCount} wk allocs${shifted ? ' — jumped to data start' : ''})`,
+              'success'
+            );
+          }
+        } catch (postErr) {
+          console.error('Post-load attach error:', postErr);
+          if (!isSilentAutoReload) showToast(`Loaded "${handle.name}", but setup failed: ${postErr?.message || 'unexpected error'}`, 'error');
         }
-      } catch (err) {
-        console.error('Sync file parse error:', err);
-        if (!isSilentAutoReload) showToast('Failed to parse JSON database file.', 'error');
       } finally {
         isReloadingFromFile = false;
       }
@@ -9744,19 +9804,37 @@ img, video { max-width: 100%; height: auto; }
       const file = event.target.files?.[0];
       if (!file) return;
       const reader = new FileReader();
+      reader.onerror = () => {
+        console.error('JSON FileReader error:', reader.error);
+        showToast(`Could not read "${file.name}" (${reader.error?.message || 'file read error'}).`, 'error');
+      };
       reader.onload = () => {
+        let migrated = null;
         try {
           const rawText = String(reader.result || '').replace(/^\uFEFF/, '');
           const parsed = JSON.parse(rawText);
-          const migrated = normalizeAndMigrateDB(parsed);
+          migrated = normalizeAndMigrateDB(parsed);
           if (!migrated) {
             showToast('Invalid PulsePlan JSON structure — missing departments/projects.', 'error');
             return;
           }
+        } catch (e) {
+          console.error('JSON import parse error:', e);
+          showToast(`Could not parse "${file.name}": ${e?.message || 'invalid JSON'}.`, 'error');
+          return;
+        }
+        try {
+          ui.whatIfMode = false;
+          whatIfDB = null;
           if (ui.demoMode) demoDB = migrated;
           else liveDB = migrated;
           clearUndoHistory();
-          const shifted = syncHorizonAfterDBLoad(migrated);
+          let shifted = false;
+          try {
+            shifted = syncHorizonAfterDBLoad(migrated);
+          } catch (hErr) {
+            console.error('Horizon alignment error after import:', hErr);
+          }
           touchDBAndSave();
           renderAll();
           const allocCount = Object.keys(migrated.allocations).length;
@@ -9764,9 +9842,9 @@ img, video { max-width: 100%; height: auto; }
             `Imported "${file.name}" (${migrated.departments.length} depts, ${migrated.projects.length} projects, ${allocCount} wk allocs${shifted ? ' — timeline aligned' : ''})`,
             'success'
           );
-        } catch (e) {
-          console.error('JSON import error:', e);
-          showToast('Could not parse JSON file. Check that it is valid JSON.', 'error');
+        } catch (renderErr) {
+          console.error('Post-import render error:', renderErr);
+          showToast(`Imported "${file.name}", but a display error occurred (${renderErr?.message || 'Error'}).`, 'warning');
         }
       };
       reader.readAsText(file);
@@ -13555,18 +13633,24 @@ img, video { max-width: 100%; height: auto; }
         if (!document.hidden && linkedFileHandle && !ui.demoMode) checkExternalFileUpdates();
       });
 
-      // 7. Apply theme & render UI immediately
+      // 7. Apply theme & render UI immediately (guarded so sync reconnect & SW updates always run)
       applyDarkMode();
       applyPresentMode();
-      renderAll();
+      try {
+        renderAll();
+      } catch (e) {
+        console.error('Initial render error:', e);
+      }
 
       // 8. Auto-reconnect to remembered sync file on desktop (stays clean & warning-free on mobile)
       await autoReconnectSyncFile();
 
-      // 9. Register offline PWA Service Worker when served over HTTPS or localhost
+      // 9. Register offline PWA Service Worker when served over HTTPS or localhost and trigger immediate update check
       try {
         if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof location !== 'undefined' && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-          navigator.serviceWorker.register('./sw.js').catch(() => {});
+          navigator.serviceWorker.register('./sw.js').then((reg) => {
+            try { if (reg && typeof reg.update === 'function') reg.update(); } catch (e) {}
+          }).catch(() => {});
         }
       } catch (e) {}
     }

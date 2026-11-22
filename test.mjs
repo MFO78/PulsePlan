@@ -646,11 +646,105 @@ test('End-to-end DOM render smoke test across all tabs, subtabs, views, and moda
   }
 });
 
+test('Desktop shared database file open (attachAndLoadFileHandle) loads legacy v2 JSON, clears What-If/Demo, and recovers cleanly from parse errors', async () => {
+  const prevShowToast = sandbox.showToast;
+  const prevGetById = sandbox.document.getElementById;
+  const toasts = [];
+  const elMap = new Map();
+  sandbox.showToast = (msg, type) => toasts.push({ msg, type });
+  sandbox.document.getElementById = (id) => {
+    if (!elMap.has(id)) {
+      const el = makeStubEl();
+      el.id = id;
+      el.options = [];
+      el.dataset = {};
+      el.clientWidth = 1200;
+      el.scrollLeft = 0;
+      el.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1200, height: 400, bottom: 400 });
+      elMap.set(id, el);
+    }
+    return elMap.get(id);
+  };
+  try {
+    const legacyJson = '\uFEFF' + JSON.stringify({
+      meta: { version: 2, revision: 12, lastModifiedBy: 'Marco', lastModifiedAt: '2026-06-01T10:00:00Z' },
+      settings: { daysPerWeek: 5, hoursPerDay: 8, warnThreshold: 85, overThreshold: 100 },
+      departments: [{ id: 'd_eng', name: 'Engineering', code: 'ENG', color: '#4f46e5', defaultCapacity: 8 }],
+      projects: [{ id: 'p_alpha', name: 'Alpha', code: 'ALP', color: '#0ea5e9', status: 'Active', priority: 'High' }],
+      allocations: { 'd_eng::p_alpha::2026-W20': 2.5 },
+      capacityOverrides: { 'd_eng::2026-W20': 6 },
+      comments: { 'd_eng::p_alpha::2026-W20': 'Kickoff' },
+      milestones: [{ id: 'm1', title: 'Gate 1', projectId: 'p_alpha', deptId: 'd_eng', date: '2026-05-15', status: 'Pending' }],
+      snapshots: [],
+      changeLog: [],
+    });
+
+    const validHandle = {
+      name: 'company_roadmap.json',
+      async getFile() {
+        return { lastModified: Date.now(), async text() { return legacyJson; } };
+      },
+    };
+    const badJsonHandle = {
+      name: 'corrupted.json',
+      async getFile() {
+        return { lastModified: Date.now(), async text() { return '{ broken json'; } };
+      },
+    };
+
+    sandbox.__testValidHandle = validHandle;
+    sandbox.__testBadHandle = badJsonHandle;
+
+    const res = await vm.runInContext(`(async () => {
+      ui.demoMode = true;
+      ui.whatIfMode = true;
+      whatIfDB = createSampleDemoDB();
+      ui.activeTab = 'data';
+      await attachAndLoadFileHandle(__testValidHandle, false, false);
+      const afterValid = {
+        demoMode: ui.demoMode,
+        whatIfMode: ui.whatIfMode,
+        whatIfNull: whatIfDB === null,
+        linkedName: linkedFileHandle && linkedFileHandle.name,
+        deptCount: liveDB.departments.length,
+        projCount: liveDB.projects.length,
+        reloadingFlag: isReloadingFromFile,
+      };
+      await attachAndLoadFileHandle(__testBadHandle, false, false);
+      const afterBad = {
+        reloadingFlag: isReloadingFromFile,
+        stillHasLiveDepts: liveDB.departments.length,
+      };
+      stopFilePolling();
+      linkedFileHandle = null;
+      rememberedFileHandle = null;
+      return { afterValid, afterBad };
+    })()`, ctx);
+
+    assert.equal(res.afterValid.demoMode, false, 'Connecting shared file exits Demo mode');
+    assert.equal(res.afterValid.whatIfMode, false, 'Connecting shared file exits What-If mode');
+    assert.equal(res.afterValid.whatIfNull, true, 'Connecting shared file clears whatIfDB');
+    assert.equal(res.afterValid.linkedName, 'company_roadmap.json', 'File handle is linked');
+    assert.equal(res.afterValid.deptCount, 1, 'Legacy v2 departments loaded');
+    assert.equal(res.afterValid.projCount, 1, 'Legacy v2 projects loaded');
+    assert.equal(res.afterValid.reloadingFlag, false, 'isReloadingFromFile resets after valid load');
+    assert.equal(res.afterBad.reloadingFlag, false, 'isReloadingFromFile resets even after parse error');
+    assert.equal(res.afterBad.stillHasLiveDepts, 1, 'Corrupted file does not wipe existing liveDB');
+    assert.ok(toasts.some(t => t.type === 'success' && t.msg.includes('company_roadmap.json')), 'Shows success toast on valid load');
+    assert.ok(toasts.some(t => t.type === 'error' && t.msg.includes('corrupted.json')), 'Shows specific filename & error on parse failure');
+  } finally {
+    delete sandbox.__testValidHandle;
+    delete sandbox.__testBadHandle;
+    sandbox.showToast = prevShowToast;
+    sandbox.document.getElementById = prevGetById;
+  }
+});
+
 let passed = 0;
 let failed = 0;
 for (const t of tests) {
   try {
-    t.fn();
+    await t.fn();
     console.log(`✅ PASS: ${t.name}`);
     passed++;
   } catch (err) {

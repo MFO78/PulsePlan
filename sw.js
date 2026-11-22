@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pulseplan-pwa-v1';
+const CACHE_NAME = 'pulseplan-pwa-v2';
 const CORE_ASSETS = [
   './',
   './index.html',
@@ -9,7 +9,13 @@ const CORE_ASSETS = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(CORE_ASSETS))
+      .then((cache) => Promise.all(
+        CORE_ASSETS.map((asset) =>
+          fetch(new Request(asset, { cache: 'no-cache' }))
+            .then((res) => (res && res.ok ? cache.put(asset, res) : null))
+            .catch(() => null)
+        )
+      ))
       .then(() => self.skipWaiting())
       .catch(() => {})
   );
@@ -30,10 +36,10 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // Network-first for HTML navigations so fresh deployments appear immediately, with seamless offline fallback
+  // Network-first with HTTP revalidation for HTML navigations so fresh deployments appear immediately
   if (req.mode === 'navigate' || url.pathname.endsWith('/') || url.pathname.endsWith('.html')) {
     event.respondWith(
-      fetch(req)
+      fetch(new Request(req.url, { cache: 'no-cache', credentials: req.credentials }))
         .then((res) => {
           if (res && res.ok) {
             const copy = res.clone();
@@ -49,7 +55,7 @@ self.addEventListener('fetch', (event) => {
   // Stale-while-revalidate for local static assets (manifest, icon)
   event.respondWith(
     caches.match(req).then((cached) => {
-      const networkFetch = fetch(req).then((res) => {
+      const networkFetch = fetch(new Request(req.url, { cache: 'no-cache', credentials: req.credentials })).then((res) => {
         if (res && res.ok) {
           const copy = res.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});
