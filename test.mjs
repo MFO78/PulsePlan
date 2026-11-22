@@ -750,7 +750,7 @@ test('Mobile web-app meta tag, hung IndexedDB resilience, policy auto-abort dete
   const prevSavePicker = sandbox.window.showSaveFilePicker;
   const prevLoc = sandbox.location;
   const toasts = [];
-  sandbox.showToast = (msg, type) => toasts.push({ msg, type });
+  sandbox.showToast = (msg, type, opts) => toasts.push({ msg, type, opts });
   // Simulate a corporate laptop where indexedDB.open() hangs indefinitely (never fires onsuccess/onerror)
   sandbox.indexedDB = { open: () => ({}) };
   sandbox.location = { protocol: 'https:', origin: 'https://mfo78.github.io', hostname: 'mfo78.github.io' };
@@ -773,7 +773,7 @@ test('Mobile web-app meta tag, hung IndexedDB resilience, policy auto-abort dete
     const elapsed = Date.now() - t0;
 
     assert.ok(elapsed < 1000, `openSharedDatabaseFile did not hang (${elapsed}ms)`);
-    assert.ok(toasts.some(t => t.type === 'warning' && t.msg.includes('Import JSON')), 'Instant policy AbortError warns user to use Import JSON instead of silently doing nothing');
+    assert.ok(toasts.some(t => t.type === 'warning' && t.msg.includes('Import JSON') && t.opts?.actionLabel === 'Import JSON'), 'AbortError provides warning toast with one-click Import JSON action button');
     assert.ok(out.report.includes('PulsePlan Diagnostics Report'), 'formatDebugReport outputs structured header');
     assert.ok(out.report.includes('showOpenFilePicker AbortError'), 'Debug log records AbortError diagnostics');
   } finally {
