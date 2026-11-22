@@ -591,6 +591,7 @@ img, video { max-width: 100%; height: auto; }
   .md\:w-9 { width: 2.25rem; }
   .md\:block { display: block; }
   .md\:flex { display: flex; }
+  .md\:inline { display: inline; }
   .md\:p-4 { padding: 1rem; }
   .md\:p-5 { padding: 1.25rem; }
   .md\:hidden { display: none; }
@@ -1225,6 +1226,51 @@ img, video { max-width: 100%; height: auto; }
         rgba(255, 255, 255, 0.18) 11px
       ) !important;
       border-style: dashed !important;
+    }
+    .timeline-bar-accent {
+      background-color: #ffffff;
+      color: #0f172a;
+      border: 1px solid #cbd5e1;
+      border-top: 3px solid var(--accent-color, #4f46e5) !important;
+      border-left: 4px solid var(--accent-color, #4f46e5) !important;
+    }
+    .timeline-bar-accent.timeline-bar-mid,
+    .timeline-bar-accent.timeline-bar-end {
+      border-left: 1px solid #e2e8f0 !important;
+    }
+    .timeline-bar-accent.timeline-bar-start,
+    .timeline-bar-accent.timeline-bar-mid {
+      border-right-width: 0;
+    }
+    html.dark .timeline-bar-accent {
+      background-color: var(--surface-subtle) !important;
+      color: var(--text-primary) !important;
+      border-color: var(--border-strong) !important;
+      border-top: 3px solid var(--accent-color, #818cf8) !important;
+      border-left: 4px solid var(--accent-color, #818cf8) !important;
+    }
+    html.dark .timeline-bar-accent.timeline-bar-mid,
+    html.dark .timeline-bar-accent.timeline-bar-end {
+      border-left: 1px solid var(--border-strong) !important;
+    }
+    .timeline-bar-accent.timeline-bar-tentative {
+      background-image: repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 6px,
+        rgba(99, 102, 241, 0.08) 6px,
+        rgba(99, 102, 241, 0.08) 11px
+      ) !important;
+      border-bottom-style: dashed !important;
+    }
+    html.dark .timeline-bar-accent.timeline-bar-tentative {
+      background-image: repeating-linear-gradient(
+        -45deg,
+        transparent,
+        transparent 6px,
+        rgba(165, 180, 252, 0.10) 6px,
+        rgba(165, 180, 252, 0.10) 11px
+      ) !important;
     }
     .drag-over-cell {
       outline: 2px dashed #4f46e5 !important;
@@ -3126,7 +3172,7 @@ img, video { max-width: 100%; height: auto; }
       redFte: 2.5,
     };
 
-    const PULSEPLAN_BUILD_ID = '2026-11-22-v5';
+    const PULSEPLAN_BUILD_ID = '2026-11-22-v6';
     const _debugLogEntries = [];
     const MAX_DEBUG_LOG_ENTRIES = 120;
 
@@ -5685,10 +5731,25 @@ img, video { max-width: 100%; height: auto; }
       const searchQ = (ui.matrixSearch || '').trim().toLowerCase();
       const showCost = hasAnyDayRates(db);
 
+      // Always hide desktop status strip while Mobile Card Deck is active so stale banners (e.g. Spotlight Clear) never stick on mobile
+      const desktopStatusStrip = document.getElementById('matrixStatusStrip');
+      if (desktopStatusStrip) {
+        desktopStatusStrip.classList.add('hidden');
+        desktopStatusStrip.innerHTML = '';
+      }
+
       const activeFilterTags = [];
       if (spotlightId) {
         const sp = db.projects.find(p => p.id === spotlightId);
         if (sp) activeFilterTags.push(`Spotlight: [${sp.code}]`);
+      }
+      if (ui.filterDept !== 'all') {
+        const fd = db.departments.find(d => d.id === ui.filterDept);
+        if (fd) activeFilterTags.push(`Dept: ${fd.code}`);
+      }
+      if (ui.filterProj !== 'all') {
+        const fp = db.projects.find(p => p.id === ui.filterProj);
+        if (fp) activeFilterTags.push(`Proj: ${fp.code}`);
       }
       if (!ui.includeTentative) activeFilterTags.push('Committed Only');
       if (searchQ) activeFilterTags.push(`"${ui.matrixSearch.trim()}"`);
@@ -5697,10 +5758,14 @@ img, video { max-width: 100%; height: auto; }
       if (ui.filterHasNotesOnly) activeFilterTags.push('Has Notes');
       if (ui.hideEmptyRows) activeFilterTags.push('Active Only');
 
+      const hasOtherMobileFilters = activeFilterTags.length > (spotlightId ? 1 : 0);
       const mobileFilterBannerHtml = activeFilterTags.length > 0
         ? `<div class="px-3 py-2 rounded-xl bg-indigo-50/80 border border-indigo-200 text-[11px] text-indigo-900 flex flex-wrap items-center justify-between gap-2">
              <span class="font-semibold break-words min-w-0">${escapeHtml(activeFilterTags.join(' • '))}</span>
-             <button type="button" onclick="clearMatrixFilters()" class="px-2 py-0.5 rounded-lg bg-white border border-indigo-200 text-indigo-700 font-bold shrink-0">Reset</button>
+             <div class="flex items-center gap-1.5 shrink-0">
+               ${spotlightId ? '<button type="button" onclick="setSpotlightProject(\'\')" class="px-2 py-0.5 rounded-lg bg-white border border-indigo-200 text-indigo-700 font-bold">Clear Spotlight</button>' : ''}
+               ${(!spotlightId || hasOtherMobileFilters) ? '<button type="button" onclick="clearMatrixFilters()" class="px-2 py-0.5 rounded-lg bg-white border border-indigo-200 text-indigo-700 font-bold">Reset</button>' : ''}
+             </div>
            </div>`
         : '';
 
@@ -5724,12 +5789,17 @@ img, video { max-width: 100%; height: auto; }
       if (ui.axis === 'timeline') {
         const hdrStart = formatPeriodHeader(periods[0], ui.timeUnit).shortTitle;
         const hdrEnd = formatPeriodHeader(periods[periods.length - 1], ui.timeUnit).shortTitle;
+        const totalCapByPeriod = new Map(periods.map(pk => [
+          pk,
+          visibleDepts.reduce((acc, d) => acc + getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte, 0),
+        ]));
         const timelineCardsHtml = rows.map(p => {
           const spotCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
           const perVals = periods.map(pk => {
             const totFte = getProjTotalAllocatedFte(p.id, pk, ui.timeUnit, db);
-            const activeDepts = visibleDepts.filter(d => getAllocationForPeriod(d.id, p.id, pk, ui.timeUnit, db.allocations).hasData).map(d => d.code);
-            return { pk, fte: totFte, activeDepts };
+            const activeDeptObjs = visibleDepts.filter(d => getAllocationForPeriod(d.id, p.id, pk, ui.timeUnit, db.allocations).hasData);
+            const activeCapFte = activeDeptObjs.reduce((acc, d) => acc + getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte, 0) || totalCapByPeriod.get(pk) || 0;
+            return { pk, fte: totFte, activeDepts: activeDeptObjs.map(d => d.code), activeCapFte };
           });
           const maxFte = Math.max(0.1, ...perVals.map(v => v.fte));
           const totalHorizonDays = Math.round(perVals.reduce((acc, v) => acc + fteToDisplayValue(v.fte, v.pk, ui.timeUnit, 'days'), 0));
@@ -5739,13 +5809,40 @@ img, video { max-width: 100%; height: auto; }
           const barsHtml = perVals.map(v => {
             const h = formatPeriodHeader(v.pk, ui.timeUnit);
             const hasLoad = v.fte > 0.001;
-            const opacity = hasLoad ? (0.42 + 0.58 * (v.fte / maxFte)).toFixed(2) : '0';
-            const cellStyle = hasLoad ? `background-color:${p.color}; opacity:${opacity};` : '';
             const tentBarCls = p.tentative && hasLoad ? 'timeline-bar-tentative' : '';
+            let barCls = 'border-slate-200 bg-slate-50';
+            let cellStyle = '';
+            let barInner = '';
+            let tierTip = '';
+            if (hasLoad) {
+              if (colorMode === 'accent') {
+                barCls = `timeline-bar-accent ${tentBarCls}`;
+                cellStyle = `--accent-color:${p.color};`;
+              } else if (colorMode === 'fte3') {
+                const t3 = getFte3DemandTier(v.fte, v.activeCapFte, db);
+                const th = getFilledCardTheme(t3.color);
+                barCls = `border-transparent ${tentBarCls}`;
+                cellStyle = `background-color:${th.bg}; color:${th.text};`;
+                barInner = `<span class="text-[9px] font-extrabold leading-none" aria-hidden="true">${t3.symbol}</span>`;
+                tierTip = ` — ${t3.ariaLabel}`;
+              } else if (colorMode === 'fte') {
+                const fteHex = getFteCardColor(v.fte, v.activeCapFte);
+                const th = getFilledCardTheme(fteHex);
+                barCls = `border-transparent ${tentBarCls}`;
+                cellStyle = `background-color:${th.bg}; color:${th.text};`;
+                const pctOfCap = v.activeCapFte > 0 ? Math.round((v.fte / v.activeCapFte) * 100) : 999;
+                tierTip = ` (${pctOfCap > 990 ? '>100%' : pctOfCap + '%'} cap)`;
+              } else {
+                const th = getFilledCardTheme(p.color);
+                const opacity = (0.58 + 0.42 * (v.fte / maxFte)).toFixed(2);
+                barCls = `border-transparent ${tentBarCls}`;
+                cellStyle = `background-color:${th.bg}; opacity:${opacity};`;
+              }
+            }
             return `
-              <button type="button" onclick="openCellDetailModal('${p.id}', '${v.pk}')" title="${escapeHtml(h.title)}: ${hasLoad ? formatValue(fteToDisplayValue(v.fte, v.pk, ui.timeUnit)) : '0'}"
+              <button type="button" onclick="openCellDetailModal('${p.id}', '${v.pk}')" title="${escapeHtml(h.title)}: ${hasLoad ? formatValue(fteToDisplayValue(v.fte, v.pk, ui.timeUnit)) : '0'}${escapeHtml(tierTip)}"
                 class="flex-1 min-w-[28px] flex flex-col items-center gap-1 py-1 rounded-lg hover:bg-slate-100 transition">
-                <span class="w-full h-5 rounded-md border ${hasLoad ? 'border-transparent' : 'border-slate-200 bg-slate-50'} ${tentBarCls}" style="${cellStyle}"></span>
+                <span class="w-full h-5 rounded-md border flex items-center justify-center ${barCls}" style="${cellStyle}">${barInner}</span>
                 <span class="text-[9px] font-bold text-slate-500 truncate max-w-full">${escapeHtml(h.shortTitle.split(' ')[0])}</span>
               </button>`;
           }).join('');
@@ -6623,7 +6720,7 @@ img, video { max-width: 100%; height: auto; }
               <span class="inline-flex items-center gap-1.5 font-bold">
                 <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${spProj.color}"></span>
                 Spotlight: [${escapeHtml(spProj.code)}] ${escapeHtml(spProj.name)}
-                <button type="button" onclick="setSpotlightProject('')" class="ml-1 px-2 py-0.5 rounded-lg bg-white border border-indigo-200 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold transition">Clear (Esc)</button>
+                <button type="button" onclick="setSpotlightProject('')" class="ml-1 px-2 py-0.5 rounded-lg bg-white border border-indigo-200 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold transition">Clear<span class="hidden md:inline"> (Esc)</span></button>
               </span>`);
           }
         }
@@ -7096,13 +7193,15 @@ img, video { max-width: 100%; height: auto; }
           const perData = periods.map(pk => {
             const totFte = getProjTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
             const activeDepts = visibleDepts.filter(d => getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations).hasData);
+            const activeCapFte = activeDepts.reduce((acc, d) => acc + getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte, 0)
+              || visibleDepts.reduce((acc, d) => acc + getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte, 0);
             const hasOverDept = activeDepts.some(d => {
               const dc = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
               const dt = getDeptTotalAllocatedFte(d.id, pk, ui.timeUnit, db);
               return dc > 0 ? Math.round((dt / dc) * 100) > overT : dt > 0;
             });
             const msInPeriod = getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => m.projectId === row.id);
-            return { pk, fte: totFte, activeDepts, hasOverDept, msInPeriod };
+            return { pk, fte: totFte, activeDepts, activeCapFte, hasOverDept, msInPeriod };
           });
           const peakFte = Math.max(0.1, ...perData.map(x => x.fte));
           let totalDays = 0;
@@ -7111,7 +7210,6 @@ img, video { max-width: 100%; height: auto; }
             totalDays += fteToDisplayValue(x.fte, x.pk, ui.timeUnit, 'days');
             if (x.hasOverDept) bottleneckCount++;
           });
-          const filledTheme = getFilledCardTheme(row.color);
           const statusCls = row.status === 'At Risk' ? 'bg-rose-100 text-rose-700' : row.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600';
 
           const cellsHtml = perData.map((x, idx) => {
@@ -7123,20 +7221,48 @@ img, video { max-width: 100%; height: auto; }
             else if (!prevHas && nextHas) barEdgeCls = 'timeline-bar-start';
             else if (prevHas && !nextHas) barEdgeCls = 'timeline-bar-end';
 
-            const intensity = hasBar ? (0.62 + 0.38 * (x.fte / peakFte)).toFixed(2) : '1';
             const valStr = hasBar ? formatValue(fteToDisplayValue(x.fte, x.pk, ui.timeUnit)) : '';
             const deptCodes = x.activeDepts.map(d => d.code).join(', ');
             const tentBarCls = row.tentative ? 'timeline-bar-tentative' : '';
             const botBarRing = x.hasOverDept ? 'bottleneck-pill-ring' : '';
 
-            const barHtml = hasBar
-              ? `<div class="timeline-bar ${barEdgeCls} ${tentBarCls} ${botBarRing} ${rowSpotCls}"
-                   title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)} — ${valStr} (${escapeHtml(deptCodes)})${x.hasOverDept ? ' • Overallocated dept' : ''}"
-                   style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: ${row.tentative ? '1.5px dashed' : '1px solid'} ${filledTheme.border}; opacity:${intensity};">
-                   <span class="truncate font-extrabold tabular-nums">${valStr}</span>
-                   ${deptCodes ? `<span class="text-[9px] font-mono opacity-85 truncate shrink-0">${escapeHtml(deptCodes)}</span>` : ''}
-                 </div>`
-              : `<div class="min-h-[2.15rem] flex items-center justify-center text-[10px] text-slate-300 opacity-0 group-hover/cell:opacity-100 transition">+</div>`;
+            let barHtml = `<div class="min-h-[2.15rem] flex items-center justify-center text-[10px] text-slate-300 opacity-0 group-hover/cell:opacity-100 transition">+</div>`;
+            if (hasBar) {
+              const { fillHex, tier3, showIdentityDot } = resolveCardStyle(x.fte, x.activeCapFte, row.color);
+              const capSharePct = x.activeCapFte > 0 ? Math.round((x.fte / x.activeCapFte) * 100) : 999;
+              const tierTip = tier3 ? ` • ${tier3.ariaLabel}` : (colorMode === 'fte' ? ` • ${capSharePct > 990 ? '>100%' : capSharePct + '%'} cap` : '');
+              const tipText = `[${row.code}] ${row.name} — ${valStr}${deptCodes ? ` (${deptCodes})` : ''}${tierTip}${x.hasOverDept ? ' • Overallocated dept' : ''}`;
+
+              if (colorMode === 'accent') {
+                barHtml = `
+                  <div class="timeline-bar timeline-bar-accent ${barEdgeCls} ${tentBarCls} ${botBarRing} ${rowSpotCls}"
+                    title="${escapeHtml(tipText)}"
+                    style="--accent-color:${row.color};">
+                    <span class="truncate font-extrabold tabular-nums">${valStr}</span>
+                    ${deptCodes ? `<span class="text-[9px] font-mono text-slate-500 truncate shrink-0">${escapeHtml(deptCodes)}</span>` : ''}
+                  </div>`;
+              } else {
+                const segTheme = getFilledCardTheme(fillHex);
+                const intensity = colorMode === 'fill' ? (0.76 + 0.24 * (x.fte / peakFte)).toFixed(2) : '1';
+                const idDotHtml = showIdentityDot
+                  ? `<span class="w-2 h-2 rounded-full ring-1 ring-white/70 shrink-0" style="background:${row.color}" aria-hidden="true"></span>`
+                  : '';
+                const tierBadgeHtml = tier3
+                  ? `<span class="inline-flex items-center justify-center px-1 rounded text-[9px] font-extrabold shrink-0" style="background-color:${segTheme.chipBg}; color:${segTheme.text};" title="${escapeHtml(tier3.ariaLabel)}" aria-hidden="true">${tier3.symbol}</span>`
+                  : '';
+                barHtml = `
+                  <div class="timeline-bar ${barEdgeCls} ${tentBarCls} ${botBarRing} ${rowSpotCls}"
+                    title="${escapeHtml(tipText)}"
+                    style="background-color:${segTheme.bg}; color:${segTheme.text}; border: ${row.tentative ? '1.5px dashed' : '1px solid'} ${segTheme.border}; opacity:${intensity};">
+                    <span class="inline-flex items-center gap-1 min-w-0">
+                      ${idDotHtml}
+                      ${tierBadgeHtml}
+                      <span class="truncate font-extrabold tabular-nums">${valStr}</span>
+                    </span>
+                    ${deptCodes ? `<span class="text-[9px] font-mono opacity-85 truncate shrink-0">${escapeHtml(deptCodes)}</span>` : ''}
+                  </div>`;
+              }
+            }
 
             const msHtml = x.msInPeriod.length > 0
               ? `<div class="px-1.5 pt-1 space-y-0.5">${x.msInPeriod.map(m => {
@@ -13674,7 +13800,9 @@ img, video { max-width: 100%; height: auto; }
       renderAll();
       showToast(
         ui.presentMode
-          ? 'Present Mode ON — clean fullscreen view (press Esc or F to exit)'
+          ? (isMobileViewport()
+              ? 'Present Mode ON — tap Exit Present to return'
+              : 'Present Mode ON — clean fullscreen view (press Esc or F to exit)')
           : 'Present Mode OFF',
         'info'
       );
@@ -13827,11 +13955,12 @@ img, video { max-width: 100%; height: auto; }
       if (ui.activeTab === 'matrix') {
         if (shouldRenderMobileCards()) renderMobileMatrixCards();
         else renderMatrix();
+        const hasAnyFilter = Boolean(ui.matrixSearch.trim() || ui.filterOverOnly || ui.filterAtRiskOnly || ui.filterHasNotesOnly || ui.filterDept !== 'all' || ui.filterProj !== 'all' || ui.spotlightProjId);
         const clearBtn = document.getElementById('btnClearMatrixFilters');
-        if (clearBtn) {
-          const hasAnyFilter = Boolean(ui.matrixSearch.trim() || ui.filterOverOnly || ui.filterAtRiskOnly || ui.filterHasNotesOnly || ui.filterDept !== 'all' || ui.filterProj !== 'all');
-          clearBtn.classList.toggle('hidden', !hasAnyFilter);
-        }
+        if (clearBtn) clearBtn.classList.toggle('hidden', !hasAnyFilter);
+        const mClearBtn = document.getElementById('mClearFiltersBtn');
+        if (mClearBtn) mClearBtn.classList.toggle('hidden', !(hasAnyFilter || ui.hideEmptyRows || !ui.includeTentative));
+        if (typeof syncMobileControlsUI === 'function') syncMobileControlsUI(getActiveDB());
       }
     }
     function toggleQuickFilter(kind) {

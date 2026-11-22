@@ -834,6 +834,132 @@ test('Connected File full-path formatting & Sync tab display (Windows Copy-as-pa
   }
 });
 
+test('Timeline/Gantt respects all 4 colour schemes (accent, fill, fte, fte3) on desktop & mobile, and mobile clears stale Esc status strip', () => {
+  const prevGetById = sandbox.document.getElementById;
+  const elMap = new Map();
+  const makeTrackedEl = (id) => {
+    const classes = new Set();
+    const el = {
+      id,
+      innerHTML: '',
+      textContent: '',
+      value: '',
+      checked: false,
+      disabled: false,
+      options: [],
+      dataset: {},
+      style: { setProperty: noop },
+      clientWidth: 1200,
+      scrollLeft: 0,
+      classList: {
+        add: (...c) => c.forEach(x => classes.add(x)),
+        remove: (...c) => c.forEach(x => classes.delete(x)),
+        toggle: (x, f) => { if (f === undefined) { if (classes.has(x)) classes.delete(x); else classes.add(x); } else if (f) classes.add(x); else classes.delete(x); },
+        contains: (x) => classes.has(x),
+      },
+      setAttribute: noop,
+      getAttribute: () => null,
+      addEventListener: noop,
+      removeEventListener: noop,
+      dispatchEvent: noop,
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      appendChild: noop,
+      remove: noop,
+      focus: noop,
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 1200, height: 400, bottom: 400 }),
+    };
+    return el;
+  };
+  sandbox.document.getElementById = (id) => {
+    if (!elMap.has(id)) elMap.set(id, makeTrackedEl(id));
+    return elMap.get(id);
+  };
+  try {
+    const out = vm.runInContext(`(() => {
+      liveDB = createSampleDemoDB();
+      ui.demoMode = false;
+      ui.whatIfMode = false;
+      ui.activeTab = 'matrix';
+      ui.axis = 'timeline';
+      ui.timeUnit = 'month';
+      ui.horizon = 4;
+      ui.startMonth = getCurrentMonthKey();
+      ui.startWeek = getCurrentWeekKey();
+      ui.filterDept = 'all';
+      ui.filterProj = 'all';
+      ui.matrixSearch = '';
+      ui.filterOverOnly = false;
+      ui.filterAtRiskOnly = false;
+      ui.filterHasNotesOnly = false;
+      ui.hideEmptyRows = false;
+      ui.includeTentative = true;
+      ui.spotlightProjId = '';
+
+      // Desktop Timeline across all 4 colour modes
+      window.innerWidth = 1440;
+      ui.cellColorMode = 'accent'; renderMatrix();
+      const dAccent = document.getElementById('matrixWrapper').innerHTML;
+      ui.cellColorMode = 'fill'; renderMatrix();
+      const dFill = document.getElementById('matrixWrapper').innerHTML;
+      ui.cellColorMode = 'fte'; renderMatrix();
+      const dFte = document.getElementById('matrixWrapper').innerHTML;
+      ui.cellColorMode = 'fte3'; renderMatrix();
+      const dFte3 = document.getElementById('matrixWrapper').innerHTML;
+
+      // Mobile Timeline across all 4 colour modes
+      window.innerWidth = 375;
+      ui.mobileLayoutMode = 'cards';
+      ui.cellColorMode = 'accent'; renderMobileMatrixCards();
+      const mAccent = document.getElementById('mobileMatrixDeck').innerHTML;
+      ui.cellColorMode = 'fill'; renderMobileMatrixCards();
+      const mFill = document.getElementById('mobileMatrixDeck').innerHTML;
+      ui.cellColorMode = 'fte'; renderMobileMatrixCards();
+      const mFte = document.getElementById('mobileMatrixDeck').innerHTML;
+      ui.cellColorMode = 'fte3'; renderMobileMatrixCards();
+      const mFte3 = document.getElementById('mobileMatrixDeck').innerHTML;
+
+      // Mobile Grid Spotlight shows statusStrip with responsive (Esc), then switching to Cards clears/hides statusStrip
+      ui.mobileLayoutMode = 'grid';
+      ui.spotlightProjId = 'p_nova';
+      renderAll();
+      const stripHtmlOnGrid = document.getElementById('matrixStatusStrip').innerHTML;
+      const stripHiddenOnGrid = document.getElementById('matrixStatusStrip').classList.contains('hidden');
+
+      ui.mobileLayoutMode = 'cards';
+      renderAll();
+      const stripHiddenOnCards = document.getElementById('matrixStatusStrip').classList.contains('hidden');
+      const stripHtmlOnCards = document.getElementById('matrixStatusStrip').innerHTML;
+      const deckWithSpot = document.getElementById('mobileMatrixDeck').innerHTML;
+
+      ui.spotlightProjId = '';
+      renderAll();
+      const deckAfterClear = document.getElementById('mobileMatrixDeck').innerHTML;
+
+      return { dAccent, dFill, dFte, dFte3, mAccent, mFill, mFte, mFte3, stripHtmlOnGrid, stripHiddenOnGrid, stripHiddenOnCards, stripHtmlOnCards, deckWithSpot, deckAfterClear };
+    })()`, ctx);
+
+    assert.ok(out.dAccent.includes('timeline-bar-accent'), 'Desktop Timeline Accent mode uses timeline-bar-accent');
+    assert.ok(!out.dFill.includes('timeline-bar-accent') && out.dFill.includes('background-color:'), 'Desktop Timeline Fill mode uses full project colour fill');
+    assert.ok(out.dFte.includes('cap') && out.dFte.includes('ring-1 ring-white/70'), 'Desktop Timeline By FTE mode renders heat colour + project identity dot');
+    assert.ok(out.dFte3.includes('●') || out.dFte3.includes('▲') || out.dFte3.includes('‼'), 'Desktop Timeline 3-Level mode renders demand tier symbol');
+
+    assert.ok(out.mAccent.includes('timeline-bar-accent'), 'Mobile Timeline Accent mode uses timeline-bar-accent');
+    assert.ok(!out.mFill.includes('timeline-bar-accent') && out.mFill.includes('opacity:'), 'Mobile Timeline Fill mode uses full project colour fill');
+    assert.ok(out.mFte.includes('% cap'), 'Mobile Timeline By FTE mode renders FTE heat scale + % cap tooltip');
+    assert.ok(out.mFte3.includes('●') || out.mFte3.includes('▲') || out.mFte3.includes('‼'), 'Mobile Timeline 3-Level mode renders demand tier symbol');
+
+    assert.equal(out.stripHiddenOnGrid, false, 'Status strip shows in Grid mode when Spotlight is active');
+    assert.ok(out.stripHtmlOnGrid.includes('hidden md:inline'), 'Esc keyboard hint is hidden on mobile viewports');
+    assert.equal(out.stripHiddenOnCards, true, 'Switching to Mobile Cards hides desktop status strip so it never gets stuck');
+    assert.equal(out.stripHtmlOnCards, '', 'Desktop status strip HTML is cleared in Mobile Cards mode');
+    assert.ok(out.deckWithSpot.includes('Clear Spotlight') && !out.deckWithSpot.includes('Esc'), 'Mobile Spotlight banner has 1-tap Clear Spotlight button without Esc text');
+    assert.ok(!out.deckAfterClear.includes('Clear Spotlight'), 'Clearing spotlight removes mobile spotlight banner cleanly');
+  } finally {
+    sandbox.document.getElementById = prevGetById;
+  }
+});
+
 let passed = 0;
 let failed = 0;
 for (const t of tests) {
