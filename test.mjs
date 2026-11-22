@@ -333,6 +333,27 @@ test('Projects are sorted naturally by project code everywhere', () => {
   assert.deepEqual([...res.migCodes], ['A01', 'P2', 'P10']);
 });
 
+test('Users can be removed from Quick Switch and restored cleanly', () => {
+  const res = vm.runInContext(`(() => {
+    ui.recentUsers = ['Marco', 'Elena Rostova'];
+    ui.removedUsers = [];
+    ui.userName = 'Marco';
+    removeQuickUser('Elena Rostova');
+    const afterRemove = getSuggestedTeamUsers();
+    removeQuickUser('Marco');
+    const activeAfterRemovingSelf = ui.userName;
+    const afterRemovingSelf = getSuggestedTeamUsers();
+    setActiveUserName('Marco', false);
+    const afterReAdd = getSuggestedTeamUsers();
+    return { afterRemove, activeAfterRemovingSelf, afterRemovingSelf, afterReAdd };
+  })()`, ctx);
+
+  assert.equal(res.afterRemove.includes('Elena Rostova'), false);
+  assert.notEqual(res.activeAfterRemovingSelf, 'Marco');
+  assert.equal(res.afterRemovingSelf.includes('Marco'), false);
+  assert.equal(res.afterReAdd.includes('Marco'), true);
+});
+
 let passed = 0;
 let failed = 0;
 for (const t of tests) {

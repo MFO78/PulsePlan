@@ -310,8 +310,6 @@ img, video { max-width: 100%; height: auto; }
 .text-white { color: #ffffff; }
 .text-xl { font-size: 1.25rem; line-height: 1.75rem; }
 .text-xs { font-size: 0.75rem; line-height: 1rem; }
-.toLocaleString { function toLocaleString() { [native code] } }
-.toString { function toString() { [native code] } }
 .tracking-tight { letter-spacing: -0.025em; }
 .tracking-wide { letter-spacing: 0.025em; }
 .tracking-wider { letter-spacing: 0.05em; }
@@ -376,7 +374,6 @@ img, video { max-width: 100%; height: auto; }
 .table { display: table; }
 .border-x { border-left-width: 1px; border-right-width: 1px; }
 .hidden { display: none; }
-.inset-x-0 { left: 0px; right: 0px; }
 .mx-auto { margin-left: auto; margin-right: auto; }
 .overflow-x-auto { overflow-x: auto; }
 .overflow-y-auto { overflow-y: auto; }
@@ -405,7 +402,6 @@ img, video { max-width: 100%; height: auto; }
 .border-l { border-left-width: 1px; }
 .border-t { border-top-width: 1px; }
 .border-t-2 { border-top-width: 2px; }
-.bottom-0 { bottom: 0px; }
 .bottom-4 { bottom: 1rem; }
 .left-0 { left: 0px; }
 .mb-1 { margin-bottom: 0.25rem; }
@@ -422,12 +418,14 @@ img, video { max-width: 100%; height: auto; }
 .pb-0\.5 { padding-bottom: 0.125rem; }
 .pb-2 { padding-bottom: 0.5rem; }
 .pb-3\.5 { padding-bottom: 0.875rem; }
-.pb-\[calc\(5\.25rem\+env\(safe-area-inset-bottom\)\)\] { padding-bottom: calc(5.25rem+env(safe-area-inset-bottom)); }
+.pb-\[calc\(5\.25rem\+env\(safe-area-inset-bottom\)\)\] { padding-bottom: calc(5.25rem + env(safe-area-inset-bottom)); }
+.pl-2\.5 { padding-left: 0.625rem; }
 .pr-1 { padding-right: 0.25rem; }
+.pr-1\.5 { padding-right: 0.375rem; }
 .pr-2 { padding-right: 0.5rem; }
+.pr-3 { padding-right: 0.75rem; }
 .pt-0\.5 { padding-top: 0.125rem; }
 .pt-1 { padding-top: 0.25rem; }
-.pt-1\.5 { padding-top: 0.375rem; }
 .pt-2 { padding-top: 0.5rem; }
 .pt-2\.5 { padding-top: 0.625rem; }
 .pt-3 { padding-top: 0.75rem; }
@@ -475,6 +473,7 @@ img, video { max-width: 100%; height: auto; }
 .hover\:text-emerald-700:hover { color: #047857; }
 .hover\:text-indigo-600:hover { color: #4f46e5; }
 .hover\:text-indigo-700:hover { color: #4338ca; }
+.hover\:text-rose-600:hover { color: #e11d48; }
 .hover\:text-rose-700:hover { color: #be123c; }
 .hover\:text-slate-700:hover { color: #334155; }
 .hover\:text-slate-800:hover { color: #1e293b; }
@@ -735,14 +734,51 @@ img, video { max-width: 100%; height: auto; }
       border-top: 1px solid #1e293b;
     }
 
-    /* Safe-area helpers for fixed bottom nav & toast positioning on mobile */
+    /* Safe-area helpers & rock-solid Mobile App-Shell (bottom nav never covers content or jumps) */
     .mobile-bottom-nav {
-      padding-bottom: max(0.45rem, env(safe-area-inset-bottom));
+      padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
     }
     .mobile-sheet-body {
       padding-bottom: max(1.25rem, calc(1rem + env(safe-area-inset-bottom)));
     }
     @media (max-width: 767px) {
+      html, body {
+        height: 100%;
+        height: 100dvh;
+        min-height: 0;
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+      body > header {
+        flex-shrink: 0;
+        position: relative;
+        z-index: 30;
+      }
+      #mainWorkspace {
+        flex: 1 1 0%;
+        min-height: 0;
+        width: 100%;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-y: contain;
+        padding-bottom: 1.5rem !important;
+      }
+      #mobileBottomNav {
+        position: relative !important;
+        left: auto !important;
+        right: auto !important;
+        bottom: auto !important;
+        flex-shrink: 0;
+        width: 100%;
+        z-index: 30;
+        background-color: var(--surface-card) !important;
+        box-shadow: 0 -2px 10px rgba(15, 23, 42, 0.08);
+      }
       #toastContainer {
         bottom: calc(4.75rem + env(safe-area-inset-bottom));
         left: 0.75rem;
@@ -838,34 +874,34 @@ img, video { max-width: 100%; height: auto; }
       transition: transform 120ms ease, box-shadow 120ms ease, opacity 160ms ease, filter 160ms ease;
     }
     .matrix-card:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 10px -2px rgba(15, 23, 42, 0.14);
+      transform: translateY(-1.5px);
+      box-shadow: 0 6px 14px -3px rgba(15, 23, 42, 0.22), 0 0 0 1.5px rgba(15, 23, 42, 0.16);
     }
     html.dark .matrix-card:hover {
-      box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.45);
+      box-shadow: 0 6px 14px -2px rgba(0, 0, 0, 0.5), 0 0 0 1.5px rgba(248, 250, 252, 0.22);
     }
     .matrix-cell-normal {
       background-color: #ffffff;
     }
     .matrix-cell-normal:hover {
-      background-color: #f8fafc;
-      box-shadow: inset 0 0 0 1.5px rgba(99, 102, 241, 0.28);
+      background-color: rgba(238, 242, 255, 0.72);
+      box-shadow: inset 0 0 0 2px rgba(79, 70, 229, 0.45);
     }
     .matrix-cell-warn {
       background-color: #ffffff;
       box-shadow: inset 0 3px 0 0 #f59e0b;
     }
     .matrix-cell-warn:hover {
-      background-color: #f8fafc;
-      box-shadow: inset 0 3px 0 0 #f59e0b, inset 0 0 0 1.5px rgba(245, 158, 11, 0.35);
+      background-color: rgba(254, 243, 199, 0.48);
+      box-shadow: inset 0 3px 0 0 #d97706, inset 0 0 0 2px rgba(217, 119, 6, 0.52);
     }
     .matrix-cell-over {
       background-color: #ffffff;
       box-shadow: inset 0 3px 0 0 #f43f5e;
     }
     .matrix-cell-over:hover {
-      background-color: #f8fafc;
-      box-shadow: inset 0 3px 0 0 #f43f5e, inset 0 0 0 1.5px rgba(244, 63, 94, 0.35);
+      background-color: rgba(255, 228, 230, 0.48);
+      box-shadow: inset 0 3px 0 0 #e11d48, inset 0 0 0 2px rgba(225, 29, 72, 0.52);
     }
     .matrix-pct-ok {
       background-color: #ecfdf5;
@@ -924,13 +960,13 @@ img, video { max-width: 100%; height: auto; }
       transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
     }
     .heatmap-cell:hover {
-      transform: translateY(-0.5px);
-      box-shadow: 0 0 0 2px #ffffff, 0 0 0 3.5px rgba(15, 23, 42, 0.35);
+      transform: translateY(-1px);
+      box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #334155, 0 4px 10px -2px rgba(15, 23, 42, 0.22);
       position: relative;
       z-index: 2;
     }
     html.dark .heatmap-cell:hover {
-      box-shadow: 0 0 0 2px #0f172a, 0 0 0 3.5px rgba(248, 250, 252, 0.45);
+      box-shadow: 0 0 0 2px #0f172a, 0 0 0 3.5px rgba(248, 250, 252, 0.55);
     }
     .bottleneck-pill-ring {
       box-shadow: 0 0 0 1.5px #f43f5e !important;
@@ -1433,11 +1469,18 @@ img, video { max-width: 100%; height: auto; }
         word-break: break-word;
         overflow-wrap: anywhere;
       }
-      body {
+      html, body {
+        height: auto !important;
+        overflow: visible !important;
+        display: block !important;
         background: #ffffff !important;
         color: #0f172a !important;
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
+      }
+      #mainWorkspace {
+        overflow: visible !important;
+        height: auto !important;
       }
       .matrix-scroll {
         overflow: visible !important;
@@ -2474,26 +2517,26 @@ img, video { max-width: 100%; height: auto; }
     </section>
   </main>
 
-  <!-- ==================== PATTERN 2: FIXED MOBILE BOTTOM NAVIGATION BAR ==================== -->
+  <!-- ==================== PATTERN 2: MOBILE APP-SHELL BOTTOM NAVIGATION BAR ==================== -->
   <nav id="mobileBottomNav" aria-label="Mobile workspace navigation" role="tablist"
-    class="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200 mobile-bottom-nav">
-    <div class="grid grid-cols-4 gap-1 px-2 pt-1.5">
+    class="md:hidden bg-white border-t border-slate-200 mobile-bottom-nav">
+    <div class="grid grid-cols-4 gap-1 px-2 pt-1">
       <button id="mnav-matrix" type="button" role="tab" aria-controls="tab-matrix" aria-selected="true" onclick="switchTab('matrix')"
-        class="flex flex-col items-center justify-center gap-0.5 py-1.5 min-h-[48px] rounded-xl text-[11px] font-bold transition">
+        class="flex flex-col items-center justify-center gap-0.5 py-1 min-h-[44px] rounded-xl text-[11px] font-bold transition">
         <svg class="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
         </svg>
         <span>Roadmap</span>
       </button>
       <button id="mnav-health" type="button" role="tab" aria-controls="tab-health" aria-selected="false" onclick="switchTab('health')"
-        class="flex flex-col items-center justify-center gap-0.5 py-1.5 min-h-[48px] rounded-xl text-[11px] font-semibold transition">
+        class="flex flex-col items-center justify-center gap-0.5 py-1 min-h-[44px] rounded-xl text-[11px] font-semibold transition">
         <svg class="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
         </svg>
         <span>Health</span>
       </button>
       <button id="mnav-data" type="button" role="tab" aria-controls="tab-data" aria-selected="false" onclick="switchTab('data')"
-        class="flex flex-col items-center justify-center gap-0.5 py-1.5 min-h-[48px] rounded-xl text-[11px] font-semibold transition">
+        class="flex flex-col items-center justify-center gap-0.5 py-1 min-h-[44px] rounded-xl text-[11px] font-semibold transition">
         <svg class="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -2501,7 +2544,7 @@ img, video { max-width: 100%; height: auto; }
         <span>Setup</span>
       </button>
       <button id="mnav-sync" type="button" role="tab" aria-controls="tab-sync" aria-selected="false" onclick="switchTab('sync')"
-        class="flex flex-col items-center justify-center gap-0.5 py-1.5 min-h-[48px] rounded-xl text-[11px] font-semibold transition relative">
+        class="flex flex-col items-center justify-center gap-0.5 py-1 min-h-[44px] rounded-xl text-[11px] font-semibold transition relative">
         <svg class="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
         </svg>
@@ -3185,6 +3228,7 @@ img, video { max-width: 100%; height: auto; }
       dragMode: 'move',
       userName: 'Project Mgr',
       recentUsers: [],
+      removedUsers: [],
       autoSaveToFile: true,
       autoReloadFromFile: true,
       pollIntervalMs: 15000,
@@ -4430,8 +4474,8 @@ img, video { max-width: 100%; height: auto; }
         if (mBtn) {
           mBtn.setAttribute('aria-selected', String(active));
           mBtn.className = active
-            ? 'flex flex-col items-center justify-center gap-0.5 py-1.5 min-h-[48px] rounded-xl text-[11px] font-extrabold text-indigo-600 bg-indigo-50/80 transition relative'
-            : 'flex flex-col items-center justify-center gap-0.5 py-1.5 min-h-[48px] rounded-xl text-[11px] font-semibold text-slate-500 hover:text-slate-800 transition relative';
+            ? 'flex flex-col items-center justify-center gap-0.5 py-1 min-h-[44px] rounded-xl text-[11px] font-extrabold text-indigo-600 bg-indigo-50/80 transition relative'
+            : 'flex flex-col items-center justify-center gap-0.5 py-1 min-h-[44px] rounded-xl text-[11px] font-semibold text-slate-500 hover:text-slate-800 transition relative';
         }
         if (sec) sec.classList.toggle('hidden', !active);
       });
@@ -5401,12 +5445,15 @@ img, video { max-width: 100%; height: auto; }
 
       const theadRect = realThead.getBoundingClientRect();
       const tableRect = realTable.getBoundingClientRect();
-      const shouldShow = theadRect.top < 0 && tableRect.bottom > theadRect.height;
+      const mainEl = document.getElementById('mainWorkspace');
+      const topBound = isMobileViewport() && mainEl ? Math.max(0, mainEl.getBoundingClientRect().top) : 0;
+      const shouldShow = theadRect.top < topBound && tableRect.bottom > (topBound + theadRect.height);
 
       if (shouldShow) {
         const wasHidden = floating.classList.contains('hidden');
         if (wasHidden) floating.classList.remove('hidden');
         const wrapperRect = wrapper.getBoundingClientRect();
+        floating.style.top = `${topBound}px`;
         floating.style.left = `${wrapperRect.left}px`;
         floating.style.width = `${wrapperRect.width}px`;
         if (wasHidden) syncMatrixFloatingHeaderMetrics();
@@ -5444,8 +5491,12 @@ img, video { max-width: 100%; height: auto; }
     function setupMatrixFloatingHeaderSync() {
       const wrapper = document.getElementById('matrixWrapper');
       const inner = document.getElementById('matrixFloatingHeaderInner');
+      const mainEl = document.getElementById('mainWorkspace');
 
       window.addEventListener('scroll', updateMatrixFloatingHeaderVisibility, { passive: true });
+      if (mainEl) {
+        mainEl.addEventListener('scroll', updateMatrixFloatingHeaderVisibility, { passive: true });
+      }
       window.addEventListener('resize', () => {
         syncMatrixFloatingHeaderMetrics();
         updateMatrixFloatingHeaderVisibility();
@@ -10248,15 +10299,17 @@ img, video { max-width: 100%; height: auto; }
 
     function getSuggestedTeamUsers() {
       const db = getActiveDB();
+      const hidden = new Set((ui.removedUsers || []).map(u => String(u || '').trim().toLowerCase()).filter(Boolean));
       const seen = new Map();
-      const addName = (n) => {
+      const addName = (n, allowHidden = false) => {
         const clean = String(n || '').trim();
         if (!clean) return;
         const key = clean.toLowerCase();
+        if (!allowHidden && hidden.has(key)) return;
         if (!seen.has(key)) seen.set(key, clean);
       };
-      addName(ui.userName);
-      (ui.recentUsers || []).forEach(addName);
+      addName(ui.userName, true);
+      (ui.recentUsers || []).forEach(u => addName(u));
       (db.departments || []).forEach(d => addName(d.manager));
       (db.projects || []).forEach(p => addName(p.owner));
       (db.changeLog || []).slice(0, 30).forEach(l => addName(l.user));
@@ -10266,26 +10319,71 @@ img, video { max-width: 100%; height: auto; }
 
     function setActiveUserName(newName, shouldRender = true) {
       const clean = String(newName || '').trim() || 'Project Mgr';
+      const key = clean.toLowerCase();
       ui.userName = clean;
-      const list = Array.isArray(ui.recentUsers) ? ui.recentUsers.filter(u => u.toLowerCase() !== clean.toLowerCase()) : [];
+      if (Array.isArray(ui.removedUsers)) {
+        ui.removedUsers = ui.removedUsers.filter(u => String(u || '').trim().toLowerCase() !== key);
+      }
+      const list = Array.isArray(ui.recentUsers) ? ui.recentUsers.filter(u => u.toLowerCase() !== key) : [];
       list.unshift(clean);
       ui.recentUsers = list.slice(0, 10);
       persistUIPrefs();
       if (shouldRender) renderAll();
     }
 
+    function removeQuickUser(name) {
+      const clean = String(name || '').trim();
+      if (!clean) return;
+      const key = clean.toLowerCase();
+
+      if (!Array.isArray(ui.removedUsers)) ui.removedUsers = [];
+      if (!ui.removedUsers.some(u => String(u || '').trim().toLowerCase() === key)) {
+        ui.removedUsers.push(clean);
+      }
+      ui.recentUsers = (Array.isArray(ui.recentUsers) ? ui.recentUsers : []).filter(
+        u => String(u || '').trim().toLowerCase() !== key
+      );
+
+      // If removing the currently active user, fall back to the next remaining suggested user (or Project Mgr)
+      if ((ui.userName || '').trim().toLowerCase() === key) {
+        const prevName = ui.userName;
+        ui.userName = '';
+        const remaining = getSuggestedTeamUsers();
+        ui.userName = remaining[0] || (key === 'project mgr' ? prevName : 'Project Mgr');
+      }
+
+      persistUIPrefs();
+      renderAll();
+      openUserSwitcherModal();
+      showToast(`Removed "${clean}" from users`, 'info');
+    }
+
+    function restoreRemovedUsers() {
+      ui.removedUsers = [];
+      persistUIPrefs();
+      openUserSwitcherModal();
+      showToast('Restored removed users', 'info');
+    }
+
     function openUserSwitcherModal() {
       const current = (ui.userName || 'Project Mgr').trim();
       const suggestions = getSuggestedTeamUsers();
+      const removedCount = Array.isArray(ui.removedUsers) ? ui.removedUsers.length : 0;
 
       const chipsHtml = suggestions.map(name => {
         const isCur = name.toLowerCase() === current.toLowerCase();
+        const canRemove = suggestions.length > 1 || name.toLowerCase() !== 'project mgr';
         return `
-          <button type="button" data-user-name="${escapeHtml(name)}" onclick="selectQuickUser(this.dataset.userName)"
-            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition ${isCur ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'}">
-            <span class="w-5 h-5 rounded-md ${isCur ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-700'} text-[9px] font-extrabold flex items-center justify-center shrink-0">${escapeHtml(getUserInitials(name))}</span>
-            <span>${escapeHtml(name)}</span>
-          </button>`;
+          <div class="inline-flex items-center rounded-xl border text-xs font-semibold transition overflow-hidden ${isCur ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-slate-50 text-slate-700'}">
+            <button type="button" data-user-name="${escapeHtml(name)}" onclick="selectQuickUser(this.dataset.userName)"
+              class="inline-flex items-center gap-1.5 pl-2.5 ${canRemove ? 'pr-1.5' : 'pr-3'} py-1.5 hover:bg-slate-100 transition cursor-pointer">
+              <span class="w-5 h-5 rounded-md ${isCur ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-700'} text-[9px] font-extrabold flex items-center justify-center shrink-0">${escapeHtml(getUserInitials(name))}</span>
+              <span>${escapeHtml(name)}</span>
+            </button>
+            ${canRemove ? `<button type="button" data-user-name="${escapeHtml(name)}" onclick="removeQuickUser(this.dataset.userName)"
+              title="Remove ${escapeHtml(name)}" aria-label="Remove user ${escapeHtml(name)}"
+              class="px-2 py-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 font-bold leading-none transition cursor-pointer">&times;</button>` : ''}
+          </div>`;
       }).join('');
 
       showModal(`
@@ -10309,9 +10407,12 @@ img, video { max-width: 100%; height: auto; }
                 class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30" />
             </div>
 
-            ${suggestions.length > 0 ? `
+            ${suggestions.length > 0 || removedCount > 0 ? `
               <div class="space-y-1.5">
-                <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Quick Switch</div>
+                <div class="flex items-center justify-between gap-2">
+                  <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Quick Switch</div>
+                  ${removedCount > 0 ? `<button type="button" onclick="restoreRemovedUsers()" class="text-[11px] font-semibold text-indigo-600 hover:underline cursor-pointer">Restore ${removedCount} removed</button>` : ''}
+                </div>
                 <div class="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto pr-1">${chipsHtml}</div>
               </div>` : ''}
 
@@ -11420,7 +11521,11 @@ img, video { max-width: 100%; height: auto; }
       persistUIPrefs();
       renderAll();
       if (isMobileViewport()) {
-        try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) {}
+        try {
+          const mainEl = document.getElementById('mainWorkspace');
+          if (mainEl && typeof mainEl.scrollTo === 'function') mainEl.scrollTo({ top: 0, behavior: 'smooth' });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } catch (e) {}
       }
     }
 
@@ -11978,6 +12083,7 @@ img, video { max-width: 100%; height: auto; }
           ui.filterAtRiskOnly = false;
           ui.filterHasNotesOnly = false;
           if (!Array.isArray(ui.recentUsers)) ui.recentUsers = [];
+          if (!Array.isArray(ui.removedUsers)) ui.removedUsers = [];
         } else {
           ui.pdfOptions = { colorMode: 'match', colsPerPage: 6, ...ui.pdfOptions };
         }

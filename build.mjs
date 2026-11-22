@@ -132,12 +132,16 @@ function resolveColor(token) {
 }
 
 function resolveSpacing(val) {
-  if (val in SPACING) return SPACING[val];
+  if (Object.prototype.hasOwnProperty.call(SPACING, val)) return SPACING[val];
   if (val === 'auto') return 'auto';
   if (val === 'full') return '100%';
   if (val === 'screen') return '100vh';
   if (val.startsWith('[') && val.endsWith(']')) {
-    return val.slice(1, -1).replace(/_/g, ' ');
+    let inner = val.slice(1, -1).replace(/_/g, ' ');
+    if (inner.includes('calc(')) {
+      inner = inner.replace(/(\d(?:px|rem|em|%|vh|vw|dvh|svh|ch)?|\))\s*([+-])\s*/g, '$1 $2 ');
+    }
+    return inner;
   }
   return null;
 }
@@ -263,7 +267,7 @@ function compileUtilityDecl(util) {
     'ring-2': 'box-shadow: 0 0 0 2px var(--tw-ring-color, rgba(59, 130, 246, 0.5));',
     'ring-offset-1': '--tw-ring-offset-width: 1px;',
   };
-  if (raw in STATIC) return { decl: STATIC[raw] };
+  if (Object.prototype.hasOwnProperty.call(STATIC, raw)) return { decl: STATIC[raw] };
 
   // Divide / space child combinators
   if (raw === 'divide-y') {
