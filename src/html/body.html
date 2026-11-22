@@ -6,9 +6,9 @@
 
   <!-- ==================== TOP NAVIGATION HEADER (UNIFIED SINGLE-ROW BAR) ==================== -->
   <header class="relative z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/90">
-    <div class="layout-container max-w-[1600px] mx-auto px-3 sm:px-5 py-2 flex items-center justify-between gap-2 sm:gap-3">
-      <!-- Brand Identity (shrink-0 so logo & title are never hidden or clipped by nav) -->
-      <div class="flex items-center gap-2.5 shrink-0">
+    <div class="layout-container max-w-[1600px] mx-auto px-2.5 sm:px-5 py-2 flex items-center justify-between gap-1.5 sm:gap-3">
+      <!-- Brand Identity -->
+      <div class="flex items-center gap-2 sm:gap-2.5 min-w-0">
         <div class="w-8 h-8 md:w-9 md:h-9 rounded-xl shadow-sm shrink-0 overflow-hidden" aria-hidden="true">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" fill="none" class="w-full h-full">
             <defs>
@@ -204,34 +204,35 @@
     <section id="tab-matrix" role="tabpanel" aria-labelledby="nav-matrix" class="space-y-3 md:space-y-4">
 
       <!-- COMPACT MOBILE CONTROL BAR (Pattern 2 — visible on <768px) -->
-      <div id="mobileMatrixBar" class="md:hidden bg-white rounded-2xl border border-slate-200 p-2 shadow-xs flex items-center justify-between gap-1.5">
+      <div id="mobileMatrixBar" class="md:hidden bg-white rounded-2xl border border-slate-200 p-1.5 shadow-xs flex items-center justify-between gap-1 min-w-0">
         <!-- Quick Axis Switcher -->
-        <div role="group" aria-label="Mobile matrix row grouping" class="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200/80 shrink-0">
-          <button id="m-axis-department" type="button" aria-pressed="true" onclick="setAxis('department')" class="px-2 h-8 rounded-lg text-xs font-bold transition">Depts</button>
-          <button id="m-axis-project" type="button" aria-pressed="false" onclick="setAxis('project')" class="px-2 h-8 rounded-lg text-xs font-semibold transition">Projects</button>
+        <div role="group" aria-label="Mobile matrix row grouping" class="inline-flex rounded-xl bg-slate-100 p-0.5 border border-slate-200/80 shrink-0">
+          <button id="m-axis-department" type="button" aria-pressed="true" onclick="setAxis('department')" class="px-2 h-8 rounded-lg text-[11px] font-bold transition">Depts</button>
+          <button id="m-axis-project" type="button" aria-pressed="false" onclick="setAxis('project')" class="px-2 h-8 rounded-lg text-[11px] font-semibold transition">Projs</button>
+          <button id="m-axis-timeline" type="button" aria-pressed="false" onclick="setAxis('timeline')" class="px-2 h-8 rounded-lg text-[11px] font-semibold transition">Gantt</button>
         </div>
 
-        <div class="flex items-center gap-1.5">
+        <div class="flex items-center gap-1 shrink-0">
           <!-- Jump to Today Button -->
           <button id="mobileTodayBtn" type="button" onclick="jumpToToday()" title="Jump to current period"
-            class="h-9 px-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50 text-slate-700 text-xs font-bold transition shrink-0">
+            class="h-8 px-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50 text-slate-700 text-[11px] font-bold transition shrink-0">
             Today
           </button>
 
           <!-- Filters & View Bottom Sheet Trigger -->
           <button id="mobileFiltersTriggerBtn" type="button" onclick="openMobileFiltersSheet()"
-            class="h-9 px-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-bold flex items-center gap-1 transition shrink-0">
-            <svg class="w-4 h-4 text-indigo-600 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            class="h-8 px-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-[11px] font-bold flex items-center gap-1 transition shrink-0">
+            <svg class="w-3.5 h-3.5 text-indigo-600 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
             </svg>
             <span>View</span>
-            <span id="mobileActiveFiltersBadge" class="hidden px-1.5 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-extrabold leading-none"></span>
+            <span id="mobileActiveFiltersBadge" class="hidden px-1 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-extrabold leading-none"></span>
           </button>
 
           <!-- Primary Quick-Add (+) Trigger -->
-          <button type="button" onclick="openMobileQuickAddSheet()" aria-label="Quick actions: allocate, milestone, snapshot, export"
-            class="h-9 w-9 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-xs transition shrink-0">
-            <svg class="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <button type="button" onclick="openMobileQuickAddSheet()" aria-label="Quick actions: allocate, undo, milestone, snapshot, briefing, export"
+            class="h-8 w-8 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-xs transition shrink-0">
+            <svg class="w-4 h-4" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
           </button>
@@ -248,6 +249,7 @@
             <div role="group" aria-label="Matrix row grouping" class="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200/80">
               <button id="axis-department" type="button" aria-pressed="true" onclick="setAxis('department')" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition">By Dept</button>
               <button id="axis-project" type="button" aria-pressed="false" onclick="setAxis('project')" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition">By Project</button>
+              <button id="axis-timeline" type="button" aria-pressed="false" onclick="setAxis('timeline')" title="Executive Gantt Timeline view derived automatically from allocations" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition">Timeline</button>
             </div>
 
             <!-- Time Unit Toggle -->
@@ -333,6 +335,10 @@
                 </div>
                 <div class="p-1.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
                   <div class="px-1 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Share &amp; Export</div>
+                  <button type="button" onclick="closeRoadmapActionsMenu(); copyExecutiveBriefing();"
+                    class="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-indigo-50 text-slate-700 font-semibold transition">
+                    <span>Copy Executive Briefing</span>
+                  </button>
                   <button type="button" onclick="closeRoadmapActionsMenu(); printMeetingSlide();"
                     class="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-indigo-50 text-slate-700 font-semibold transition">
                     <span>Print Slide (Light)</span>
@@ -436,6 +442,10 @@
                   class="px-2.5 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 text-[11px] font-semibold transition">
                   Comments: ON
                 </button>
+                <button id="tentativeToggleBtn" type="button" aria-pressed="true" onclick="toggleIncludeTentative()" title="Include or exclude Tentative / Pipeline projects in load totals, utilisation % and roadmap"
+                  class="px-2.5 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 text-[11px] font-semibold transition">
+                  Pipeline: ON
+                </button>
                 <button id="hideEmptyRowsBtn" type="button" aria-pressed="false" onclick="toggleHideEmptyRows()" title="Hide rows with no allocations, comments, or milestones in the visible horizon"
                   class="px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-[11px] font-semibold text-slate-700 transition">
                   Hide Empty
@@ -536,8 +546,9 @@
               <h2 class="text-sm font-bold text-slate-900">Organisation Load vs. Variable Capacity</h2>
               <p class="text-xs text-slate-500">Tap any bar to inspect exact period load &amp; capacity</p>
             </div>
-            <div class="flex items-center gap-3 text-[11px] font-medium text-slate-500">
-              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-indigo-500" aria-hidden="true"></span>Load</span>
+            <div class="flex flex-wrap items-center gap-2.5 text-[11px] font-medium text-slate-500">
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-indigo-500" aria-hidden="true"></span>Committed</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-violet-400 border border-dashed border-violet-600" aria-hidden="true"></span>Pipeline</span>
               <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded bg-rose-500" aria-hidden="true"></span>Over</span>
               <span class="flex items-center gap-1"><span class="w-4 border-t-2 border-dashed border-slate-800" aria-hidden="true"></span>Cap</span>
             </div>
@@ -589,10 +600,10 @@
         <!-- A vs B Selector Fieldset -->
         <fieldset class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2.5 text-xs">
           <legend class="sr-only">Snapshot comparison baseline and target selectors</legend>
-          <div class="flex items-center gap-1.5 flex-1 min-w-[200px]">
+          <div class="flex items-center gap-1.5 flex-1 min-w-0 sm:min-w-[200px]">
             <label for="compareSnapshotSelect" class="font-bold text-slate-600 whitespace-nowrap">Baseline (A):</label>
             <select id="compareSnapshotSelect" onchange="setCompareSnapshot(this.value)"
-              class="w-full px-2.5 py-2 md:py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800">
+              class="w-full min-w-0 px-2.5 py-2 md:py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800">
               <option value="">Select Baseline Snapshot...</option>
             </select>
           </div>
@@ -600,10 +611,10 @@
           <button id="swapSnapshotsBtn" type="button" onclick="swapCompareSnapshots()" title="Swap Baseline (A) and Target (B)" aria-label="Swap Baseline A and Target B"
             class="self-center px-3 py-2 md:px-2.5 md:py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-bold transition shrink-0">&#8644;</button>
 
-          <div class="flex items-center gap-1.5 flex-1 min-w-[200px]">
+          <div class="flex items-center gap-1.5 flex-1 min-w-0 sm:min-w-[200px]">
             <label for="compareTargetSelect" class="font-bold text-slate-600 whitespace-nowrap">Target (B):</label>
             <select id="compareTargetSelect" onchange="setCompareTarget(this.value)"
-              class="w-full px-2.5 py-2 md:py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800">
+              class="w-full min-w-0 px-2.5 py-2 md:py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-800">
               <option value="__CURRENT__">Current Active Plan</option>
             </select>
           </div>
@@ -691,6 +702,7 @@
                   <th scope="col" class="px-4 py-3 font-bold">Code</th>
                   <th scope="col" class="px-4 py-3 font-bold">Manager / Lead</th>
                   <th scope="col" class="px-4 py-3 font-bold">Default Capacity (FTE)</th>
+                  <th scope="col" class="px-4 py-3 font-bold">Day Rate</th>
                   <th scope="col" class="px-4 py-3 font-bold">Variable Overrides</th>
                   <th scope="col" class="px-4 py-3 font-bold text-right">Actions</th>
                 </tr>
@@ -698,6 +710,31 @@
               <tbody id="dataDepartmentsBody" class="divide-y divide-slate-100"></tbody>
             </table>
           </div>
+        </div>
+
+        <!-- Dedicated Active Variable Capacity Overrides Panel -->
+        <div id="dataCapacityOverridesSection" class="bg-white rounded-2xl border border-slate-200 p-4 md:p-5 shadow-xs space-y-3">
+          <div class="flex flex-wrap items-start justify-between gap-2.5">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-sm font-bold text-slate-900">Active Variable Capacity Overrides</h2>
+                <span id="capacityOverridesCountBadge" class="px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold">0 overrides</span>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">Consecutive weeks with identical overridden capacity are grouped into clean spans. Edit or reset any span back to base FTE.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <label for="overrideDeptFilter" class="sr-only">Filter variable overrides by department</label>
+              <select id="overrideDeptFilter" onchange="setOverrideDeptFilter(this.value)"
+                class="px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-700">
+                <option value="all">All Departments</option>
+              </select>
+              <button id="btnAddCapacityOverride" type="button" onclick="openAddOverrideFromSetup()"
+                class="px-3 py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-700 text-xs font-bold transition">+ Add Override</button>
+              <button id="btnClearCapacityOverrides" type="button" onclick="confirmClearCapacityOverrides()"
+                class="hidden px-3 py-1.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition">Clear Listed</button>
+            </div>
+          </div>
+          <div id="dataCapacityOverridesTable" class="overflow-x-auto"></div>
         </div>
       </div>
 
@@ -782,9 +819,20 @@
                 <button type="button" aria-label="Increase overallocated threshold" onclick="stepNumericInput('setOverThreshold', 5, 80, 200, 0)" class="w-10 h-10 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-base transition shrink-0">+</button>
               </div>
             </div>
-            <div class="sm:col-span-2">
-              <label for="setUserName" class="block font-semibold text-slate-700 mb-1">Your Name / Role (shown in header, Change Log &amp; Sync Metadata)</label>
+            <div>
+              <label for="setUserName" class="block font-semibold text-slate-700 mb-1">Your Name / Role (Change Log &amp; Sync)</label>
               <input id="setUserName" type="text" placeholder="e.g., Alex (PM)" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
+            </div>
+            <div>
+              <label for="setCurrency" class="block font-semibold text-slate-700 mb-1">Cost Currency (for Dept Day Rates &amp; Budgets)</label>
+              <select id="setCurrency" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold">
+                <option value="€">€ — Euro (EUR)</option>
+                <option value="$">$ — US Dollar (USD)</option>
+                <option value="£">£ — British Pound (GBP)</option>
+                <option value="CHF">CHF — Swiss Franc</option>
+                <option value="¥">¥ — Japanese Yen (JPY)</option>
+                <option value="kr">kr — Krona / Krone</option>
+              </select>
             </div>
           </div>
         </fieldset>
@@ -1132,6 +1180,42 @@
         </div>
       </div>
 
+      <!-- Search & Spotlight -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div class="space-y-1">
+          <label for="mMatrixSearchInput" class="block text-[11px] font-bold uppercase tracking-wider text-slate-400">Search</label>
+          <input id="mMatrixSearchInput" type="text" placeholder="Search projects, depts, notes..." oninput="setMatrixSearch(this.value)"
+            class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-800" />
+        </div>
+        <div class="space-y-1">
+          <label for="mSpotlightSelect" class="block text-[11px] font-bold uppercase tracking-wider text-slate-400">Spotlight Project</label>
+          <select id="mSpotlightSelect" onchange="setSpotlightProject(this.value)"
+            class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-800">
+            <option value="">Spotlight: All</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Quick Filter Chips -->
+      <div class="space-y-1.5">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Quick Filters</span>
+          <button id="mClearFiltersBtn" type="button" onclick="clearMatrixFilters()" class="hidden text-[11px] font-bold text-rose-600 hover:underline">Reset Filters</button>
+        </div>
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button id="mChipFilterOver" type="button" aria-pressed="false" onclick="toggleQuickFilter('over')"
+            class="px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-xs font-bold transition">Overallocated</button>
+          <button id="mChipFilterAtRisk" type="button" aria-pressed="false" onclick="toggleQuickFilter('atRisk')"
+            class="px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-xs font-bold transition">At Risk</button>
+          <button id="mChipFilterNotes" type="button" aria-pressed="false" onclick="toggleQuickFilter('notes')"
+            class="px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-xs font-bold transition">Has Notes</button>
+          <button id="mHideEmptyBtn" type="button" aria-pressed="false" onclick="toggleHideEmptyRows()"
+            class="px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-xs font-bold transition">Hide Empty</button>
+          <button id="mTentativeToggleBtn" type="button" aria-pressed="true" onclick="toggleIncludeTentative()"
+            class="px-2.5 py-2 rounded-xl border border-indigo-300 bg-indigo-50 text-indigo-700 text-xs font-bold transition">Pipeline: ON</button>
+        </div>
+      </div>
+
       <!-- Department & Project Filters -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div class="space-y-1">
@@ -1167,31 +1251,49 @@
         <button type="button" onclick="document.getElementById('mobileQuickAddSheet').close()"
           class="min-h-[36px] px-3 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs">Close</button>
       </div>
+      <!-- Mobile Undo / Redo Parity -->
+      <div class="grid grid-cols-2 gap-2">
+        <button id="mBtnUndo" type="button" disabled onclick="document.getElementById('mobileQuickAddSheet').close(); undoLastChange();"
+          class="min-h-[42px] px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 disabled:opacity-35 font-bold text-xs flex items-center justify-center gap-1.5 min-w-0">
+          <span aria-hidden="true">&#8630;</span>
+          <span id="mBtnUndoLabel" class="truncate">Undo</span>
+        </button>
+        <button id="mBtnRedo" type="button" disabled onclick="document.getElementById('mobileQuickAddSheet').close(); redoLastChange();"
+          class="min-h-[42px] px-3 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 disabled:opacity-35 font-bold text-xs flex items-center justify-center gap-1.5 min-w-0">
+          <span aria-hidden="true">&#8631;</span>
+          <span id="mBtnRedoLabel" class="truncate">Redo</span>
+        </button>
+      </div>
       <div class="grid grid-cols-1 gap-2">
         <button type="button" onclick="document.getElementById('mobileQuickAddSheet').close(); openAllocationModal('', '', getMobileSelectedPeriod());"
-          class="w-full min-h-[48px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm flex items-center justify-between transition">
-          <span>+ Allocate Manpower</span>
-          <span class="text-xs opacity-80">Add FTE / Days / Hrs</span>
+          class="w-full min-h-[48px] px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm flex items-center justify-between gap-2 transition">
+          <span class="truncate">+ Allocate Manpower</span>
+          <span class="text-xs opacity-80 shrink-0">FTE / Days / Hrs</span>
         </button>
         <button type="button" onclick="document.getElementById('mobileQuickAddSheet').close(); openMilestoneModal('', '', getPeriodMidDateISO(getMobileSelectedPeriod(), ui.timeUnit));"
-          class="w-full min-h-[48px] px-4 rounded-xl bg-violet-50 border border-violet-200 text-violet-900 font-bold text-sm flex items-center justify-between transition">
-          <span>&#9670; Add Milestone</span>
-          <span class="text-xs text-violet-700">Track delivery date</span>
+          class="w-full min-h-[48px] px-4 rounded-xl bg-violet-50 border border-violet-200 text-violet-900 font-bold text-sm flex items-center justify-between gap-2 transition">
+          <span class="truncate">&#9670; Add Milestone</span>
+          <span class="text-xs text-violet-700 shrink-0">Delivery date</span>
+        </button>
+        <button type="button" onclick="document.getElementById('mobileQuickAddSheet').close(); copyExecutiveBriefing();"
+          class="w-full min-h-[48px] px-4 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 font-bold text-sm flex items-center justify-between gap-2 transition">
+          <span class="truncate">Copy Executive Briefing</span>
+          <span class="text-xs text-indigo-700 shrink-0">Email / Slack</span>
         </button>
         <button type="button" onclick="document.getElementById('mobileQuickAddSheet').close(); openSnapshotModal();"
-          class="w-full min-h-[48px] px-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 font-bold text-sm flex items-center justify-between transition">
-          <span>Save Baseline Snapshot</span>
-          <span class="text-xs text-slate-500">Freeze current plan</span>
+          class="w-full min-h-[48px] px-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 font-bold text-sm flex items-center justify-between gap-2 transition">
+          <span class="truncate">Save Baseline Snapshot</span>
+          <span class="text-xs text-slate-500 shrink-0">Freeze plan</span>
         </button>
         <button type="button" onclick="document.getElementById('mobileQuickAddSheet').close(); openExportPdfModal();"
-          class="w-full min-h-[48px] px-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 font-bold text-sm flex items-center justify-between transition">
-          <span>Export Colorful PDF Report</span>
-          <span class="text-xs text-rose-600">Share or save A4 PDF</span>
+          class="w-full min-h-[48px] px-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 font-bold text-sm flex items-center justify-between gap-2 transition">
+          <span class="truncate">Export Colorful PDF Report</span>
+          <span class="text-xs text-rose-600 shrink-0">A4 PDF</span>
         </button>
         <button type="button" onclick="document.getElementById('mobileQuickAddSheet').close(); downloadJsonBackup();"
-          class="w-full min-h-[48px] px-4 rounded-xl bg-white border border-slate-200 text-slate-700 font-bold text-sm flex items-center justify-between transition">
-          <span>Share / Backup JSON File</span>
-          <span class="text-xs text-slate-500">Drive / Files / Teams</span>
+          class="w-full min-h-[48px] px-4 rounded-xl bg-white border border-slate-200 text-slate-700 font-bold text-sm flex items-center justify-between gap-2 transition">
+          <span class="truncate">Share / Backup JSON File</span>
+          <span class="text-xs text-slate-500 shrink-0">Drive / Files</span>
         </button>
       </div>
     </div>
