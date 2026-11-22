@@ -222,14 +222,17 @@
       return { updatedWeeks, deptCount: targets.length };
     }
 
-    function openHolidayFactorModal(prePeriod = '') {
+    function openHolidayFactorModal(prePeriod = '', opts = {}) {
       const db = getActiveDB();
       if (db.departments.length === 0) {
         showToast('Add at least one Department first.', 'warning');
         return;
       }
-      const anchor = prePeriod || (ui.timeUnit === 'month' ? ui.startMonth : ui.startWeek);
-      const startOpts = buildPeriodSelectOptions(anchor, ui.timeUnit, 4, 20);
+      const effectiveUnit = opts && opts.forceWeeks ? 'week' : ui.timeUnit;
+      const anchor = prePeriod || (effectiveUnit === 'month' ? ui.startMonth : ui.startWeek);
+      const startOpts = buildPeriodSelectOptions(anchor, effectiveUnit, 4, 24);
+      const initCount = Math.max(1, Math.min(24, parseInt(opts?.count, 10) || 1));
+      const initPct = (opts && opts.pct !== undefined && !isNaN(Number(opts.pct))) ? Math.max(0, Math.min(200, Math.round(Number(opts.pct)))) : 80;
       const deptChecks = db.departments.map(d => `
         <label class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer text-xs font-semibold text-slate-700">
           <input type="checkbox" data-holiday-dept="1" class="rounded text-indigo-600" value="${d.id}" checked />
@@ -248,19 +251,20 @@
             <button type="button" aria-label="Close dialog" onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none">&times;</button>
           </div>
 
+          <input type="hidden" id="mHolTimeUnit" value="${effectiveUnit}" />
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label for="mHolStart" class="block font-semibold text-slate-700 mb-1">Start ${ui.timeUnit === 'month' ? 'Month' : 'ISO Week'}</label>
+              <label for="mHolStart" class="block font-semibold text-slate-700 mb-1">Start ${effectiveUnit === 'month' ? 'Month' : 'ISO Week'}</label>
               <select id="mHolStart" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium">
                 ${startOpts.map(o => `<option value="${o.key}" ${o.key === anchor ? 'selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}
               </select>
             </div>
             <div>
-              <label for="mHolCount" class="block font-semibold text-slate-700 mb-1">Duration (${ui.timeUnit}s)</label>
+              <label for="mHolCount" class="block font-semibold text-slate-700 mb-1">Duration (${effectiveUnit}s)</label>
               <div class="flex items-center gap-1.5">
-                <button type="button" onclick="stepNumericInput('mHolCount', -1, 1, 12, 0)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 font-bold">&minus;</button>
-                <input id="mHolCount" type="number" inputmode="numeric" min="1" max="12" value="1" class="w-full px-2 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold text-center" />
-                <button type="button" onclick="stepNumericInput('mHolCount', 1, 1, 12, 0)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 font-bold">+</button>
+                <button type="button" onclick="stepNumericInput('mHolCount', -1, 1, 24, 0)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 font-bold">&minus;</button>
+                <input id="mHolCount" type="number" inputmode="numeric" min="1" max="24" value="${initCount}" class="w-full px-2 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold text-center" />
+                <button type="button" onclick="stepNumericInput('mHolCount', 1, 1, 24, 0)" class="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 font-bold">+</button>
               </div>
             </div>
           </div>
@@ -273,7 +277,7 @@
               <button type="button" onclick="document.getElementById('mHolPct').value='80'" class="px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-700 font-bold text-[11px]">80% 4-Day Wk</button>
               <button type="button" onclick="document.getElementById('mHolPct').value='100'" class="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold text-[11px]">100% Reset</button>
             </div>
-            <input id="mHolPct" type="number" inputmode="numeric" min="0" max="200" step="5" value="80" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold" />
+            <input id="mHolPct" type="number" inputmode="numeric" min="0" max="200" step="5" value="${initPct}" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-bold" />
           </div>
 
           <div>
@@ -291,7 +295,8 @@
     function applyHolidayFactorModal() {
       const db = getActiveDB();
       const startPk = document.getElementById('mHolStart')?.value;
-      const count = Math.max(1, Math.min(12, parseInt(document.getElementById('mHolCount')?.value, 10) || 1));
+      const effectiveUnit = document.getElementById('mHolTimeUnit')?.value === 'week' ? 'week' : (document.getElementById('mHolTimeUnit')?.value === 'month' ? 'month' : ui.timeUnit);
+      const count = Math.max(1, Math.min(24, parseInt(document.getElementById('mHolCount')?.value, 10) || 1));
       const pct = parseFloat(document.getElementById('mHolPct')?.value);
       const deptIds = [...document.querySelectorAll('input[data-holiday-dept]:checked')].map(el => el.value);
 
@@ -299,8 +304,8 @@
       if (deptIds.length === 0) { showToast('Select at least one department.', 'warning'); return; }
 
       pushUndoState(`Apply ${pct}% capacity factor`);
-      const res = applyHolidayFactor(deptIds, startPk, count, ui.timeUnit, pct, db);
-      recordChange('Capacity', `Applied ${pct}% capacity factor to ${res.deptCount} dept(s) starting ${startPk} (${count} ${ui.timeUnit}${count === 1 ? '' : 's'})`);
+      const res = applyHolidayFactor(deptIds, startPk, count, effectiveUnit, pct, db);
+      recordChange('Capacity', `Applied ${pct}% capacity factor to ${res.deptCount} dept(s) starting ${startPk} (${count} ${effectiveUnit}${count === 1 ? '' : 's'})`);
       closeModal();
       renderAll();
       showToast(`Updated capacity for ${res.deptCount} department${res.deptCount === 1 ? '' : 's'} (${pct}%)`, 'success', { undoable: true });

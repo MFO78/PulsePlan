@@ -286,17 +286,76 @@
       openCapacityModal(deptId, targetPk);
     }
 
+    function enumerateIsoWeekSpan(startWk, endWk) {
+      const out = [];
+      if (!startWk || !endWk || startWk > endWk) return out;
+      let cur = startWk;
+      let guard = 0;
+      while (cur <= endWk && guard < 260) {
+        out.push(cur);
+        if (cur === endWk) break;
+        cur = addWeeksToWeekKey(cur, 1);
+        guard++;
+      }
+      return out;
+    }
+
     function resetCapacityOverrideSpan(deptId, startWk, endWk) {
       const db = getActiveDB();
       const dept = db.departments.find(d => d.id === deptId);
-      const spans = getGroupedCapacityOverrides(db, deptId);
-      const match = spans.find(sp => sp.startWk === startWk && sp.endWk === endWk);
-      if (!match) return;
+      const wks = enumerateIsoWeekSpan(startWk, endWk).filter(wk => Object.prototype.hasOwnProperty.call(db.capacityOverrides || {}, `${deptId}::${wk}`));
+      if (wks.length === 0) return;
+      const baseFte = Number(dept?.defaultCapacity) || 0;
       pushUndoState(`Reset ${dept?.code || deptId} capacity override (${startWk})`);
-      match.weekKeys.forEach(wk => { delete db.capacityOverrides[`${deptId}::${wk}`]; });
-      recordChange('Capacity', `Reset [${dept?.code || deptId}] variable capacity override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''}) back to base ${match.baseFte} FTE`);
+      wks.forEach(wk => { delete db.capacityOverrides[`${deptId}::${wk}`]; });
+      recordChange('Capacity', `Reset [${dept?.code || deptId}] variable capacity override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''}) back to base ${baseFte} FTE`);
       renderAll();
-      showToast(`Reset ${match.weekKeys.length} week${match.weekKeys.length === 1 ? '' : 's'} to base ${match.baseFte} FTE`, 'info', { undoable: true });
+      showToast(`Reset ${wks.length} week${wks.length === 1 ? '' : 's'} to base ${baseFte} FTE`, 'info', { undoable: true });
+    }
+
+    function editCompanyOverrideGroup(startWk, endWk, pctFactor) {
+      const wks = enumerateIsoWeekSpan(startWk, endWk);
+      openHolidayFactorModal(startWk, { forceWeeks: true, count: Math.max(1, wks.length), pct: pctFactor });
+    }
+
+    function resetCompanyOverrideGroup(startWk, endWk) {
+      const db = getActiveDB();
+      const wks = enumerateIsoWeekSpan(startWk, endWk);
+      if (wks.length === 0) return;
+      let removed = 0;
+      pushUndoState(`Reset company-wide override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''})`);
+      (db.departments || []).forEach(d => {
+        wks.forEach(wk => {
+          const key = `${d.id}::${wk}`;
+          if (Object.prototype.hasOwnProperty.call(db.capacityOverrides || {}, key)) {
+            delete db.capacityOverrides[key];
+            removed++;
+          }
+        });
+      });
+      if (removed === 0) return;
+      recordChange('Capacity', `Reset company-wide capacity override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''}, ${wks.length} wk${wks.length === 1 ? '' : 's'}) across all departments`);
+      renderAll();
+      showToast(`Reset company-wide override (${wks.length} wk${wks.length === 1 ? '' : 's'}) for all departments`, 'info', { undoable: true });
+    }
+
+    function toggleOverrideGroup(groupId) {
+      if (!Array.isArray(ui.expandedOverrideGroups)) ui.expandedOverrideGroups = [];
+      const idx = ui.expandedOverrideGroups.indexOf(groupId);
+      if (idx >= 0) ui.expandedOverrideGroups.splice(idx, 1);
+      else ui.expandedOverrideGroups.push(groupId);
+      renderCapacityOverridesTable(getActiveDB());
+    }
+
+    function toggleAllOverrideGroups() {
+      const db = getActiveDB();
+      const entries = getStructuredCapacityOverrides(db, ui.overrideDeptFilter || 'all');
+      const groupIds = entries.filter(e => e.kind === 'company').map(e => e.id);
+      if (groupIds.length === 0) return;
+      if (!Array.isArray(ui.expandedOverrideGroups)) ui.expandedOverrideGroups = [];
+      const allExpanded = groupIds.every(id => ui.expandedOverrideGroups.includes(id));
+      ui.expandedOverrideGroups = allExpanded ? [] : [...groupIds];
+      renderCapacityOverridesTable(db);
     }
 
     function confirmClearCapacityOverrides() {
@@ -329,47 +388,181 @@
       const badge = document.getElementById('capacityOverridesCountBadge');
       const filterSel = document.getElementById('overrideDeptFilter');
       const clearBtn = document.getElementById('btnClearCapacityOverrides');
+      const expandAllBtn = document.getElementById('btnToggleExpandAllOverrides');
+      const expandAllIcon = document.getElementById('btnToggleExpandAllOverridesIcon');
+      const expandAllLabel = document.getElementById('btnToggleExpandAllOverridesLabel');
       if (!box) return;
 
       if (ui.overrideDeptFilter !== 'all' && !db.departments.some(d => d.id === ui.overrideDeptFilter)) {
         ui.overrideDeptFilter = 'all';
       }
 
-      const allSpans = getGroupedCapacityOverrides(db, 'all');
-      const allWeeksTotal = allSpans.reduce((acc, sp) => acc + sp.weekKeys.length, 0);
+      const allRawSpans = getGroupedCapacityOverrides(db, 'all');
+      const allStructured = getStructuredCapacityOverrides(db, 'all');
+      const filterId = ui.overrideDeptFilter || 'all';
 
       if (filterSel) {
-        filterSel.innerHTML = `<option value="all">All Departments (${allSpans.length})</option>` +
+        filterSel.innerHTML = `<option value="all">All Departments (${allStructured.length})</option>` +
           db.departments.map(d => {
-            const cnt = allSpans.filter(sp => sp.deptId === d.id).length;
-            return `<option value="${d.id}" ${ui.overrideDeptFilter === d.id ? 'selected' : ''}>${escapeHtml(d.name)} [${escapeHtml(d.code)}]${cnt > 0 ? ` (${cnt})` : ''}</option>`;
+            const cnt = allRawSpans.filter(sp => sp.deptId === d.id).length;
+            return `<option value="${d.id}" ${filterId === d.id ? 'selected' : ''}>${escapeHtml(d.name)} [${escapeHtml(d.code)}]${cnt > 0 ? ` (${cnt})` : ''}</option>`;
           }).join('');
       }
 
-      const spans = getGroupedCapacityOverrides(db, ui.overrideDeptFilter || 'all');
-      const shownWeeks = spans.reduce((acc, sp) => acc + sp.weekKeys.length, 0);
+      const entries = filterId === 'all' ? allStructured : getStructuredCapacityOverrides(db, filterId);
+      const companyGroups = entries.filter(e => e.kind === 'company');
+      const deptRows = entries.filter(e => e.kind === 'dept');
+      const shownWeeks = entries.reduce((acc, e) => acc + e.weekKeys.length, 0);
+
+      if (!Array.isArray(ui.expandedOverrideGroups)) ui.expandedOverrideGroups = [];
+      const validGroupSet = new Set(companyGroups.map(g => g.id));
+      ui.expandedOverrideGroups = ui.expandedOverrideGroups.filter(id => validGroupSet.has(id));
+      const allGroupsExpanded = companyGroups.length > 0 && companyGroups.every(g => ui.expandedOverrideGroups.includes(g.id));
+
+      if (expandAllBtn) {
+        const showExpandToggle = companyGroups.length > 0;
+        expandAllBtn.classList.toggle('hidden', !showExpandToggle);
+        expandAllBtn.classList.toggle('inline-flex', showExpandToggle);
+        expandAllBtn.setAttribute('aria-expanded', String(allGroupsExpanded));
+        if (expandAllIcon) expandAllIcon.textContent = allGroupsExpanded ? '▾' : '▸';
+        if (expandAllLabel) expandAllLabel.textContent = allGroupsExpanded ? 'Collapse All' : 'Expand All';
+      }
 
       if (badge) {
-        badge.textContent = allWeeksTotal > 0
-          ? `${spans.length} span${spans.length === 1 ? '' : 's'} • ${shownWeeks} wk${shownWeeks === 1 ? '' : 's'}`
-          : '0 overrides';
+        if (entries.length === 0) {
+          badge.textContent = '0 overrides';
+        } else if (companyGroups.length > 0) {
+          const parts = [`${companyGroups.length} company`];
+          if (deptRows.length > 0) parts.push(`${deptRows.length} dept`);
+          parts.push(`${shownWeeks} wk${shownWeeks === 1 ? '' : 's'}`);
+          badge.textContent = parts.join(' • ');
+        } else {
+          badge.textContent = `${deptRows.length} span${deptRows.length === 1 ? '' : 's'} • ${shownWeeks} wk${shownWeeks === 1 ? '' : 's'}`;
+        }
       }
-      if (clearBtn) clearBtn.classList.toggle('hidden', spans.length === 0);
+      if (clearBtn) clearBtn.classList.toggle('hidden', entries.length === 0);
 
-      if (spans.length === 0) {
+      if (entries.length === 0) {
         box.innerHTML = `
           <div class="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-500">
-            No active variable capacity overrides${ui.overrideDeptFilter !== 'all' ? ' for this department' : ''}. Use <strong>+ Add Override</strong>, click any cell&rsquo;s capacity readout in the Roadmap, or use <strong>Holiday / Shutdown %</strong>.
+            No active variable capacity overrides${filterId !== 'all' ? ' for this department' : ''}. Use <strong>+ Add Override</strong>, click any cell&rsquo;s capacity readout in the Roadmap, or use <strong>Holiday / Shutdown %</strong>.
           </div>`;
         return;
       }
 
+      const formatDeltaBadge = (deltaFte) => {
+        const cls = deltaFte > 0.005
+          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+          : deltaFte < -0.005
+            ? 'bg-amber-50 text-amber-800 border-amber-200'
+            : 'bg-slate-100 text-slate-600 border-slate-200';
+        const txt = deltaFte > 0.005 ? `+${deltaFte} FTE` : deltaFte < -0.005 ? `${deltaFte} FTE` : '0 FTE';
+        return `<span class="px-2 py-0.5 rounded-md border text-[11px] font-bold tabular-nums ${cls}">${txt}</span>`;
+      };
+
+      const rowsHtml = entries.map(entry => {
+        const spanLabel = entry.startWk === entry.endWk ? entry.startWk : `${entry.startWk} → ${entry.endWk}`;
+        const dateRange = formatWeekSpanDateRange(entry.startWk, entry.endWk);
+
+        if (entry.kind === 'company') {
+          const isExpanded = ui.expandedOverrideGroups.includes(entry.id);
+          const isShutdown = entry.eventType === 'shutdown';
+          const pillCls = isShutdown
+            ? 'bg-rose-50 text-rose-700 border-rose-200'
+            : 'bg-violet-50 text-violet-800 border-violet-200';
+          const rowBgCls = isShutdown ? 'bg-rose-50/50 hover:bg-rose-50' : 'bg-violet-50/70 hover:bg-violet-50';
+          const mainRow = `
+            <tr class="${rowBgCls} transition" data-override-group-id="${escapeHtml(entry.id)}">
+              <th scope="row" class="px-3.5 py-2.5 font-bold text-slate-900 whitespace-nowrap cursor-pointer" onclick="toggleOverrideGroup('${escapeHtml(entry.id)}')">
+                <div class="inline-flex items-center gap-1.5">
+                  <button type="button" aria-expanded="${isExpanded}" aria-label="${isExpanded ? 'Collapse' : 'Expand'} ${escapeHtml(entry.label)} (${escapeHtml(spanLabel)})"
+                    onclick="event.stopPropagation(); toggleOverrideGroup('${escapeHtml(entry.id)}')"
+                    class="w-6 h-6 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 flex items-center justify-center text-[11px] font-bold transition shrink-0 cursor-pointer">${isExpanded ? '&#9662;' : '&#9656;'}</button>
+                  <span class="px-2 py-0.5 rounded-md border text-[10px] font-extrabold ${pillCls}">${escapeHtml(entry.label)}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] font-extrabold text-slate-700 tabular-nums">${escapeHtml(entry.pctLabel)}</span>
+                  <span class="text-[10px] font-semibold text-slate-500">(${entry.items.length} depts)</span>
+                </div>
+              </th>
+              <td class="px-3.5 py-2.5 whitespace-nowrap cursor-pointer" onclick="toggleOverrideGroup('${escapeHtml(entry.id)}')">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <span class="font-mono font-bold text-slate-800">${escapeHtml(spanLabel)}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-600 text-[10px] font-bold">${entry.weekKeys.length} wk${entry.weekKeys.length === 1 ? '' : 's'}</span>
+                  <span class="text-[11px] font-medium text-slate-500">(${escapeHtml(dateRange)})</span>
+                </div>
+              </td>
+              <td class="px-3.5 py-2.5 text-right tabular-nums text-slate-600 font-semibold whitespace-nowrap">${entry.totalBaseFte} FTE</td>
+              <td class="px-3.5 py-2.5 text-right tabular-nums font-extrabold ${isShutdown ? 'text-rose-700' : 'text-violet-700'} whitespace-nowrap">${entry.totalFte} FTE</td>
+              <td class="px-3.5 py-2.5 text-right whitespace-nowrap">${formatDeltaBadge(entry.totalDeltaFte)}</td>
+              <td class="px-3.5 py-2.5 text-right space-x-2 whitespace-nowrap">
+                <button type="button" onclick="editCompanyOverrideGroup('${entry.startWk}', '${entry.endWk}', ${entry.pctFactor})" class="text-indigo-600 hover:underline font-semibold">Edit %</button>
+                <button type="button" onclick="resetCompanyOverrideGroup('${entry.startWk}', '${entry.endWk}')" class="text-amber-700 hover:underline font-semibold">Reset All</button>
+              </td>
+            </tr>`;
+
+          if (!isExpanded) return mainRow;
+
+          const subRows = entry.items.map(it => `
+            <tr class="bg-slate-50/70 hover:bg-slate-100" data-override-group-child="${escapeHtml(entry.id)}">
+              <th scope="row" class="pl-11 pr-3.5 py-2 font-semibold text-slate-800 whitespace-nowrap">
+                <span class="inline-flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full shrink-0" style="background:${it.dept.color}" aria-hidden="true"></span>
+                  <span>${escapeHtml(it.dept.name)}</span>
+                  <span class="font-mono text-[10px] text-slate-400">[${escapeHtml(it.dept.code)}]</span>
+                  <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold tabular-nums">${it.pct}%</span>
+                </span>
+              </th>
+              <td class="px-3.5 py-2 text-[11px] text-slate-400 whitespace-nowrap">
+                <span class="font-mono">${escapeHtml(spanLabel)}</span>
+                <span class="ml-1">&middot; ${entry.weekKeys.length} wk${entry.weekKeys.length === 1 ? '' : 's'}</span>
+              </td>
+              <td class="px-3.5 py-2 text-right tabular-nums text-slate-500 whitespace-nowrap">${it.baseFte} FTE</td>
+              <td class="px-3.5 py-2 text-right tabular-nums font-bold text-sky-700 whitespace-nowrap">${it.fte} FTE</td>
+              <td class="px-3.5 py-2 text-right whitespace-nowrap">${formatDeltaBadge(it.deltaFte)}</td>
+              <td class="px-3.5 py-2 text-right space-x-2 whitespace-nowrap">
+                <button type="button" onclick="editCapacityOverrideSpan('${it.deptId}', '${entry.startWk}')" class="text-indigo-600 hover:underline font-semibold">Edit</button>
+                <button type="button" onclick="resetCapacityOverrideSpan('${it.deptId}', '${entry.startWk}', '${entry.endWk}')" class="text-amber-700 hover:underline font-semibold">Reset</button>
+              </td>
+            </tr>`).join('');
+
+          return mainRow + subRows;
+        }
+
+        const coChip = entry.companyBadge
+          ? `<span class="px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200 text-[9px] font-bold">${escapeHtml(entry.companyBadge)}</span>`
+          : '';
+        return `
+          <tr class="hover:bg-slate-50/70">
+            <th scope="row" class="px-3.5 py-2.5 font-bold text-slate-900 whitespace-nowrap">
+              <span class="inline-flex items-center gap-1.5">
+                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${entry.dept.color}" aria-hidden="true"></span>
+                <span>${escapeHtml(entry.dept.name)}</span>
+                <span class="font-mono text-[10px] text-slate-400">[${escapeHtml(entry.dept.code)}]</span>
+                ${coChip}
+              </span>
+            </th>
+            <td class="px-3.5 py-2.5 whitespace-nowrap">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="font-mono font-bold text-slate-800">${escapeHtml(spanLabel)}</span>
+                <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold">${entry.weekKeys.length} wk${entry.weekKeys.length === 1 ? '' : 's'}</span>
+                <span class="text-[11px] font-medium text-slate-500">(${escapeHtml(dateRange)})</span>
+              </div>
+            </td>
+            <td class="px-3.5 py-2.5 text-right tabular-nums text-slate-500 whitespace-nowrap">${entry.baseFte} FTE</td>
+            <td class="px-3.5 py-2.5 text-right tabular-nums font-extrabold text-sky-700 whitespace-nowrap">${entry.fte} FTE</td>
+            <td class="px-3.5 py-2.5 text-right whitespace-nowrap">${formatDeltaBadge(entry.deltaFte)}</td>
+            <td class="px-3.5 py-2.5 text-right space-x-2 whitespace-nowrap">
+              <button type="button" onclick="editCapacityOverrideSpan('${entry.deptId}', '${entry.startWk}')" class="text-indigo-600 hover:underline font-semibold">Edit</button>
+              <button type="button" onclick="resetCapacityOverrideSpan('${entry.deptId}', '${entry.startWk}', '${entry.endWk}')" class="text-amber-700 hover:underline font-semibold">Reset</button>
+            </td>
+          </tr>`;
+      }).join('');
+
       box.innerHTML = `
         <table class="w-full text-left text-xs">
-          <caption class="sr-only">Active variable capacity overrides grouped into contiguous weekly spans</caption>
+          <caption class="sr-only">Active variable capacity overrides with automatic company-wide holiday and shutdown grouping</caption>
           <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px]">
             <tr>
-              <th scope="col" class="px-3.5 py-2.5 font-bold">Department</th>
+              <th scope="col" class="px-3.5 py-2.5 font-bold">Scope / Department</th>
               <th scope="col" class="px-3.5 py-2.5 font-bold">Weeks &amp; Date Range</th>
               <th scope="col" class="px-3.5 py-2.5 font-bold text-right">Base FTE</th>
               <th scope="col" class="px-3.5 py-2.5 font-bold text-right">Override FTE</th>
@@ -378,38 +571,7 @@
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
-            ${spans.map(sp => {
-              const spanLabel = sp.startWk === sp.endWk ? sp.startWk : `${sp.startWk} → ${sp.endWk}`;
-              const dateRange = formatWeekSpanDateRange(sp.startWk, sp.endWk);
-              const deltaCls = sp.deltaFte > 0.005 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : sp.deltaFte < -0.005 ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200';
-              const deltaTxt = sp.deltaFte > 0.005 ? `+${sp.deltaFte} FTE` : sp.deltaFte < -0.005 ? `${sp.deltaFte} FTE` : '0 FTE';
-              return `
-                <tr class="hover:bg-slate-50/70">
-                  <th scope="row" class="px-3.5 py-2.5 font-bold text-slate-900 whitespace-nowrap">
-                    <span class="inline-flex items-center gap-1.5">
-                      <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${sp.dept.color}" aria-hidden="true"></span>
-                      <span>${escapeHtml(sp.dept.name)}</span>
-                      <span class="font-mono text-[10px] text-slate-400">[${escapeHtml(sp.dept.code)}]</span>
-                    </span>
-                  </th>
-                  <td class="px-3.5 py-2.5 whitespace-nowrap">
-                    <div class="flex flex-wrap items-center gap-1.5">
-                      <span class="font-mono font-bold text-slate-800">${escapeHtml(spanLabel)}</span>
-                      <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold">${sp.weekKeys.length} wk${sp.weekKeys.length === 1 ? '' : 's'}</span>
-                      <span class="text-[11px] font-medium text-slate-500">(${escapeHtml(dateRange)})</span>
-                    </div>
-                  </td>
-                  <td class="px-3.5 py-2.5 text-right tabular-nums text-slate-500 whitespace-nowrap">${sp.baseFte} FTE</td>
-                  <td class="px-3.5 py-2.5 text-right tabular-nums font-extrabold text-sky-700 whitespace-nowrap">${sp.fte} FTE</td>
-                  <td class="px-3.5 py-2.5 text-right whitespace-nowrap">
-                    <span class="px-2 py-0.5 rounded-md border text-[11px] font-bold tabular-nums ${deltaCls}">${deltaTxt}</span>
-                  </td>
-                  <td class="px-3.5 py-2.5 text-right space-x-2 whitespace-nowrap">
-                    <button type="button" onclick="editCapacityOverrideSpan('${sp.deptId}', '${sp.startWk}')" class="text-indigo-600 hover:underline font-semibold">Edit</button>
-                    <button type="button" onclick="resetCapacityOverrideSpan('${sp.deptId}', '${sp.startWk}', '${sp.endWk}')" class="text-amber-700 hover:underline font-semibold">Reset</button>
-                  </td>
-                </tr>`;
-            }).join('')}
+            ${rowsHtml}
           </tbody>
         </table>`;
     }

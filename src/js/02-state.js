@@ -64,6 +64,7 @@
       pollIntervalMs: 15000,
       linkedFilePaths: {},            // Per-device saved folder/full paths keyed by filename (browser hides local disk paths for security)
       welcomeSeen: false,             // First-use welcome/setup splash screen flag
+      expandedOverrideGroups: [],     // In-memory expanded company-wide override group IDs in Setup & Data
     };
 
     const VALID_HORIZONS = [1, 2, 3, 4, 6, 12, 18, 24];
@@ -973,8 +974,186 @@
       return spans;
     }
 
+    function getStructuredCapacityOverrides(db = getActiveDB(), deptFilter = 'all') {
+      const overrides = db?.capacityOverrides || {};
+      const depts = db?.departments || [];
+      const deptMap = new Map(depts.map(d => [d.id, d]));
+      const deptOrder = new Map(depts.map((d, i) => [d.id, i]));
+      const byWeek = new Map();
+
+      Object.entries(overrides).forEach(([key, val]) => {
+        const parts = key.split('::');
+        const deptId = parts[0];
+        const wk = parts[1];
+        if (!deptId || !wk || !/^\d{4}-W\d{2}$/.test(wk)) return;
+        if (!deptMap.has(deptId)) return;
+        const numVal = Math.round((Number(val) || 0) * 1000) / 1000;
+        if (!byWeek.has(wk)) byWeek.set(wk, new Map());
+        byWeek.get(wk).set(deptId, numVal);
+      });
+
+      const sortedWeeks = [...byWeek.keys()].sort((a, b) => a.localeCompare(b));
+      const companyWeekMap = new Map();
+
+      // Automatically detect company-wide holiday / shutdown superposition weeks across ALL departments
+      if (depts.length >= 2) {
+        const totalBaseAll = depts.reduce((acc, d) => acc + (Number(d.defaultCapacity) || 0), 0);
+        if (totalBaseAll > 0) {
+          sortedWeeks.forEach(wk => {
+            const wkMap = byWeek.get(wk);
+            if (!wkMap || wkMap.size < depts.length) return;
+            const allReduced = depts.every(d => {
+              if (!wkMap.has(d.id)) return false;
+              const baseFte = Number(d.defaultCapacity) || 0;
+              const fte = wkMap.get(d.id);
+              return baseFte > 0 ? (fte < baseFte - 0.001) : (fte <= 0.001);
+            });
+            if (allReduced) {
+              companyWeekMap.set(wk, wkMap);
+            }
+          });
+        }
+      }
+
+      // Merge contiguous company-wide weeks that have identical per-department FTE overrides
+      const companyGroups = [];
+      let curCo = null;
+      const finalizeCompanyGroup = (grp) => {
+        const items = depts.map(d => {
+          const baseFte = Number(d.defaultCapacity) || 0;
+          const fte = grp.valuesByDept.get(d.id);
+          const deltaFte = Math.round((fte - baseFte) * 100) / 100;
+          const pct = baseFte > 0 ? Math.round((fte / baseFte) * 100) : 0;
+          return { deptId: d.id, dept: d, baseFte, fte, deltaFte, pct };
+        });
+        const totalBaseFte = Math.round(items.reduce((acc, it) => acc + it.baseFte, 0) * 100) / 100;
+        const totalFte = Math.round(items.reduce((acc, it) => acc + it.fte, 0) * 100) / 100;
+        const totalDeltaFte = Math.round((totalFte - totalBaseFte) * 100) / 100;
+        const overallPct = totalBaseFte > 0 ? Math.round((totalFte / totalBaseFte) * 100) : 0;
+        const isShutdown = totalFte <= 0.001;
+        const isUniformPct = !isShutdown && items.every(it => {
+          if (it.baseFte <= 0) return true;
+          const expected = Math.round((it.baseFte * (overallPct / 100)) * 20) / 20;
+          return Math.abs(it.fte - expected) <= 0.051 || Math.abs(it.pct - overallPct) <= 2;
+        });
+        const eventType = isShutdown ? 'shutdown' : (isUniformPct ? 'holiday' : 'mixed-holiday');
+        const label = isShutdown ? 'Company Shutdown' : (isUniformPct ? 'Company Holiday' : 'Company-Wide Holiday / Dip');
+        const pctLabel = isShutdown ? '0%' : (isUniformPct ? `${overallPct}%` : `~${overallPct}% avg`);
+        return {
+          kind: 'company',
+          id: `co__${grp.startWk}__${grp.endWk}`,
+          startWk: grp.startWk,
+          endWk: grp.endWk,
+          weekKeys: grp.weekKeys,
+          eventType,
+          label,
+          pctLabel,
+          pctFactor: overallPct,
+          totalBaseFte,
+          totalFte,
+          totalDeltaFte,
+          items,
+        };
+      };
+
+      [...companyWeekMap.keys()].sort((a, b) => a.localeCompare(b)).forEach(wk => {
+        const wkMap = companyWeekMap.get(wk);
+        const sameAsPrev = curCo
+          && addWeeksToWeekKey(curCo.endWk, 1) === wk
+          && depts.every(d => Math.abs((curCo.valuesByDept.get(d.id) || 0) - (wkMap.get(d.id) || 0)) < 0.001);
+        if (sameAsPrev) {
+          curCo.endWk = wk;
+          curCo.weekKeys.push(wk);
+        } else {
+          if (curCo) companyGroups.push(finalizeCompanyGroup(curCo));
+          curCo = { startWk: wk, endWk: wk, weekKeys: [wk], valuesByDept: wkMap };
+        }
+      });
+      if (curCo) companyGroups.push(finalizeCompanyGroup(curCo));
+
+      // Single-department filter: show that department's spans with subtle company-wide badges when overlapping
+      if (deptFilter !== 'all') {
+        const companyByWk = new Map();
+        companyGroups.forEach(cg => cg.weekKeys.forEach(wk => companyByWk.set(wk, cg)));
+        return getGroupedCapacityOverrides(db, deptFilter).map(sp => {
+          const coMatches = sp.weekKeys.map(wk => companyByWk.get(wk)).filter(Boolean);
+          let companyBadge = '';
+          if (coMatches.length === sp.weekKeys.length && coMatches.length > 0) {
+            const first = coMatches[0];
+            companyBadge = coMatches.every(c => c.id === first.id)
+              ? `${first.label} (${first.pctLabel})`
+              : 'Company-Wide Holiday';
+          } else if (coMatches.length > 0) {
+            companyBadge = `Incl. ${coMatches.length} company wk${coMatches.length === 1 ? '' : 's'}`;
+          }
+          return {
+            ...sp,
+            kind: 'dept',
+            id: `dept__${sp.deptId}__${sp.startWk}__${sp.endWk}`,
+            companyBadge,
+          };
+        });
+      }
+
+      // All-Departments view: extract remaining non-company-wide overrides into per-department contiguous spans
+      const byDeptRemaining = new Map();
+      sortedWeeks.forEach(wk => {
+        if (companyWeekMap.has(wk)) return;
+        const wkMap = byWeek.get(wk);
+        wkMap.forEach((fte, deptId) => {
+          if (!byDeptRemaining.has(deptId)) byDeptRemaining.set(deptId, []);
+          byDeptRemaining.get(deptId).push({ weekKey: wk, fte });
+        });
+      });
+
+      const deptSpans = [];
+      depts.forEach(dept => {
+        const list = byDeptRemaining.get(dept.id);
+        if (!list || list.length === 0) return;
+        list.sort((a, b) => a.weekKey.localeCompare(b.weekKey));
+        let cur = null;
+        list.forEach(item => {
+          const isContiguous = cur && addWeeksToWeekKey(cur.endWk, 1) === item.weekKey && Math.abs(cur.fte - item.fte) < 0.001;
+          if (isContiguous) {
+            cur.endWk = item.weekKey;
+            cur.weekKeys.push(item.weekKey);
+          } else {
+            if (cur) deptSpans.push(cur);
+            const baseFte = Number(dept.defaultCapacity) || 0;
+            cur = {
+              kind: 'dept',
+              id: '',
+              deptId: dept.id,
+              dept,
+              startWk: item.weekKey,
+              endWk: item.weekKey,
+              weekKeys: [item.weekKey],
+              fte: item.fte,
+              baseFte,
+              deltaFte: Math.round((item.fte - baseFte) * 100) / 100,
+              companyBadge: '',
+            };
+          }
+        });
+        if (cur) deptSpans.push(cur);
+      });
+      deptSpans.forEach(sp => { sp.id = `dept__${sp.deptId}__${sp.startWk}__${sp.endWk}`; });
+
+      const combined = [...companyGroups, ...deptSpans];
+      combined.sort((a, b) => {
+        const wkCmp = a.startWk.localeCompare(b.startWk);
+        if (wkCmp !== 0) return wkCmp;
+        if (a.kind !== b.kind) return a.kind === 'company' ? -1 : 1;
+        if (a.kind === 'dept' && b.kind === 'dept') {
+          return (deptOrder.get(a.deptId) ?? 999) - (deptOrder.get(b.deptId) ?? 999);
+        }
+        return a.endWk.localeCompare(b.endWk);
+      });
+      return combined;
+    }
+
     function persistUIPrefs() {
-      const toSave = { ...ui, whatIfMode: false, presentMode: false };
+      const toSave = { ...ui, whatIfMode: false, presentMode: false, expandedOverrideGroups: [] };
       safeSetStorage(STORAGE_KEYS.UI_PREFS, JSON.stringify(toSave));
     }
 
