@@ -37,6 +37,41 @@
       }
     }
 
+    function getMobileVisibleRows(db = getActiveDB()) {
+      const visibleDepts = db.departments.filter(d => ui.filterDept === 'all' || d.id === ui.filterDept);
+      const visibleProjs = getSortedProjects(db).filter(p => (!p.archived || ui.filterProj === p.id) && (ui.filterProj === 'all' || p.id === ui.filterProj));
+      return ui.axis === 'department' ? visibleDepts : visibleProjs;
+    }
+
+    function updateMobileCollapseAllButton() {
+      const btn = document.getElementById('mobileCollapseAllBtn');
+      if (!btn) return;
+      const rows = getMobileVisibleRows();
+      const collapsedSet = new Set(Array.isArray(ui.mobileCollapsedIds) ? ui.mobileCollapsedIds : []);
+      const allCollapsed = rows.length > 0 && rows.every(r => collapsedSet.has(r.id));
+      btn.setAttribute('aria-pressed', String(allCollapsed));
+      btn.innerHTML = allCollapsed
+        ? `<svg class="w-3.5 h-3.5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 5.25l-7.5 7.5-7.5-7.5m15 6l-7.5 7.5-7.5-7.5" /></svg><span>Expand All</span>`
+        : `<svg class="w-3.5 h-3.5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 18.75l7.5-7.5 7.5 7.5m-15-6l7.5-7.5 7.5 7.5" /></svg><span>Collapse All</span>`;
+    }
+
+    function toggleMobileCollapseAll() {
+      const rows = getMobileVisibleRows();
+      if (rows.length === 0) return;
+      if (!Array.isArray(ui.mobileCollapsedIds)) ui.mobileCollapsedIds = [];
+      const set = new Set(ui.mobileCollapsedIds);
+      const allCollapsed = rows.every(r => set.has(r.id));
+      if (allCollapsed) {
+        rows.forEach(r => set.delete(r.id));
+      } else {
+        rows.forEach(r => set.add(r.id));
+      }
+      ui.mobileCollapsedIds = [...set];
+      persistUIPrefs();
+      triggerHaptic(8);
+      renderMobileMatrixCards();
+    }
+
     function onMobileAccordionToggle(rowId, isOpen) {
       if (!Array.isArray(ui.mobileCollapsedIds)) ui.mobileCollapsedIds = [];
       const set = new Set(ui.mobileCollapsedIds);
@@ -44,6 +79,7 @@
       else set.add(rowId);
       ui.mobileCollapsedIds = [...set];
       persistUIPrefs();
+      updateMobileCollapseAllButton();
     }
 
     function handleMobileDeckTouchStart(event) {
@@ -446,11 +482,26 @@
         }
       }).join('');
 
+      const allCollapsed = rows.length > 0 && rows.every(r => collapsedSet.has(r.id));
+      const rowNoun = ui.axis === 'department' ? (rows.length === 1 ? 'Department' : 'Departments') : (rows.length === 1 ? 'Project' : 'Projects');
+      const collapseBarHtml = rows.length > 0
+        ? `<div class="flex items-center justify-between gap-2 px-0.5">
+             <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">${rows.length} ${rowNoun}</span>
+             <button id="mobileCollapseAllBtn" type="button" aria-pressed="${allCollapsed}" onclick="toggleMobileCollapseAll()"
+               class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-2xs transition cursor-pointer">
+               ${allCollapsed
+                 ? `<svg class="w-3.5 h-3.5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 5.25l-7.5 7.5-7.5-7.5m15 6l-7.5 7.5-7.5-7.5" /></svg><span>Expand All</span>`
+                 : `<svg class="w-3.5 h-3.5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 18.75l7.5-7.5 7.5 7.5m-15-6l7.5-7.5 7.5 7.5" /></svg><span>Collapse All</span>`}
+             </button>
+           </div>`
+        : '';
+
       deck.innerHTML = `
         <nav aria-label="Select roadmap period" class="flex items-center gap-2 overflow-x-auto snap-x snap-mandatory no-scrollbar py-0.5">
           ${pillsHtml}
         </nav>
         ${summaryStripHtml}
+        ${collapseBarHtml}
         <div class="space-y-3" ontouchstart="handleMobileDeckTouchStart(event)" ontouchend="handleMobileDeckTouchEnd(event)">
           ${accordionCardsHtml}
         </div>`;

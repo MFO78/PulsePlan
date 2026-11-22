@@ -208,10 +208,10 @@
               const pct = c > 0 ? Math.round((a / c) * 100) : (a > 0 ? 999 : 0);
               const aStr = formatValue(fteToDisplayValue(a, pk, ui.timeUnit));
               const cStr = formatValue(fteToDisplayValue(c, pk, ui.timeUnit));
-              let cellCls = 'bg-slate-50 text-slate-400 border-slate-200';
-              if (pct > overT) cellCls = 'bg-rose-500 text-white border-rose-600 font-extrabold';
-              else if (pct >= warnT) cellCls = 'bg-amber-100 text-amber-900 border-amber-300 font-bold';
-              else if (pct > 0) cellCls = 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold';
+              let cellCls = 'heatmap-empty';
+              if (pct > overT) cellCls = 'heatmap-over font-extrabold';
+              else if (pct >= warnT) cellCls = 'heatmap-warn font-bold';
+              else if (pct > 0) cellCls = 'heatmap-ok font-bold';
               return `
                 <td class="p-1 text-center border-b border-slate-100">
                   <button type="button" onclick="jumpToMatrixCell('${d.id}', '${pk}')"
@@ -222,7 +222,7 @@
                 </td>`;
             }).join('');
             return `
-              <tr class="hover:bg-slate-50/50">
+              <tr class="heatmap-row transition">
                 <th scope="row" class="px-3 py-1.5 text-left text-xs font-bold text-slate-800 border-b border-slate-100 whitespace-nowrap">
                   <span class="inline-flex items-center gap-1.5">
                     <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${d.color}" aria-hidden="true"></span>

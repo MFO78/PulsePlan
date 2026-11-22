@@ -257,9 +257,19 @@
     function jumpToToday() {
       ui.startMonth = getCurrentMonthKey();
       ui.startWeek = getCurrentWeekKey();
-      ui.mobileSelectedPeriod = ui.timeUnit === 'month' ? ui.startMonth : ui.startWeek;
+      const targetPk = ui.timeUnit === 'month' ? ui.startMonth : ui.startWeek;
+      ui.mobileSelectedPeriod = targetPk;
       persistUIPrefs();
+      triggerHaptic(6);
       renderAll();
+      if (isMobileViewport()) {
+        setTimeout(() => {
+          const pill = document.querySelector(`[data-mobile-period-pill="${targetPk}"]`);
+          if (pill && typeof pill.scrollIntoView === 'function') {
+            pill.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+          }
+        }, 25);
+      }
     }
     function setStartPeriodDirect(val) {
       if (!val) return;

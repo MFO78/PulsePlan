@@ -13,8 +13,8 @@
           : `${base} font-semibold text-slate-600`;
       };
 
-      setMobileSeg('m-axis-department', ui.axis === 'department', 'px-2.5 h-8 rounded-lg text-xs transition');
-      setMobileSeg('m-axis-project', ui.axis === 'project', 'px-2.5 h-8 rounded-lg text-xs transition');
+      setMobileSeg('m-axis-department', ui.axis === 'department', 'px-2 h-8 rounded-lg text-xs transition');
+      setMobileSeg('m-axis-project', ui.axis === 'project', 'px-2 h-8 rounded-lg text-xs transition');
       setMobileSeg('m-time-month', ui.timeUnit === 'month');
       setMobileSeg('m-time-week', ui.timeUnit === 'week');
       setMobileSeg('m-unit-fte', ui.manpowerUnit === 'fte');
