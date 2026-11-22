@@ -529,10 +529,13 @@
 
       const t0 = Date.now();
       let handle = null;
+      const fallbackAction = { actionLabel: 'Import JSON', onAction: () => triggerJsonImportPicker(), durationMs: 8500 };
       try {
         ppDebug('INFO', 'Opening window.showOpenFilePicker (with .json filter)...');
         const handles = await window.showOpenFilePicker({
+          id: 'pulseplan-db',
           types: [{ description: 'PulsePlan JSON Database', accept: { 'application/json': ['.json'] } }],
+          excludeAcceptAllOption: false,
           multiple: false,
         });
         handle = handles && handles[0];
@@ -546,23 +549,36 @@
           } catch (e2) {
             const elapsed2 = Date.now() - t0;
             ppDebug('ERROR', 'showOpenFilePicker fallback retry failed', { name: e2?.name, message: e2?.message, elapsedMs: elapsed2 });
-            if (e2 && e2.name === 'AbortError' && elapsed2 >= 200) return;
-            showToast(`Could not open file picker (${e2?.name || 'Error'}: ${e2?.message || 'blocked'}). Use "Import JSON" instead.`, 'warning');
+            if (e2 && e2.name === 'AbortError') {
+              showToast(
+                'File picker closed without linking. If Chrome blocked the folder or site permission, move the file into a subfolder or use Import JSON.',
+                elapsed2 < 200 ? 'warning' : 'info',
+                fallbackAction
+              );
+              return;
+            }
+            showToast(`Could not open file picker (${e2?.name || 'Error'}: ${e2?.message || 'blocked'}).`, 'warning', fallbackAction);
             return;
           }
         } else if (e && e.name === 'AbortError') {
           ppDebug('WARN', 'showOpenFilePicker AbortError', { elapsedMs, message: e.message || '' });
           if (elapsedMs < 200) {
-            showToast('Browser/policy auto-aborted the direct file picker. Click "Import JSON" in Sync & Snapshots instead.', 'warning');
+            showToast('Browser/policy auto-aborted the direct file picker. Use Import JSON instead.', 'warning', fallbackAction);
+          } else {
+            showToast(
+              'File picker closed without linking. If you clicked Open and nothing loaded, Chrome/Windows may have blocked that folder (e.g. Desktop/Downloads/OneDrive root) or site File Editing permission — move the .json into a subfolder or click Import JSON.',
+              'warning',
+              fallbackAction
+            );
           }
           return;
         } else {
           ppDebug('ERROR', 'showOpenFilePicker failed', { name: e?.name, message: e?.message, elapsedMs });
           if (e && e.name === 'SecurityError') {
-            showToast('Browser blocked direct linking to this folder (Chrome restricts Desktop/Downloads roots or iframes). Move the .json into a subfolder or use "Import JSON".', 'warning');
+            showToast('Browser blocked direct linking to this folder (Chrome restricts Desktop/Downloads roots or iframes). Move the .json into a subfolder or click Import JSON.', 'warning', fallbackAction);
           } else {
             const detail = e && (e.message || e.name) ? ` (${e.name || 'Error'}: ${e.message || ''})` : '';
-            showToast(`Could not open file picker${detail}. Use "Import JSON" instead.`, 'warning');
+            showToast(`Could not open file picker${detail}.`, 'warning', fallbackAction);
           }
           return;
         }
@@ -1102,7 +1118,7 @@
       const fsNote = document.getElementById('fsApiNote');
       if (fsNote) {
         fsNote.textContent = hasFsApi
-          ? 'Your browser supports direct auto-save & automatic live reload with Google Drive Desktop & company network folders.'
+          ? 'Your browser supports direct auto-save & live reload with Google Drive Desktop / network folders. Tip: Keep the .json inside a dedicated subfolder (not directly in Desktop/Downloads/OneDrive root) and ensure File Editing is allowed in site settings — or use Import JSON.'
           : 'Mobile / Portable Mode: Your changes save automatically on this device. Use "Share / Save JSON" to send directly to Google Drive, iCloud Files, or Teams, and "Import JSON" to load updates.';
       }
 

@@ -408,6 +408,16 @@
           undoLastChange();
         };
         toast.appendChild(undoBtn);
+      } else if (opts && opts.actionLabel && typeof opts.onAction === 'function') {
+        const actBtn = document.createElement('button');
+        actBtn.type = 'button';
+        actBtn.className = 'px-2.5 py-1 rounded-md bg-white/20 hover:bg-white/30 text-white text-[11px] font-extrabold shrink-0 transition';
+        actBtn.textContent = opts.actionLabel;
+        actBtn.onclick = () => {
+          toast.remove();
+          opts.onAction();
+        };
+        toast.appendChild(actBtn);
       }
 
       toast.title = 'Click to dismiss';
@@ -416,9 +426,11 @@
         toast.remove();
       };
       container.appendChild(toast);
-      const durationMs = opts && opts.undoable
-        ? 4400
-        : (type === 'error' ? 8000 : type === 'warning' ? 6000 : 3500);
+      const durationMs = opts && opts.durationMs
+        ? opts.durationMs
+        : opts && opts.undoable
+          ? 4400
+          : (type === 'error' ? 8000 : type === 'warning' ? 6500 : (opts && opts.actionLabel ? 7000 : 3500));
       setTimeout(() => {
         toast.style.opacity = '0';
         toast.style.transform = 'translateY(6px)';
