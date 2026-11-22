@@ -1,9 +1,12 @@
-const CACHE_NAME = 'pulseplan-pwa-v6';
+const CACHE_NAME = 'pulseplan-pwa-v7';
 const CORE_ASSETS = [
   './',
   './index.html',
   './manifest.webmanifest',
   './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable-512.png',
 ];
 
 self.addEventListener('install', (event) => {

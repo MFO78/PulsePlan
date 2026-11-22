@@ -266,6 +266,8 @@ function compileUtilityDecl(util) {
     'snap-center': 'scroll-snap-align: center;',
     'sr-only': 'position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;',
     'not-sr-only': 'position: static; width: auto; height: auto; padding: 0; margin: 0; overflow: visible; clip: auto; white-space: normal;',
+    'list-decimal': 'list-style-type: decimal;',
+    'list-disc': 'list-style-type: disc;',
     'bg-gradient-to-br': 'background-image: linear-gradient(to bottom right, var(--tw-gradient-from, #4f46e5), var(--tw-gradient-to, #7c3aed));',
     'ring-1': 'box-shadow: 0 0 0 1px var(--tw-ring-color, rgba(59, 130, 246, 0.5));',
     'ring-2': 'box-shadow: 0 0 0 2px var(--tw-ring-color, rgba(59, 130, 246, 0.5));',
@@ -617,7 +619,7 @@ function build() {
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" type="image/svg+xml" href="${faviconHref}" />
   <link rel="shortcut icon" type="image/svg+xml" href="${faviconHref}" />
-  <link rel="apple-touch-icon" href="${faviconHref}" />
+  <link rel="apple-touch-icon" sizes="192x192" href="./icon-192.png" />
   <!-- Optional jsPDF & AutoTable for direct vector PDF export (gracefully falls back to browser print when offline) -->
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>

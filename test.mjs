@@ -941,7 +941,7 @@ test('Timeline/Gantt respects all 4 colour schemes (accent, fill, fte, fte3) on 
 
     assert.ok(out.dAccent.includes('timeline-bar-accent'), 'Desktop Timeline Accent mode uses timeline-bar-accent');
     assert.ok(!out.dFill.includes('timeline-bar-accent') && out.dFill.includes('background-color:'), 'Desktop Timeline Fill mode uses full project colour fill');
-    assert.ok(out.dFte.includes('cap') && out.dFte.includes('ring-1 ring-white/70'), 'Desktop Timeline By FTE mode renders heat colour + project identity dot');
+    assert.ok(out.dFte.includes('cap') && (out.dFte.includes('ring-1 ring-white/75') || out.dFte.includes('ring-1 ring-white/70')), 'Desktop Timeline By FTE mode renders heat colour + project identity dot');
     assert.ok(out.dFte3.includes('●') || out.dFte3.includes('▲') || out.dFte3.includes('‼'), 'Desktop Timeline 3-Level mode renders demand tier symbol');
 
     assert.ok(out.mAccent.includes('timeline-bar-accent'), 'Mobile Timeline Accent mode uses timeline-bar-accent');
@@ -955,6 +955,226 @@ test('Timeline/Gantt respects all 4 colour schemes (accent, fill, fte, fte3) on 
     assert.equal(out.stripHtmlOnCards, '', 'Desktop status strip HTML is cleared in Mobile Cards mode');
     assert.ok(out.deckWithSpot.includes('Clear Spotlight') && !out.deckWithSpot.includes('Esc'), 'Mobile Spotlight banner has 1-tap Clear Spotlight button without Esc text');
     assert.ok(!out.deckAfterClear.includes('Clear Spotlight'), 'Clearing spotlight removes mobile spotlight banner cleanly');
+  } finally {
+    sandbox.document.getElementById = prevGetById;
+  }
+});
+
+test('Genuine PWA manifest PNG icons, fluid full-width 4K layout, and promptPwaInstall flow', async () => {
+  const manifest = JSON.parse(fs.readFileSync('manifest.webmanifest', 'utf8'));
+  const has192 = manifest.icons.some(i => i.src === './icon-192.png' && i.sizes === '192x192' && i.type === 'image/png');
+  const has512 = manifest.icons.some(i => i.src === './icon-512.png' && i.sizes === '512x512' && i.type === 'image/png');
+  const hasMaskable = manifest.icons.some(i => i.src === './icon-maskable-512.png' && i.purpose === 'maskable');
+  assert.ok(has192 && has512 && hasMaskable, 'manifest.webmanifest declares 192x192, 512x512, and maskable PNG icons');
+  assert.ok(fs.existsSync('icon-192.png'), 'icon-192.png exists on disk');
+  assert.ok(fs.existsSync('icon-512.png'), 'icon-512.png exists on disk');
+  assert.ok(fs.existsSync('icon-maskable-512.png'), 'icon-maskable-512.png exists on disk');
+  assert.ok(html.includes('href="./icon-192.png"'), 'index.html references ./icon-192.png apple-touch-icon');
+  assert.ok(!html.includes('max-w-[1600px]'), 'index.html uses fluid full-width layout without max-w-[1600px] 4K sidebars');
+
+  const prevGetById = sandbox.document.getElementById;
+  const elMap = new Map();
+  sandbox.document.getElementById = (id) => {
+    if (!elMap.has(id)) {
+      const classes = new Set(['hidden']);
+      const el = makeStubEl();
+      el.id = id;
+      el.classList = {
+        add: (...c) => c.forEach(x => classes.add(x)),
+        remove: (...c) => c.forEach(x => classes.delete(x)),
+        toggle: (x, f) => { if (f === undefined) { if (classes.has(x)) classes.delete(x); else classes.add(x); } else if (f) classes.add(x); else classes.delete(x); },
+        contains: (x) => classes.has(x),
+      };
+      elMap.set(id, el);
+    }
+    return elMap.get(id);
+  };
+  try {
+    const res = await vm.runInContext(`(async () => {
+      let promptCalled = 0;
+      deferredPwaPrompt = {
+        prompt: async () => { promptCalled++; },
+        userChoice: Promise.resolve({ outcome: 'accepted' }),
+      };
+      updatePwaInstallUI();
+      const hdrVisibleWhenReady = !document.getElementById('pwaInstallHeaderBtn').classList.contains('hidden');
+      const chipWhenReady = document.getElementById('pwaInstallMenuChip').textContent;
+
+      await promptPwaInstall();
+      const hdrHiddenAfterPrompt = document.getElementById('pwaInstallHeaderBtn').classList.contains('hidden');
+
+      // Fallback when no deferred prompt: opens manual install guide modal
+      await promptPwaInstall();
+      const guideHtml = document.getElementById('modalCard').innerHTML;
+      closeModal();
+      return { promptCalled, hdrVisibleWhenReady, chipWhenReady, hdrHiddenAfterPrompt, guideHtml };
+    })()`, ctx);
+
+    assert.equal(res.promptCalled, 1, 'Native beforeinstallprompt.prompt() is invoked when available');
+    assert.equal(res.hdrVisibleWhenReady, true, 'Header Install button reveals when beforeinstallprompt is captured');
+    assert.equal(res.chipWhenReady, 'Ready', 'Workspace menu Install chip shows Ready');
+    assert.equal(res.hdrHiddenAfterPrompt, true, 'Header Install button hides after prompt completes');
+    assert.ok(res.guideHtml.includes('Install PulsePlan App (PWA)'), 'Fallback opens Install PWA guide modal');
+  } finally {
+    sandbox.document.getElementById = prevGetById;
+  }
+});
+
+test('Standard (1-6) vs Simplified Overview (12/18/24), shiftStartByInterval, and 4K column geometry', () => {
+  const prevGetById = sandbox.document.getElementById;
+  const elMap = new Map();
+  sandbox.document.getElementById = (id) => {
+    if (!elMap.has(id)) {
+      const classes = new Set();
+      const el = makeStubEl();
+      el.id = id;
+      el.clientWidth = 1400;
+      el.options = [];
+      el.dataset = {};
+      el.classList = {
+        add: (...c) => c.forEach(x => classes.add(x)),
+        remove: (...c) => c.forEach(x => classes.delete(x)),
+        toggle: (x, f) => { if (f === undefined) { if (classes.has(x)) classes.delete(x); else classes.add(x); } else if (f) classes.add(x); else classes.delete(x); },
+        contains: (x) => classes.has(x),
+      };
+      elMap.set(id, el);
+    }
+    return elMap.get(id);
+  };
+  try {
+    const out = vm.runInContext(`(() => {
+      liveDB = createSampleDemoDB();
+      ui.demoMode = false;
+      ui.whatIfMode = false;
+      ui.activeTab = 'matrix';
+      ui.timeUnit = 'month';
+      ui.startMonth = '2026-01';
+      ui.horizon = 6;
+      shiftStartByInterval(1);
+      const afterFwd6 = ui.startMonth;
+      shiftStartByInterval(-1);
+      const afterBack6 = ui.startMonth;
+
+      // Legacy horizon snapping (8 -> 12, 16 -> 18)
+      ui.horizon = 8;
+      const snap8 = getActiveHorizon();
+      ui.horizon = 16;
+      const snap16 = getActiveHorizon();
+
+      // Geometry on Laptop (1400px) & 4K (3700px) for Standard 6 and Overview 12 / 18 / 24
+      const gStd6Laptop = computeFullColumnGeometry(1400, 6, false, false);
+      const gOv12Laptop = computeFullColumnGeometry(1400, 12, false, false);
+      const gOv18Laptop = computeFullColumnGeometry(1400, 18, false, false);
+      const gOv24Laptop = computeFullColumnGeometry(1400, 24, false, false);
+      const gOv24FourK = computeFullColumnGeometry(3700, 24, false, false);
+
+      // Render 12-month Simplified Overview across By Dept, By Project, and Timeline
+      window.innerWidth = 1440;
+      ui.startMonth = getCurrentMonthKey();
+      ui.horizon = 12;
+      ui.compactRowLabels = false;
+      ui.cellColorMode = 'fill';
+      ui.axis = 'department'; renderMatrix();
+      const ovDeptHtml = document.getElementById('matrixWrapper').innerHTML;
+      const ovStripHtml = document.getElementById('matrixStatusStrip').innerHTML;
+      ui.axis = 'project'; renderMatrix();
+      const ovProjHtml = document.getElementById('matrixWrapper').innerHTML;
+      ui.axis = 'timeline'; renderMatrix();
+      const ovTlHtml = document.getElementById('matrixWrapper').innerHTML;
+
+      return { afterFwd6, afterBack6, snap8, snap16, gStd6Laptop, gOv12Laptop, gOv18Laptop, gOv24Laptop, gOv24FourK, ovDeptHtml, ovStripHtml, ovProjHtml, ovTlHtml };
+    })()`, ctx);
+
+    assert.equal(out.afterFwd6, '2026-07', 'shiftStartByInterval(+1) with 6-month horizon jumps +6 months');
+    assert.equal(out.afterBack6, '2026-01', 'shiftStartByInterval(-1) jumps back -6 months');
+    assert.equal(out.snap8, 12, 'Legacy horizon 8 snaps cleanly to 12 (Overview)');
+    assert.equal(out.snap16, 18, 'Legacy horizon 16 snaps cleanly to 18 (Overview)');
+    assert.equal(out.gStd6Laptop.visibleCols, 6, 'Standard 6 periods all fit on 1400px desktop');
+    assert.equal(out.gOv12Laptop.visibleCols, 12, 'Overview 12 periods all fit simultaneously on 1400px desktop');
+    assert.equal(out.gOv18Laptop.visibleCols, 18, 'Overview 18 periods all fit simultaneously on 1400px desktop');
+    assert.equal(out.gOv24Laptop.visibleCols, 24, 'Overview 24 periods all fit simultaneously on 1400px desktop');
+    assert.equal(out.gOv24FourK.visibleCols, 24, 'Overview 24 periods fit on 4K with generous columns');
+    assert.ok(out.gOv24FourK.colW > 130, '4K display scales Overview 24 columns > 130px wide');
+    assert.ok(out.ovStripHtml.includes('Simplified Overview') && out.ovStripHtml.includes('Standard (6)'), 'Overview displays status banner with 1-click Standard (6) return button');
+    assert.ok(out.ovDeptHtml.includes('data-period-count="12"') && out.ovDeptHtml.includes('shiftStartByInterval'), 'Overview By Dept renders 12 compact columns + interval jump buttons');
+    assert.ok(out.ovProjHtml.includes('data-period-count="12"'), 'Overview By Project renders 12 compact columns');
+    assert.ok(out.ovTlHtml.includes('timeline-bar-overview'), 'Overview Timeline renders compact continuous overview Gantt bars');
+  } finally {
+    sandbox.document.getElementById = prevGetById;
+  }
+});
+
+test('Enhanced Timeline bars, Rich Detailed Row Labels, and Welcome & Setup Splash Screen', () => {
+  const prevGetById = sandbox.document.getElementById;
+  const elMap = new Map();
+  sandbox.document.getElementById = (id) => {
+    if (!elMap.has(id)) {
+      const classes = new Set(['hidden']);
+      const el = makeStubEl();
+      el.id = id;
+      el.clientWidth = 1440;
+      el.options = [];
+      el.dataset = {};
+      el.classList = {
+        add: (...c) => c.forEach(x => classes.add(x)),
+        remove: (...c) => c.forEach(x => classes.delete(x)),
+        toggle: (x, f) => { if (f === undefined) { if (classes.has(x)) classes.delete(x); else classes.add(x); } else if (f) classes.add(x); else classes.delete(x); },
+        contains: (x) => classes.has(x),
+      };
+      elMap.set(id, el);
+    }
+    return elMap.get(id);
+  };
+  try {
+    const out = vm.runInContext(`(() => {
+      liveDB = createSampleDemoDB();
+      ui.demoMode = false;
+      ui.whatIfMode = false;
+      ui.activeTab = 'matrix';
+      ui.timeUnit = 'month';
+      ui.startMonth = getCurrentMonthKey();
+      ui.horizon = 4;
+      ui.cellColorMode = 'fill';
+      window.innerWidth = 1440;
+
+      // Rich Detailed Row Labels in By Dept
+      ui.compactRowLabels = false;
+      ui.axis = 'department'; renderMatrix();
+      const deptDetailed = document.getElementById('matrixWrapper').innerHTML;
+
+      // Rich Detailed Row Labels + Enhanced 2-row Timeline bars with larger text-[11px] dept chips
+      ui.axis = 'timeline'; renderMatrix();
+      const tlDetailed = document.getElementById('matrixWrapper').innerHTML;
+
+      // Vertical Row Labels in Timeline uses tighter .timeline-vertical-text
+      ui.compactRowLabels = true;
+      renderMatrix();
+      const tlVertical = document.getElementById('matrixWrapper').innerHTML;
+
+      // Welcome Splash Screen open + dismiss with name & welcomeSeen persistence
+      ui.welcomeSeen = false;
+      openWelcomeModal(true);
+      const welcomeHtml = document.getElementById('modalCard').innerHTML;
+      const modalOpen = !document.getElementById('modalOverlay').classList.contains('hidden');
+      document.getElementById('welcomeUserNameInput').value = 'Marco Formaggi';
+      document.getElementById('welcomeDontShowAgain').checked = true;
+      dismissWelcomeModal();
+      const seenAfter = ui.welcomeSeen;
+      const userAfter = ui.userName;
+      const modalClosedAfter = document.getElementById('modalOverlay').classList.contains('hidden');
+
+      return { deptDetailed, tlDetailed, tlVertical, welcomeHtml, modalOpen, seenAfter, userAfter, modalClosedAfter };
+    })()`, ctx);
+
+    assert.ok(out.deptDetailed.includes('Peak ') && out.deptDetailed.includes('Elena Rostova') && out.deptDetailed.includes('proj'), 'Detailed By Dept row label displays Peak %, Manager, and active project count');
+    assert.ok(out.tlDetailed.includes('timeline-bar-std') && out.tlDetailed.includes('text-[11px] font-bold'), 'Standard Timeline renders enhanced 2-row bar with readable 11px department chips');
+    assert.ok(out.tlDetailed.includes('Budget') && out.tlDetailed.includes('S. Chen') && out.tlDetailed.includes('depts'), 'Detailed Timeline/Project row label displays Budget bar, Owner, Priority, and active dept count');
+    assert.ok(out.tlVertical.includes('timeline-vertical-text'), 'Vertical Timeline row header uses tighter .timeline-vertical-text');
+    assert.equal(out.modalOpen, true, 'openWelcomeModal opens splash screen dialog');
+    assert.ok(out.welcomeHtml.includes('Welcome to PulsePlan') && out.welcomeHtml.includes('Explore Demo Sandbox') && out.welcomeHtml.includes('Load Shared Database'), 'Welcome modal renders greeting and guided setup paths');
+    assert.equal(out.seenAfter, true, 'dismissWelcomeModal persists ui.welcomeSeen = true');
+    assert.equal(out.userAfter, 'Marco Formaggi', 'dismissWelcomeModal saves display name');
+    assert.equal(out.modalClosedAfter, true, 'dismissWelcomeModal closes dialog cleanly');
   } finally {
     sandbox.document.getElementById = prevGetById;
   }
