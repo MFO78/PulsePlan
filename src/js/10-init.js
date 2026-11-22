@@ -670,18 +670,24 @@
         if (!document.hidden && linkedFileHandle && !ui.demoMode) checkExternalFileUpdates();
       });
 
-      // 7. Apply theme & render UI immediately
+      // 7. Apply theme & render UI immediately (guarded so sync reconnect & SW updates always run)
       applyDarkMode();
       applyPresentMode();
-      renderAll();
+      try {
+        renderAll();
+      } catch (e) {
+        console.error('Initial render error:', e);
+      }
 
       // 8. Auto-reconnect to remembered sync file on desktop (stays clean & warning-free on mobile)
       await autoReconnectSyncFile();
 
-      // 9. Register offline PWA Service Worker when served over HTTPS or localhost
+      // 9. Register offline PWA Service Worker when served over HTTPS or localhost and trigger immediate update check
       try {
         if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof location !== 'undefined' && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-          navigator.serviceWorker.register('./sw.js').catch(() => {});
+          navigator.serviceWorker.register('./sw.js').then((reg) => {
+            try { if (reg && typeof reg.update === 'function') reg.update(); } catch (e) {}
+          }).catch(() => {});
         }
       } catch (e) {}
     }

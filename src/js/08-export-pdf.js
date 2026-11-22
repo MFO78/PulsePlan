@@ -28,19 +28,37 @@
       const file = event.target.files?.[0];
       if (!file) return;
       const reader = new FileReader();
+      reader.onerror = () => {
+        console.error('JSON FileReader error:', reader.error);
+        showToast(`Could not read "${file.name}" (${reader.error?.message || 'file read error'}).`, 'error');
+      };
       reader.onload = () => {
+        let migrated = null;
         try {
           const rawText = String(reader.result || '').replace(/^\uFEFF/, '');
           const parsed = JSON.parse(rawText);
-          const migrated = normalizeAndMigrateDB(parsed);
+          migrated = normalizeAndMigrateDB(parsed);
           if (!migrated) {
             showToast('Invalid PulsePlan JSON structure — missing departments/projects.', 'error');
             return;
           }
+        } catch (e) {
+          console.error('JSON import parse error:', e);
+          showToast(`Could not parse "${file.name}": ${e?.message || 'invalid JSON'}.`, 'error');
+          return;
+        }
+        try {
+          ui.whatIfMode = false;
+          whatIfDB = null;
           if (ui.demoMode) demoDB = migrated;
           else liveDB = migrated;
           clearUndoHistory();
-          const shifted = syncHorizonAfterDBLoad(migrated);
+          let shifted = false;
+          try {
+            shifted = syncHorizonAfterDBLoad(migrated);
+          } catch (hErr) {
+            console.error('Horizon alignment error after import:', hErr);
+          }
           touchDBAndSave();
           renderAll();
           const allocCount = Object.keys(migrated.allocations).length;
@@ -48,9 +66,9 @@
             `Imported "${file.name}" (${migrated.departments.length} depts, ${migrated.projects.length} projects, ${allocCount} wk allocs${shifted ? ' — timeline aligned' : ''})`,
             'success'
           );
-        } catch (e) {
-          console.error('JSON import error:', e);
-          showToast('Could not parse JSON file. Check that it is valid JSON.', 'error');
+        } catch (renderErr) {
+          console.error('Post-import render error:', renderErr);
+          showToast(`Imported "${file.name}", but a display error occurred (${renderErr?.message || 'Error'}).`, 'warning');
         }
       };
       reader.readAsText(file);
