@@ -372,17 +372,113 @@
       color: #fda4af !important;
       border-color: rgba(244, 63, 94, 0.48) !important;
     }
+    .heatmap-row:hover {
+      background-color: rgba(238, 242, 255, 0.72);
+    }
+    .heatmap-row:hover th {
+      color: #3730a3;
+    }
+    html.dark .heatmap-row:hover {
+      background-color: var(--surface-hover) !important;
+    }
+    html.dark .heatmap-row:hover th {
+      color: #a5b4fc !important;
+    }
     .heatmap-cell {
-      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+      transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease, border-color 120ms ease, color 120ms ease;
     }
     .heatmap-cell:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #334155, 0 4px 10px -2px rgba(15, 23, 42, 0.22);
+      transform: translateY(-1px) scale(1.03);
       position: relative;
       z-index: 2;
     }
-    html.dark .heatmap-cell:hover {
-      box-shadow: 0 0 0 2px #0f172a, 0 0 0 3.5px rgba(248, 250, 252, 0.55);
+    .heatmap-empty {
+      background-color: #f8fafc;
+      color: #94a3b8;
+      border-color: #e2e8f0;
+    }
+    .heatmap-empty:hover {
+      background-color: #e0e7ff;
+      color: #3730a3;
+      border-color: #6366f1;
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25), 0 4px 10px -2px rgba(79, 70, 229, 0.22);
+    }
+    .heatmap-ok {
+      background-color: #ecfdf5;
+      color: #065f46;
+      border-color: #a7f3d0;
+    }
+    .heatmap-ok:hover {
+      background-color: #a7f3d0;
+      color: #064e3b;
+      border-color: #059669;
+      box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.26), 0 4px 10px -2px rgba(5, 150, 105, 0.24);
+    }
+    .heatmap-warn {
+      background-color: #fef3c7;
+      color: #92400e;
+      border-color: #fcd34d;
+    }
+    .heatmap-warn:hover {
+      background-color: #fde68a;
+      color: #78350f;
+      border-color: #d97706;
+      box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.28), 0 4px 10px -2px rgba(217, 119, 6, 0.24);
+    }
+    .heatmap-over {
+      background-color: #f43f5e;
+      color: #ffffff;
+      border-color: #e11d48;
+    }
+    .heatmap-over:hover {
+      background-color: #be123c;
+      color: #ffffff;
+      border-color: #9f1239;
+      box-shadow: 0 0 0 2px rgba(225, 29, 72, 0.30), 0 4px 12px -2px rgba(225, 29, 72, 0.36);
+    }
+    html.dark .heatmap-empty {
+      background-color: var(--surface-subtle) !important;
+      color: var(--text-faint) !important;
+      border-color: var(--border-subtle) !important;
+    }
+    html.dark .heatmap-empty:hover {
+      background-color: rgba(79, 70, 229, 0.24) !important;
+      color: #e0e7ff !important;
+      border-color: rgba(129, 140, 248, 0.65) !important;
+      box-shadow: 0 0 0 2px #0f172a, 0 0 0 3.5px rgba(129, 140, 248, 0.65);
+    }
+    html.dark .heatmap-ok {
+      background-color: rgba(16, 185, 129, 0.14) !important;
+      color: #34d399 !important;
+      border-color: rgba(16, 185, 129, 0.35) !important;
+    }
+    html.dark .heatmap-ok:hover {
+      background-color: rgba(16, 185, 129, 0.26) !important;
+      color: #6ee7b7 !important;
+      border-color: rgba(52, 211, 153, 0.65) !important;
+      box-shadow: 0 0 0 2px #0f172a, 0 0 0 3.5px rgba(52, 211, 153, 0.55);
+    }
+    html.dark .heatmap-warn {
+      background-color: rgba(245, 158, 11, 0.20) !important;
+      color: #fbbf24 !important;
+      border-color: rgba(245, 158, 11, 0.42) !important;
+    }
+    html.dark .heatmap-warn:hover {
+      background-color: rgba(245, 158, 11, 0.32) !important;
+      color: #fde68a !important;
+      border-color: rgba(251, 191, 36, 0.72) !important;
+      box-shadow: 0 0 0 2px #0f172a, 0 0 0 3.5px rgba(251, 191, 36, 0.60);
+    }
+    html.dark .heatmap-over {
+      background-color: rgba(225, 29, 72, 0.38) !important;
+      color: #fecdd3 !important;
+      border-color: rgba(244, 63, 94, 0.55) !important;
+    }
+    html.dark .heatmap-over:hover {
+      background-color: rgba(225, 29, 72, 0.54) !important;
+      color: #ffffff !important;
+      border-color: rgba(251, 113, 133, 0.85) !important;
+      box-shadow: 0 0 0 2px #0f172a, 0 0 0 3.5px rgba(251, 113, 133, 0.70);
     }
     .bottleneck-pill-ring {
       box-shadow: 0 0 0 1.5px #f43f5e !important;
