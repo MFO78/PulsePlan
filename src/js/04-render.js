@@ -134,7 +134,7 @@
       });
 
       applyDarkMode();
-      applyMeetingMode();
+      applyPresentMode();
 
       const userName = (ui.userName || 'Project Mgr').trim();
       const avatarEl = document.getElementById('headerUserAvatar');
@@ -247,27 +247,35 @@
       if (horSel) {
         const uS = ui.timeUnit === 'month' ? 'Mo' : 'Wk';
         const uP = ui.timeUnit === 'month' ? 'Mos' : 'Wks';
-        const horOpts = ui.meetingMode ? [1, 2, 3, 4] : [1, 2, 4, 6, 8, 12, 16, 24];
+        const horOpts = [1, 2, 3, 4, 6, 8, 12, 16, 24];
         horSel.innerHTML = horOpts
           .map(n => `<option value="${n}" ${n === activeHorizon ? 'selected' : ''}>${n} ${n === 1 ? uS : uP}</option>`)
           .join('');
         horSel.value = String(activeHorizon);
       }
 
-      // Mod 4: Cell Card Color Mode Selector (Accent / Fill / By FTE / 3-Level)
+      // Cell Card Color Mode Selector (Accent / Fill / By FTE / 3-Level)
       const activeColorMode = getActiveCellColorMode();
-      const setColorBtn = (id, active) => {
+      const setSegBtn = (id, active, padCls = 'px-2 py-0.5') => {
         const el = document.getElementById(id);
         if (!el) return;
         el.setAttribute('aria-pressed', String(active));
         el.className = active
-          ? 'px-2 py-0.5 rounded-lg text-xs font-bold bg-white text-indigo-700 shadow-xs transition'
-          : 'px-2 py-0.5 rounded-lg text-xs font-semibold text-slate-600 hover:text-slate-900 transition';
+          ? `${padCls} rounded-md text-[11px] font-bold bg-white text-indigo-700 shadow-xs transition`
+          : `${padCls} rounded-md text-[11px] font-semibold text-slate-600 hover:text-slate-900 transition`;
       };
-      setColorBtn('card-color-accent', activeColorMode === 'accent');
-      setColorBtn('card-color-fill', activeColorMode === 'fill');
-      setColorBtn('card-color-fte', activeColorMode === 'fte');
-      setColorBtn('card-color-fte3', activeColorMode === 'fte3');
+      setSegBtn('card-color-accent', activeColorMode === 'accent', 'px-2 py-1');
+      setSegBtn('card-color-fill', activeColorMode === 'fill', 'px-2 py-1');
+      setSegBtn('card-color-fte', activeColorMode === 'fte', 'px-2 py-1');
+      setSegBtn('card-color-fte3', activeColorMode === 'fte3', 'px-2 py-1');
+
+      // Row Labels (Vertical 62px spine vs Detailed 216px) & Note Size (Norm / Large / XL)
+      setSegBtn('row-label-vertical', Boolean(ui.compactRowLabels), 'px-1.5 py-0.5');
+      setSegBtn('row-label-detailed', !ui.compactRowLabels, 'px-1.5 py-0.5');
+      const curNoteSize = (ui.noteSize === 'sm' || ui.noteSize === 'lg') ? ui.noteSize : 'md';
+      setSegBtn('note-size-sm', curNoteSize === 'sm', 'px-1 py-0.5');
+      setSegBtn('note-size-md', curNoteSize === 'md', 'px-1 py-0.5');
+      setSegBtn('note-size-lg', curNoteSize === 'lg', 'px-1 py-0.5');
 
       const fteLegendEl = document.getElementById('fteColorLegend');
       if (fteLegendEl) fteLegendEl.classList.toggle('hidden', activeColorMode !== 'fte');
@@ -281,10 +289,10 @@
       if (dragBtn) {
         dragBtn.setAttribute('aria-pressed', String(ui.dragMode === 'copy'));
         if (ui.dragMode === 'copy') {
-          dragBtn.className = 'meeting-hide px-2.5 py-1 rounded-xl border border-indigo-300 bg-indigo-50 text-indigo-700 text-xs font-bold transition';
+          dragBtn.className = 'px-2.5 py-1 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 text-[11px] font-bold transition';
           dragBtn.textContent = 'Drag: Copy';
         } else {
-          dragBtn.className = 'meeting-hide px-2.5 py-1 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 transition';
+          dragBtn.className = 'px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-[11px] font-semibold text-slate-700 transition';
           dragBtn.textContent = 'Drag: Move';
         }
       }
@@ -293,27 +301,12 @@
       if (cmtBtn) {
         cmtBtn.setAttribute('aria-pressed', String(Boolean(ui.showCellComments)));
         if (ui.showCellComments) {
-          cmtBtn.className = 'px-2.5 py-1 rounded-xl border border-indigo-300 bg-indigo-50 text-indigo-700 text-xs font-bold transition';
+          cmtBtn.className = 'px-2.5 py-1 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 text-[11px] font-bold transition';
           cmtBtn.textContent = 'Comments: ON';
         } else {
-          cmtBtn.className = 'px-2.5 py-1 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-600 transition';
+          cmtBtn.className = 'px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-[11px] font-semibold text-slate-600 transition';
           cmtBtn.textContent = 'Comments: OFF';
         }
-      }
-
-      const noteSizeWrap = document.getElementById('meetingNoteSizeWrap');
-      if (noteSizeWrap) {
-        noteSizeWrap.classList.toggle('hidden', !ui.meetingMode || !ui.showCellComments);
-        const curSize = (ui.meetingNoteSize === 'sm' || ui.meetingNoteSize === 'lg') ? ui.meetingNoteSize : 'md';
-        ['sm', 'md', 'lg'].forEach(sz => {
-          const btn = document.getElementById(`note-size-${sz}`);
-          if (!btn) return;
-          const isAct = curSize === sz;
-          btn.setAttribute('aria-pressed', String(isAct));
-          btn.className = isAct
-            ? 'px-2 py-0.5 rounded-md text-[11px] font-bold bg-white text-indigo-700 shadow-xs transition'
-            : 'px-2 py-0.5 rounded-md text-[11px] font-semibold text-slate-600 hover:text-slate-900 transition';
-        });
       }
 
       const hideEmptyBtn = document.getElementById('hideEmptyRowsBtn');
@@ -321,17 +314,13 @@
         const active = Boolean(ui.hideEmptyRows);
         hideEmptyBtn.setAttribute('aria-pressed', String(active));
         hideEmptyBtn.className = active
-          ? 'px-2.5 py-1 rounded-xl border border-indigo-300 bg-indigo-50 text-indigo-700 text-xs font-bold transition'
-          : 'px-2.5 py-1 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-semibold text-slate-700 transition';
+          ? 'px-2.5 py-1 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 text-[11px] font-bold transition'
+          : 'px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-[11px] font-semibold text-slate-700 transition';
         hideEmptyBtn.textContent = active ? 'Active Only: ON' : 'Hide Empty';
       }
 
-      // Meeting View Spotlight & Presenter Controls
-      const meetingExtra = document.getElementById('meetingExtraControls');
-      if (meetingExtra) meetingExtra.classList.toggle('hidden', !ui.meetingMode);
-      const meetingBar = document.getElementById('meetingShortcutBar');
-      if (meetingBar) meetingBar.classList.toggle('hidden', !ui.meetingMode || isMobileViewport());
-      const spotlightSel = document.getElementById('meetingSpotlightSelect');
+      // Spotlight Project Selector & Saved Views
+      const spotlightSel = document.getElementById('spotlightSelect');
       if (spotlightSel) {
         if (ui.spotlightProjId && !db.projects.some(p => p.id === ui.spotlightProjId)) {
           ui.spotlightProjId = '';
@@ -345,10 +334,6 @@
         const cnt = getSavedViews().length;
         viewsBtn.textContent = cnt > 0 ? `Views (${cnt})` : 'Views';
       }
-      const fsBtn = document.getElementById('meetingFullscreenBtn');
-      if (fsBtn) {
-        fsBtn.textContent = document.fullscreenElement ? 'Exit Fullscreen' : 'Fullscreen';
-      }
 
       // Quick Search & Smart Health/Status Filter Chips
       const searchEl = document.getElementById('matrixSearchInput');
@@ -360,15 +345,15 @@
         if (!el) return;
         el.setAttribute('aria-pressed', String(Boolean(active)));
         el.className = active
-          ? `px-2.5 py-1 rounded-xl border text-xs font-bold transition ${activeCls}`
-          : 'px-2.5 py-1 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition';
+          ? `px-2 py-1 rounded-lg border text-[11px] font-bold transition ${activeCls}`
+          : 'px-2 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-semibold transition';
       };
       syncChip('chipFilterOver', ui.filterOverOnly, 'border-rose-300 bg-rose-50 text-rose-700');
       syncChip('chipFilterAtRisk', ui.filterAtRiskOnly, 'border-amber-300 bg-amber-50 text-amber-800');
       syncChip('chipFilterNotes', ui.filterHasNotesOnly, 'border-indigo-300 bg-indigo-50 text-indigo-700');
       const clearBtn = document.getElementById('btnClearMatrixFilters');
       if (clearBtn) {
-        const hasAnyFilter = Boolean((ui.matrixSearch || '').trim() || ui.filterOverOnly || ui.filterAtRiskOnly || ui.filterHasNotesOnly || ui.filterDept !== 'all' || ui.filterProj !== 'all');
+        const hasAnyFilter = Boolean((ui.matrixSearch || '').trim() || ui.filterOverOnly || ui.filterAtRiskOnly || ui.filterHasNotesOnly || ui.filterDept !== 'all' || ui.filterProj !== 'all' || ui.spotlightProjId);
         clearBtn.classList.toggle('hidden', !hasAnyFilter);
       }
 
@@ -381,12 +366,13 @@
       let activeSettingsCount = 0;
       if (ui.filterDept !== 'all') activeSettingsCount++;
       if (ui.filterProj !== 'all') activeSettingsCount++;
-      if (!ui.meetingMode && (ui.matrixSearch || '').trim()) activeSettingsCount++;
-      if (!ui.meetingMode && ui.filterOverOnly) activeSettingsCount++;
-      if (!ui.meetingMode && ui.filterAtRiskOnly) activeSettingsCount++;
-      if (!ui.meetingMode && ui.filterHasNotesOnly) activeSettingsCount++;
+      if (ui.spotlightProjId) activeSettingsCount++;
+      if ((ui.matrixSearch || '').trim()) activeSettingsCount++;
+      if (ui.filterOverOnly) activeSettingsCount++;
+      if (ui.filterAtRiskOnly) activeSettingsCount++;
+      if (ui.filterHasNotesOnly) activeSettingsCount++;
       if (ui.hideEmptyRows) activeSettingsCount++;
-      if (!ui.meetingMode && ui.manpowerUnit !== 'fte') activeSettingsCount++;
+      if (ui.manpowerUnit !== 'fte') activeSettingsCount++;
       if (drawerEl) drawerEl.classList.toggle('hidden', !drawerOpen);
       if (drawerBtn) {
         drawerBtn.setAttribute('aria-expanded', String(drawerOpen));

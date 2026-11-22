@@ -62,6 +62,7 @@
 
     function toggleHeaderWorkspaceMenu(event) {
       if (event) event.stopPropagation();
+      closeRoadmapActionsMenu();
       const pop = document.getElementById('headerWorkspacePopover');
       const btn = document.getElementById('headerMenuBtn');
       const chev = document.getElementById('headerMenuChevron');
@@ -81,8 +82,36 @@
       if (chev) chev.textContent = '▾';
     }
 
-    function setMeetingNoteSize(size) {
-      ui.meetingNoteSize = (size === 'sm' || size === 'lg') ? size : 'md';
+    function toggleRoadmapActionsMenu(event) {
+      if (event) event.stopPropagation();
+      closeHeaderWorkspaceMenu();
+      const pop = document.getElementById('roadmapActionsPopover');
+      const btn = document.getElementById('roadmapActionsBtn');
+      const chev = document.getElementById('roadmapActionsChevron');
+      if (!pop || !btn) return;
+      const willOpen = pop.classList.contains('hidden');
+      pop.classList.toggle('hidden', !willOpen);
+      btn.setAttribute('aria-expanded', String(willOpen));
+      if (chev) chev.textContent = willOpen ? '▴' : '▾';
+    }
+
+    function closeRoadmapActionsMenu() {
+      const pop = document.getElementById('roadmapActionsPopover');
+      const btn = document.getElementById('roadmapActionsBtn');
+      const chev = document.getElementById('roadmapActionsChevron');
+      if (pop) pop.classList.add('hidden');
+      if (btn) btn.setAttribute('aria-expanded', 'false');
+      if (chev) chev.textContent = '▾';
+    }
+
+    function setNoteSize(size) {
+      ui.noteSize = (size === 'sm' || size === 'lg') ? size : 'md';
+      persistUIPrefs();
+      renderAll();
+    }
+
+    function setCompactRowLabels(isCompact) {
+      ui.compactRowLabels = Boolean(isCompact);
       persistUIPrefs();
       renderAll();
     }
@@ -95,44 +124,49 @@
       showToast(ui.darkMode ? 'Dark Mode enabled' : 'Light Mode enabled', 'info');
     }
 
-    function applyMeetingMode() {
-      const active = Boolean(ui.meetingMode);
-      document.documentElement.classList.toggle('meeting-view', active);
-      const btn = document.getElementById('meetingModeToggleBtn');
-      const lbl = document.getElementById('meetingModeLabel');
+    function applyPresentMode() {
+      const active = Boolean(ui.presentMode);
+      document.documentElement.classList.toggle('present-mode', active);
+      const btn = document.getElementById('presentModeToggleBtn');
+      const lbl = document.getElementById('presentModeLabel');
       if (btn && lbl) {
         btn.setAttribute('aria-pressed', String(active));
         if (active) {
-          btn.className = 'hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-indigo-400 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition cursor-pointer';
-          lbl.textContent = 'Meeting View: ON';
+          btn.className = 'flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-indigo-400 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-xs transition cursor-pointer';
+          lbl.textContent = 'Exit Present';
         } else {
-          btn.className = 'hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition cursor-pointer';
-          lbl.textContent = 'Meeting View';
+          btn.className = 'flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition cursor-pointer';
+          lbl.textContent = 'Present';
         }
       }
     }
 
-    function toggleMeetingMode() {
-      ui.meetingMode = !ui.meetingMode;
-      const curH = Number(ui.meetingHorizon);
-      if (ui.meetingMode && (!Number.isInteger(curH) || curH < 1 || curH > 4)) {
-        ui.meetingHorizon = 2;
+    function togglePresentMode() {
+      ui.presentMode = !ui.presentMode;
+      closeRoadmapActionsMenu();
+      closeHeaderWorkspaceMenu();
+      if (ui.presentMode) {
+        ui.matrixSettingsOpen = false;
+        try {
+          if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+        } catch (e) {}
+      } else {
+        try {
+          if (document.fullscreenElement) document.exitFullscreen?.();
+        } catch (e) {}
       }
-      persistUIPrefs();
       renderAll();
-      const modeNames = { accent: 'accent-border', fill: 'color-filled', fte: '6-tier FTE', fte3: '3-level G/Y/R demand' };
       showToast(
-        ui.meetingMode
-          ? `Meeting View ON — clean ${ui.meetingHorizon}-period layout with ${modeNames[getActiveCellColorMode()]} cards`
-          : 'Standard View restored',
+        ui.presentMode
+          ? 'Present Mode ON — clean fullscreen view (press Esc or F to exit)'
+          : 'Present Mode OFF',
         'info'
       );
     }
 
     function setCellColorMode(mode) {
       const valid = (mode === 'fill' || mode === 'fte' || mode === 'fte3') ? mode : 'accent';
-      if (ui.meetingMode) ui.meetingCellColorMode = valid;
-      else ui.cellColorMode = valid;
+      ui.cellColorMode = valid;
       persistUIPrefs();
       renderAll();
       const labels = {
@@ -195,16 +229,12 @@
     }
     function setManpowerUnit(unit) { ui.manpowerUnit = unit; persistUIPrefs(); renderAll(); }
     function setHorizon(val) {
-      if (ui.meetingMode) {
-        ui.meetingHorizon = Math.max(1, Math.min(4, parseInt(val, 10) || 2));
-      } else {
-        ui.horizon = Math.max(1, Math.min(24, parseInt(val, 10) || 6));
-      }
+      ui.horizon = Math.max(1, Math.min(24, parseInt(val, 10) || 4));
       persistUIPrefs();
       renderAll();
     }
     function stepHorizon(delta) {
-      const options = ui.meetingMode ? [1, 2, 3, 4] : [1, 2, 4, 6, 8, 12, 16, 24];
+      const options = [1, 2, 3, 4, 6, 8, 12, 16, 24];
       const cur = getActiveHorizon();
       let idx = options.indexOf(cur);
       if (idx === -1) {
@@ -391,9 +421,13 @@
 
     function setupAccessibleTablistKeyboardNav() {
       document.addEventListener('fullscreenchange', () => {
-        const fsBtn = document.getElementById('meetingFullscreenBtn');
-        if (fsBtn) fsBtn.textContent = document.fullscreenElement ? 'Exit Fullscreen' : 'Fullscreen';
+        if (!document.fullscreenElement && ui.presentMode) {
+          ui.presentMode = false;
+          renderAll();
+          return;
+        }
         requestAnimationFrame(() => {
+          applyMatrixFullColumnWidths();
           syncMatrixFloatingHeaderMetrics();
           updateMatrixFloatingHeaderVisibility();
         });
@@ -472,10 +506,15 @@
           return;
         }
 
-        // Roadmap & Meeting View Presenter Keyboard Shortcuts
+        // Roadmap & Presenter Keyboard Shortcuts
         if (isTyping || anyDialogOpen || e.ctrlKey || e.metaKey || e.altKey) return;
 
         if (e.key === 'Escape') {
+          const actionsPop = document.getElementById('roadmapActionsPopover');
+          if (actionsPop && !actionsPop.classList.contains('hidden')) {
+            closeRoadmapActionsMenu();
+            return;
+          }
           const pop = document.getElementById('headerWorkspacePopover');
           if (pop && !pop.classList.contains('hidden')) {
             closeHeaderWorkspaceMenu();
@@ -484,8 +523,8 @@
           if (ui.activeTab === 'matrix') {
             if (ui.spotlightProjId) {
               setSpotlightProject('');
-            } else if (ui.meetingMode) {
-              toggleMeetingMode();
+            } else if (ui.presentMode) {
+              togglePresentMode();
             }
           }
           return;
@@ -501,7 +540,7 @@
           shiftStartPeriod(1);
           return;
         }
-        if (ui.meetingMode && ['1', '2', '3', '4'].includes(e.key)) {
+        if (['1', '2', '3', '4'].includes(e.key)) {
           e.preventDefault();
           setHorizon(Number(e.key));
           return;
@@ -510,23 +549,22 @@
         if (lower === 't') {
           e.preventDefault();
           jumpToToday();
-        } else if (lower === 'm') {
+        } else if (lower === 'f') {
           e.preventDefault();
-          toggleMeetingMode();
-        } else if (lower === 'f' && ui.meetingMode) {
-          e.preventDefault();
-          toggleFullscreenPresentation();
+          togglePresentMode();
         }
       });
 
       document.addEventListener('click', (e) => {
         const wrap = document.getElementById('headerMenuWrap');
         if (wrap && !wrap.contains(e.target)) closeHeaderWorkspaceMenu();
+        const actionsWrap = document.getElementById('roadmapActionsWrap');
+        if (actionsWrap && !actionsWrap.contains(e.target)) closeRoadmapActionsMenu();
       });
     }
 
     async function initApp() {
-      // 1. Load saved UI preferences (preserving all Mobile Hybrid + Mod 1–4 defaults on upgrade)
+      // 1. Load saved UI preferences (preserving defaults & migrating legacy Meeting View prefs)
       try {
         const savedUI = safeGetStorage(STORAGE_KEYS.UI_PREFS);
         if (savedUI) {
@@ -539,10 +577,11 @@
           };
           ui = { ...ui, ...parsedUI, pdfOptions: mergedPdfOpts };
           if (parsedUI.autoReloadFromFile === undefined) ui.autoReloadFromFile = true;
-          if (parsedUI.meetingHorizon === undefined) ui.meetingHorizon = 2;
-          if (parsedUI.meetingNoteSize === undefined) ui.meetingNoteSize = 'md';
-          if (parsedUI.cellColorMode === undefined) ui.cellColorMode = 'accent';
-          if (parsedUI.meetingCellColorMode === undefined) ui.meetingCellColorMode = 'fill';
+          if (parsedUI.noteSize === undefined) ui.noteSize = parsedUI.meetingNoteSize || 'md';
+          if (parsedUI.compactRowLabels === undefined) ui.compactRowLabels = true;
+          if (parsedUI.cellColorMode === undefined) ui.cellColorMode = 'fill';
+          if (parsedUI.horizon === undefined) ui.horizon = 4;
+          ui.presentMode = false;
           if (parsedUI.mobileLayoutMode === undefined) ui.mobileLayoutMode = 'cards';
           if (!Array.isArray(ui.mobileCollapsedIds)) ui.mobileCollapsedIds = [];
           if (parsedUI.compareTargetId === undefined) ui.compareTargetId = '__CURRENT__';
@@ -594,7 +633,7 @@
 
       // 7. Apply theme & render UI immediately
       applyDarkMode();
-      applyMeetingMode();
+      applyPresentMode();
       renderAll();
 
       // 8. Auto-reconnect to remembered sync file on desktop (stays clean & warning-free on mobile)

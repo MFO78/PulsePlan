@@ -7,18 +7,17 @@
       demoMode: false,
       whatIfMode: false,
       darkMode: false,
-      meetingMode: false,
-      meetingNoteSize: 'md',          // 'sm' (Normal) | 'md' (Large default) | 'lg' (XL Projector)
+      presentMode: false,
+      compactRowLabels: true,         // true = vertical 62px spine | false = detailed 216px column
+      noteSize: 'md',                 // 'sm' (Normal) | 'md' (Large default) | 'lg' (XL)
       matrixSettingsOpen: false,
       showArchivedProjects: false,
       showCellComments: true,
-      cellColorMode: 'accent',        // 'accent' | 'fill' | 'fte' | 'fte3'
-      meetingCellColorMode: 'fill',   // 'accent' | 'fill' | 'fte' | 'fte3'
+      cellColorMode: 'fill',          // 'accent' | 'fill' | 'fte' | 'fte3'
       axis: 'department',             // 'department' | 'project'
       timeUnit: 'month',              // 'month' | 'week'
       manpowerUnit: 'fte',            // 'fte' | 'days' | 'hours'
-      horizon: 6,
-      meetingHorizon: 2,
+      horizon: 4,
       startMonth: getCurrentMonthKey(),
       startWeek: getCurrentWeekKey(),
       filterDept: 'all',
@@ -80,11 +79,11 @@
     let syncWarningState = { type: null, fileName: '', dismissed: false };
 
     function getActiveHorizon() {
-      return ui.meetingMode ? (Number(ui.meetingHorizon) || 2) : (Number(ui.horizon) || 6);
+      return Math.max(1, Math.min(24, Number(ui.horizon) || 4));
     }
 
     function getActiveCellColorMode() {
-      const mode = ui.meetingMode ? ui.meetingCellColorMode : ui.cellColorMode;
+      const mode = ui.cellColorMode;
       return (mode === 'fill' || mode === 'fte' || mode === 'fte3') ? mode : 'accent';
     }
 
@@ -862,7 +861,7 @@
     }
 
     function persistUIPrefs() {
-      const toSave = { ...ui, whatIfMode: false };
+      const toSave = { ...ui, whatIfMode: false, presentMode: false };
       safeSetStorage(STORAGE_KEYS.UI_PREFS, JSON.stringify(toSave));
     }
 

@@ -34,63 +34,64 @@
       },
       {
         id: 'roadmap',
-        title: 'Roadmap Matrix (Standard View)',
+        title: 'Unified Roadmap Matrix',
         badge: 'Planning',
-        keywords: 'roadmap matrix department project weeks months fte color accent fill 3-level drag drop copy period range comments capacity override bottleneck search filter',
+        keywords: 'roadmap matrix department project weeks months fte color accent fill 3-level drag drop copy period range comments capacity override bottleneck search filter vertical detailed note size',
         bodyHtml: `
           <div class="space-y-3">
             <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
-              <div class="font-bold text-slate-900">Views, Sticky Headers &amp; Navigation</div>
+              <div class="font-bold text-slate-900">Clean Meeting-Ready Canvas with Full Editing Power</div>
               <ul class="space-y-1 text-slate-600 leading-relaxed">
-                <li>&bull; <strong>Grouping:</strong> Switch rows between <strong>By Department</strong> (capacity vs. load) and <strong>By Project</strong> (effort across teams, with automatic <strong>&#9888; Over</strong> bottleneck badges whenever an assigned department is overallocated).</li>
-                <li>&bull; <strong>Time Scale &amp; Horizon:</strong> Switch between <strong>Months</strong> and <strong>Weeks</strong>, display 1 to 24 periods, and step with <strong>&lsaquo; / Today / &rsaquo;</strong> or keyboard arrows.</li>
-                <li>&bull; <strong>Sticky Column Headers:</strong> While scrolling down, only the Week/Month column headers stay pinned at the top of the screen—keeping maximum space for roadmap cards.</li>
+                <li>&bull; <strong>Grouping &amp; Sorting:</strong> Switch rows between <strong>By Dept</strong> (capacity vs. load) and <strong>By Project</strong> (effort across teams, sorted naturally by project code, with automatic <strong>&#9888; Over</strong> bottleneck badges).</li>
+                <li>&bull; <strong>Time Scale &amp; Full-Column Horizon:</strong> Switch between <strong>Months</strong> and <strong>Weeks</strong> and choose <strong>1 to 24</strong> periods (1–4 periods fill the viewport equally; wider horizons snap strictly to full columns with zero half-columns). Step with <strong>&lsaquo; / Today / &rsaquo;</strong>, sticky column header arrows, or <code class="px-1 rounded bg-white font-mono">&larr;/&rarr;</code> and <code class="px-1 rounded bg-white font-mono">1–4</code>.</li>
+                <li>&bull; <strong>Row Labels &amp; Note Size:</strong> Inside <strong>Filters &amp; Display</strong>, toggle <strong>Row Labels</strong> between <strong>Vertical</strong> (compact 62 px spine maximizing card space) and <strong>Detailed</strong> (216 px with base FTE, budgets, and row reordering), and adjust <strong>Notes</strong> size (<strong>Norm / Large / XL</strong>).</li>
+                <li>&bull; <strong>Sticky Column Headers:</strong> While scrolling down, only the Week/Month column headers (with date ranges and <strong>&lsaquo; / Today / &rsaquo;</strong> controls) stay pinned at the top of the screen.</li>
               </ul>
             </div>
             <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
               <div class="font-bold text-slate-900">Fast Editing, Drag &amp; Drop, and Bulk Copy</div>
               <ul class="space-y-1 text-slate-600 leading-relaxed">
-                <li>&bull; <strong>Quick Actions on Hover:</strong> Hover any allocation card for instant <strong>&minus; / +</strong> stepping and <strong>&rarr;</strong> to copy into the next period.</li>
-                <li>&bull; <strong>Multi-Period Range Fill:</strong> Click any card or <strong>+ Add</strong> to open the Allocation Modal. Set either a <strong>Repeat count</strong> (1–24) or pick a <strong>Through End Week/Month</strong> to fill an entire span in one click.</li>
+                <li>&bull; <strong>Quick Actions on Hover:</strong> Hover any allocation card for instant <strong>&minus; / +</strong> stepping, <strong>&rarr;</strong> to copy into the next period, and <strong>&#9678;</strong> to spotlight that project. Hover any cell for the subtle <strong>+ Add</strong> button.</li>
+                <li>&bull; <strong>Multi-Period Range Fill:</strong> Click any card or <strong>+ Allocate</strong> to open the Allocation Modal. Set either a <strong>Repeat count</strong> (1–24) or pick a <strong>Through End Week/Month</strong> to fill an entire span in one click.</li>
                 <li>&bull; <strong>Copy Entire Period:</strong> Hover any column header and click <strong>Copy &rarr;</strong> to duplicate all visible allocations from that week/month into the next period.</li>
-                <li>&bull; <strong>Drag &amp; Drop:</strong> Drag allocation cards or milestones between cells (toggle <strong>Drag: Move / Copy</strong> or hold <code class="px-1 rounded bg-white font-mono">Alt</code> to copy). Drag row handles (&#8942;&#8942;) or click &#9650;/&#9660; to reorder rows.</li>
+                <li>&bull; <strong>Drag &amp; Drop:</strong> Drag allocation cards or milestones between cells (toggle <strong>Drag: Move / Copy</strong> or hold <code class="px-1 rounded bg-white font-mono">Alt</code> to copy). In <strong>Detailed</strong> row label mode, drag row handles (&#8942;&#8942;) or click &#9650;/&#9660; to reorder departments.</li>
                 <li>&bull; <strong>Variable Capacity &amp; Comments:</strong> Click the <code class="px-1 rounded bg-white font-mono">alloc / cap</code> readout in any cell to set period-specific capacity overrides (tagged <span class="px-1 rounded bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold">Var</span>). Click empty cell space or the speech-bubble icon to edit inline cell comments.</li>
               </ul>
             </div>
             <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
               <div class="font-bold text-slate-900">4 Card Colour Schemes &amp; Smart Filters</div>
               <ul class="space-y-1 text-slate-600 leading-relaxed">
-                <li>&bull; <strong>Accent:</strong> Clean white cards with left colour stripe. <strong>Fill:</strong> Solid high-contrast entity colour cards. <strong>By FTE:</strong> 6-tier heat scale (% of dept capacity). <strong>3-Level:</strong> Green / Yellow / Red demand tiers with configurable thresholds (<strong>&#9881; Tune</strong>).</li>
-                <li>&bull; <strong>Filters &amp; Display Panel:</strong> Click <strong>Filters &amp; Display</strong> in the roadmap bar to expand Search, Department/Project filters, Quick Filter chips (<strong>Overallocated</strong>, <strong>At Risk</strong>, <strong>Has Notes</strong>), Units, Start Date, Comments, Hide Empty, Drag Mode, and Saved Views—keeping the primary bar compact while active filter counts stay visible on the badge.</li>
+                <li>&bull; <strong>Accent:</strong> Clean white cards with left colour stripe. <strong>Fill:</strong> Solid high-contrast entity colour cards (default). <strong>By FTE:</strong> 6-tier heat scale (% of dept capacity). <strong>3-Level:</strong> Green / Yellow / Red demand tiers with configurable thresholds (<strong>&#9881; Tune</strong>).</li>
+                <li>&bull; <strong>Filters &amp; Display Panel:</strong> Click <strong>Filters &amp; Display</strong> in the roadmap bar to expand Search, <strong>Spotlight</strong>, Department/Project filters, Quick Filter chips (<strong>Overallocated</strong>, <strong>At Risk</strong>, <strong>Has Notes</strong>), Row Labels, Note Size, Units, Start Date, Comments, Hide Empty, Drag Mode, and Saved Views.</li>
               </ul>
             </div>
           </div>`,
       },
       {
-        id: 'meeting',
-        title: 'Meeting / Projector View & Spotlight',
+        id: 'presenting',
+        title: 'Present Mode, Spotlight & Print Slide',
         badge: 'Presenting',
-        keywords: 'meeting view projector spotlight vertical column arrows dates fullscreen hide empty 1 2 3 4 periods',
+        keywords: 'present mode projector spotlight fullscreen hide empty print slide pdf actions 1 2 3 4 periods',
         bodyHtml: `
           <p class="text-slate-600 leading-relaxed">
-            Click <strong>Meeting View</strong> in the header (or press <code class="px-1 rounded bg-slate-100 font-mono">M</code>) for a high-contrast, clutter-free layout designed for steering committees and screen sharing.
+            Because the unified Roadmap is already meeting-ready, presenting to a steering committee takes a single click—no separate mode to reconfigure.
           </p>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-              <div class="font-bold text-slate-900">1–4 Equal-Width Columns &amp; Dates</div>
-              <p class="text-slate-600 leading-relaxed">Choose <strong>1, 2, 3, or 4</strong> weeks or months. All period columns render at strictly equal widths with full date ranges right under each week/month title.</p>
-            </div>
-            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-              <div class="font-bold text-slate-900">Vertical First Column &amp; Sticky Arrows</div>
-              <p class="text-slate-600 leading-relaxed">The row-name column compacts to a 62 px vertical spine to maximize card space. Use the <strong>&lsaquo;</strong> and <strong>&rsaquo;</strong> arrows (plus the <strong>Today</strong> pill) right inside the sticky column header while scrolled down.</p>
+              <div class="font-bold text-slate-900">Present Mode (F)</div>
+              <p class="text-slate-600 leading-relaxed">Click <strong>Present</strong> in the roadmap toolbar (or press <code class="px-1 rounded bg-white font-mono">F</code>) to enter distraction-free fullscreen. Editing chrome (+ Allocate, Undo/Redo, hover steppers, cell bars, and totals footer) hides automatically while keeping your exact horizon, filters, and card colours. Press <code class="px-1 rounded bg-white font-mono">Esc</code> or <code class="px-1 rounded bg-white font-mono">F</code> to exit.</p>
             </div>
             <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
               <div class="font-bold text-slate-900">Project Spotlight (&#9678;)</div>
-              <p class="text-slate-600 leading-relaxed">Pick any project from the <strong>Spotlight</strong> dropdown in Meeting View, click the <strong>&#9678;</strong> button on any card (visible in Meeting View and on hover in Standard View), or click a Project row spine. Matching cards highlight with a crisp ring while all other items dim—press <code class="px-1 rounded bg-white font-mono">Esc</code> to clear.</p>
+              <p class="text-slate-600 leading-relaxed">Pick any project from the <strong>Spotlight</strong> dropdown in <strong>Filters &amp; Display</strong>, hover any card and click <strong>&#9678;</strong>, or click a vertical Project row spine. Matching cards highlight with a crisp ring while other items dim—press <code class="px-1 rounded bg-white font-mono">Esc</code> to clear.</p>
             </div>
             <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-              <div class="font-bold text-slate-900">Hide Empty, Fullscreen &amp; Print Slide</div>
-              <p class="text-slate-600 leading-relaxed">Toggle <strong>Hide Empty</strong> to omit inactive rows in the visible window, click <strong>Fullscreen</strong> (or press <code class="px-1 rounded bg-white font-mono">F</code>) for projectors, or click <strong>Print Slide</strong> to export the clean 1–4 period table directly to a landscape slide/PDF.</p>
+              <div class="font-bold text-slate-900">Instant Horizon Zoom (1–4)</div>
+              <p class="text-slate-600 leading-relaxed">Press <code class="px-1 rounded bg-white font-mono">1</code>, <code class="px-1 rounded bg-white font-mono">2</code>, <code class="px-1 rounded bg-white font-mono">3</code>, or <code class="px-1 rounded bg-white font-mono">4</code> anytime on the Roadmap tab to zoom into 1–4 equal-width columns with full date ranges.</p>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+              <div class="font-bold text-slate-900">Actions Menu: Print Slide &amp; Vector PDF</div>
+              <p class="text-slate-600 leading-relaxed">Open <strong>Actions &#9662;</strong> in the roadmap bar to add a Milestone, save a Snapshot, export a <strong>Print Slide (Light)</strong> (always crisp light mode, zero cropped columns), or generate a multi-page <strong>Export Vector PDF</strong>.</p>
             </div>
           </div>`,
       },
@@ -209,10 +210,9 @@
                 <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">Ctrl+Y / Cmd+Shift+Z</td><td class="px-3 py-2">Redo last undone edit</td><td class="px-3 py-2 text-slate-500">Global</td></tr>
                 <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">&larr; / &rarr;</td><td class="px-3 py-2">Step timeline back / forward by 1 week or month</td><td class="px-3 py-2 text-slate-500">Roadmap Tab</td></tr>
                 <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">T</td><td class="px-3 py-2">Jump timeline to current week / month (Today)</td><td class="px-3 py-2 text-slate-500">Roadmap Tab</td></tr>
-                <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">M</td><td class="px-3 py-2">Toggle Meeting / Projector View</td><td class="px-3 py-2 text-slate-500">Roadmap Tab</td></tr>
-                <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">1 / 2 / 3 / 4</td><td class="px-3 py-2">Show 1, 2, 3, or 4 weeks/months</td><td class="px-3 py-2 text-slate-500">Meeting View</td></tr>
-                <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">F</td><td class="px-3 py-2">Toggle browser Fullscreen presentation</td><td class="px-3 py-2 text-slate-500">Meeting View</td></tr>
-                <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">Esc</td><td class="px-3 py-2">Close modal &rarr; Clear Spotlight &rarr; Exit Meeting View</td><td class="px-3 py-2 text-slate-500">Global</td></tr>
+                <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">1 / 2 / 3 / 4</td><td class="px-3 py-2">Show 1, 2, 3, or 4 equal-width weeks/months</td><td class="px-3 py-2 text-slate-500">Roadmap Tab</td></tr>
+                <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">F</td><td class="px-3 py-2">Toggle distraction-free Present (Fullscreen) mode</td><td class="px-3 py-2 text-slate-500">Roadmap Tab</td></tr>
+                <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">Esc</td><td class="px-3 py-2">Close menus/modal &rarr; Clear Spotlight &rarr; Exit Present mode</td><td class="px-3 py-2 text-slate-500">Global</td></tr>
                 <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">Alt + Drag</td><td class="px-3 py-2">Copy an allocation card instead of moving it</td><td class="px-3 py-2 text-slate-500">Roadmap Matrix</td></tr>
                 <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">?</td><td class="px-3 py-2">Open this User Manual</td><td class="px-3 py-2 text-slate-500">Global</td></tr>
               </tbody>

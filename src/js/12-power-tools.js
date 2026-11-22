@@ -406,22 +406,26 @@
     function openSavedViewsModal() {
       const views = getSavedViews();
       const rowsHtml = views.length === 0
-        ? `<div class="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center text-slate-500">No saved views yet. Save your current filters, horizon, and color mode below for 1-click recall.</div>`
-        : views.map(v => `
+        ? `<div class="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center text-slate-500">No saved views yet. Save your current filters, horizon, row labels, and color mode below for 1-click recall.</div>`
+        : views.map(v => {
+            const hVal = v.state.horizon || v.state.meetingHorizon || 4;
+            const uVal = v.state.timeUnit === 'week' ? (hVal === 1 ? 'Wk' : 'Wks') : (hVal === 1 ? 'Mo' : 'Mos');
+            const cVal = v.state.cellColorMode || v.state.meetingCellColorMode || 'fill';
+            const rLbl = v.state.compactRowLabels === false ? 'Detailed' : 'Vertical';
+            return `
             <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2">
               <div class="min-w-0">
                 <div class="font-bold text-slate-900 truncate">${escapeHtml(v.name)}</div>
                 <div class="text-[10px] text-slate-500 truncate">
-                  ${v.state.meetingMode ? `Meeting (${v.state.meetingHorizon} ${v.state.timeUnit}s)` : `${v.state.axis === 'project' ? 'By Project' : 'By Dept'} • ${v.state.horizon} ${v.state.timeUnit}s`}
-                  &bull; ${escapeHtml(v.state.cellColorMode || 'accent')}
-                  ${v.state.hideEmptyRows ? ' • Active Only' : ''}
+                  ${v.state.axis === 'project' ? 'By Project' : 'By Dept'} &bull; ${hVal} ${uVal} &bull; ${escapeHtml(cVal)} &bull; ${rLbl}${v.state.hideEmptyRows ? ' • Active Only' : ''}
                 </div>
               </div>
               <div class="flex items-center gap-1.5 shrink-0">
                 <button type="button" onclick="applySavedViewPreset('${v.id}')" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] transition">Load</button>
                 <button type="button" onclick="deleteSavedViewPreset('${v.id}')" class="px-2 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 font-semibold text-[11px] transition">Delete</button>
               </div>
-            </div>`).join('');
+            </div>`;
+          }).join('');
 
       showModal(`
         <div class="p-5 space-y-4 text-xs">
@@ -429,7 +433,7 @@
           <div class="flex items-start justify-between gap-2">
             <div>
               <h3 id="modalTitle" class="text-base font-bold text-slate-900">Saved Views &amp; Presets</h3>
-              <p class="text-[11px] text-slate-500 mt-0.5">Bookmark filter combinations, horizons, and Meeting View setups for instant switching.</p>
+              <p class="text-[11px] text-slate-500 mt-0.5">Bookmark filter combinations, horizons, row label styles, and card colours for instant switching.</p>
             </div>
             <button type="button" aria-label="Close dialog" onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none">&times;</button>
           </div>
@@ -459,10 +463,9 @@
           timeUnit: ui.timeUnit,
           manpowerUnit: ui.manpowerUnit,
           horizon: ui.horizon,
-          meetingMode: ui.meetingMode,
-          meetingHorizon: ui.meetingHorizon,
           cellColorMode: ui.cellColorMode,
-          meetingCellColorMode: ui.meetingCellColorMode,
+          compactRowLabels: ui.compactRowLabels,
+          noteSize: ui.noteSize,
           filterDept: ui.filterDept,
           filterProj: ui.filterProj,
           hideEmptyRows: ui.hideEmptyRows,
@@ -482,7 +485,13 @@
     function applySavedViewPreset(id) {
       const view = getSavedViews().find(v => v.id === id);
       if (!view || !view.state) return;
-      Object.assign(ui, view.state, { activeTab: 'matrix' });
+      const st = { ...view.state };
+      if (st.meetingMode && st.meetingHorizon && st.horizon === undefined) st.horizon = st.meetingHorizon;
+      if (st.meetingMode && st.meetingCellColorMode && st.cellColorMode === undefined) st.cellColorMode = st.meetingCellColorMode;
+      delete st.meetingMode;
+      delete st.meetingHorizon;
+      delete st.meetingCellColorMode;
+      Object.assign(ui, st, { activeTab: 'matrix' });
       persistUIPrefs();
       closeModal();
       renderAll();
@@ -496,7 +505,7 @@
       renderAll();
     }
 
-    /* ---------- 14E. Meeting Slide Print Export (Always Light Mode, Full-Width Fit) ---------- */
+    /* ---------- 14E. Print Slide Export (Always Light Mode, Full-Width Fit) ---------- */
 
     function printMeetingSlide() {
       const root = document.documentElement;
@@ -509,7 +518,7 @@
       if (table) {
         table.style.width = '100%';
         const stickyCol = table.querySelector('colgroup col[data-sticky-col]');
-        if (stickyCol) stickyCol.style.width = '56px';
+        if (stickyCol) stickyCol.style.width = ui.compactRowLabels ? '56px' : '150px';
         table.querySelectorAll('colgroup col[data-period-col]').forEach(col => {
           col.style.width = 'auto';
         });

@@ -575,13 +575,13 @@
     let _lastMatrixAxis = null;
     let _syncingMatrixScroll = false;
 
-    function computeFullColumnGeometry(wrapperWidth, periodCount, isMeeting, isCompactGrid) {
+    function computeFullColumnGeometry(wrapperWidth, periodCount, compactRowLabels, isCompactGrid) {
       const count = Math.max(1, parseInt(periodCount, 10) || 1);
-      const stickyW = isMeeting ? 62 : (isCompactGrid ? 124 : 216);
-      const safeWrapperW = Math.max(stickyW + 140, Math.floor(Number(wrapperWidth) || 0) || (isMeeting ? 1000 : 1200));
+      const stickyW = (compactRowLabels && !isCompactGrid) ? 62 : (isCompactGrid ? 124 : 216);
+      const safeWrapperW = Math.max(stickyW + 140, Math.floor(Number(wrapperWidth) || 0) || 1200);
       const availW = safeWrapperW - stickyW;
-      if (isMeeting) {
-        // Meeting View (1-4 periods): always fit all selected periods equally inside the viewport
+      if (count <= 4 && !isCompactGrid) {
+        // 1-4 periods on desktop: fit all selected periods equally inside the viewport
         const colW = availW / count;
         return { stickyW, colW, visibleCols: count, totalTableW: stickyW + colW * count };
       }
@@ -598,12 +598,12 @@
       const table = wrapper.querySelector('table[data-period-count]');
       if (!table) return;
       const periodCount = parseInt(table.dataset.periodCount, 10) || 1;
-      const isMeeting = Boolean(ui.meetingMode);
       const isCompactGrid = isMobileViewport();
+      const compactRowLabels = Boolean(ui.compactRowLabels) && !isCompactGrid;
       const wrapperW = wrapper.clientWidth || wrapper.getBoundingClientRect().width;
       if (!wrapperW || wrapperW < 100) return;
 
-      const geo = computeFullColumnGeometry(wrapperW, periodCount, isMeeting, isCompactGrid);
+      const geo = computeFullColumnGeometry(wrapperW, periodCount, compactRowLabels, isCompactGrid);
       table.style.width = `${geo.totalTableW}px`;
       wrapper.style.scrollPaddingLeft = `${geo.stickyW}px`;
 
@@ -757,7 +757,7 @@
       const periods = getVisiblePeriods();
       const warnT = db.settings.warnThreshold || 85;
       const overT = db.settings.overThreshold || 100;
-      const isMeeting = Boolean(ui.meetingMode);
+      const isPresent = Boolean(ui.presentMode);
       const colorMode = getActiveCellColorMode();
       const useColorFill = colorMode === 'fill' || colorMode === 'fte' || colorMode === 'fte3';
       const showComments = Boolean(ui.showCellComments);
@@ -767,13 +767,13 @@
       const visibleProjs = getSortedProjects(db).filter(p => {
         if (p.archived && ui.filterProj !== p.id) return false;
         if (ui.filterProj !== 'all' && p.id !== ui.filterProj) return false;
-        if (!isMeeting && ui.filterAtRiskOnly && p.status !== 'At Risk') return false;
+        if (ui.filterAtRiskOnly && p.status !== 'At Risk') return false;
         return true;
       });
       const spotlightId = ui.spotlightProjId || '';
 
       const matchesSearchForPair = (dept, proj, pk) => {
-        if (!searchQ || isMeeting) return true;
+        if (!searchQ) return true;
         if (dept && (`${dept.name} ${dept.code} ${dept.manager || ''}`).toLowerCase().includes(searchQ)) return true;
         if (proj && (`${proj.name} ${proj.code} ${proj.owner || ''} ${proj.status || ''}`).toLowerCase().includes(searchQ)) return true;
         if (dept && proj && pk) {
@@ -815,7 +815,7 @@
           hiddenEmptyCount++;
           return false;
         }
-        if (!isMeeting && ui.filterOverOnly) {
+        if (ui.filterOverOnly) {
           if (ui.axis === 'department') {
             const hasOver = periods.some(pk => {
               const c = getDeptCapacityForPeriod(row.id, pk, ui.timeUnit, db).avgFte;
@@ -836,11 +836,11 @@
             if (!hasBottleneck) return false;
           }
         }
-        if (!isMeeting && ui.filterHasNotesOnly) {
+        if (ui.filterHasNotesOnly) {
           const hasNotes = periods.some(pk => getCellTotalCommentCount(row.id, pk, ui.axis, ui.timeUnit, db) > 0);
           if (!hasNotes) return false;
         }
-        if (!isMeeting && searchQ) {
+        if (searchQ) {
           if (ui.axis === 'department') {
             if (matchesSearchForPair(row, null, null)) return true;
             return periods.some(pk => visibleProjs.some(p => {
@@ -882,7 +882,7 @@
               <button type="button" onclick="toggleHideEmptyRows()" class="px-2 py-0.5 rounded-lg bg-white border border-indigo-200 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold transition">Show All</button>
             </span>`);
         }
-        if (!isMeeting && (searchQ || ui.filterOverOnly || ui.filterAtRiskOnly || ui.filterHasNotesOnly)) {
+        if (searchQ || ui.filterOverOnly || ui.filterAtRiskOnly || ui.filterHasNotesOnly) {
           statusParts.push(`
             <span class="inline-flex items-center gap-1.5 font-semibold">
               Showing ${rows.length} of ${rawRows.length} rows
@@ -905,7 +905,7 @@
               <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
             </div>
             <h2 class="text-base font-bold text-slate-900">Your Live Roadmap is Ready</h2>
-            <p class="text-xs text-slate-500 max-w-md mx-auto">Add at least one <strong>Department</strong> and one <strong>Project</strong> in Data &amp; Setup, link an existing shared database file, or toggle <strong>Demo Mode</strong> in the top right to explore sample data.</p>
+            <p class="text-xs text-slate-500 max-w-md mx-auto">Add at least one <strong>Department</strong> and one <strong>Project</strong> in Data &amp; Setup, link an existing shared database file, or toggle <strong>Demo Mode</strong> in the Workspace menu to explore sample data.</p>
             <div class="flex flex-wrap items-center justify-center gap-2 pt-2">
               <button type="button" onclick="switchTab('data')" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition">Open Data &amp; Setup</button>
               <button type="button" onclick="openSharedDatabaseFile()" class="px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition">Link Shared Sync File</button>
@@ -917,53 +917,35 @@
       }
 
       const isCompactGrid = isMobileViewport();
-      const s = isMeeting ? {
-        thCol: periods.length <= 2 ? 'px-5 py-3.5' : 'px-3.5 py-3',
-        thTitle: periods.length <= 2 ? 'text-base sm:text-lg font-extrabold' : 'text-sm sm:text-base font-extrabold',
-        thSub: 'text-xs',
-        thSticky: 'px-1.5 py-3 text-[10px] text-center',
-        tdSticky: 'px-1.5 py-3',
-        rowName: 'text-sm font-extrabold',
-        rowMeta: 'text-xs',
-        rowBadge: 'px-1.5 py-0.5 text-[10px] font-extrabold',
-        cellPad: periods.length <= 2 ? 'p-3.5' : 'p-2.5',
-        capText: 'text-xs font-bold',
-        pctText: periods.length <= 2 ? 'text-sm font-extrabold' : 'text-xs font-extrabold',
-        barH: 'h-2 mb-2.5',
-        pillBox: periods.length <= 2 ? 'px-3 py-2.5 text-sm' : 'px-2.5 py-2 text-xs',
-        pillCode: 'text-xs',
-        pillVal: periods.length <= 2 ? 'text-sm font-extrabold' : 'text-xs font-extrabold',
-        pillSpace: periods.length <= 2 ? 'space-y-2.5' : 'space-y-1.5',
-        pillBorderW: '5px',
-        commentBox: ui.meetingNoteSize === 'lg'
-          ? 'mt-2 px-3.5 py-2.5 text-base font-medium leading-relaxed break-words'
-          : (ui.meetingNoteSize === 'sm'
-              ? 'mt-1.5 px-2.5 py-1.5 text-xs leading-relaxed break-words comment-clamp-5'
-              : 'mt-2 px-3 py-2 text-sm leading-relaxed break-words'),
-        msBox: 'px-3 py-2 text-xs font-bold',
-        footCell: 'px-5 py-3.5 text-sm',
-        footSub: 'text-xs',
-      } : {
-        thCol: isCompactGrid ? 'px-2.5 py-2' : 'px-3 py-2.5',
-        thTitle: 'text-xs font-bold',
-        thSub: 'text-[10px]',
-        thSticky: isCompactGrid ? 'px-2.5 py-2 text-[11px]' : 'px-3.5 py-2.5 text-xs',
-        tdSticky: isCompactGrid ? 'px-2.5 py-2.5' : 'px-3.5 py-3',
+      const isCompactRow = Boolean(ui.compactRowLabels) && !isCompactGrid;
+      const isWideCols = periods.length <= 2 && !isCompactGrid;
+      const isFocusedCols = periods.length <= 4 && !isCompactGrid;
+      const noteSize = (ui.noteSize === 'sm' || ui.noteSize === 'lg') ? ui.noteSize : 'md';
+      const s = {
+        thCol: isWideCols ? 'px-4 py-3' : (isFocusedCols ? 'px-3 py-2.5' : (isCompactGrid ? 'px-2.5 py-2' : 'px-2.5 py-2.5')),
+        thTitle: isWideCols ? 'text-base sm:text-lg font-extrabold' : (isFocusedCols ? 'text-sm font-extrabold' : 'text-xs font-bold'),
+        thSub: isFocusedCols ? 'text-[11px]' : 'text-[10px]',
+        thSticky: isCompactRow ? 'px-1.5 py-3 text-[10px] text-center' : (isCompactGrid ? 'px-2.5 py-2 text-[11px]' : 'px-3.5 py-2.5 text-xs'),
+        tdSticky: isCompactRow ? 'px-1.5 py-3' : (isCompactGrid ? 'px-2.5 py-2.5' : 'px-3.5 py-3'),
         rowName: 'text-xs font-bold',
         rowMeta: 'text-[10px]',
-        rowBadge: 'px-1.5 py-0.5 text-[10px] font-bold',
-        cellPad: 'p-2',
-        capText: 'text-[10px] font-semibold',
-        pctText: 'text-[10px] font-bold',
+        rowBadge: 'px-1.5 py-0.5 text-[10px] font-extrabold',
+        cellPad: isWideCols ? 'p-3' : (isFocusedCols ? 'p-2.5' : 'p-2'),
+        capText: isFocusedCols ? 'text-[11px] font-semibold' : 'text-[10px] font-semibold',
+        pctText: isWideCols ? 'text-xs font-extrabold' : 'text-[11px] font-extrabold',
         barH: 'h-1.5 mb-2',
-        pillBox: 'px-2 py-1 text-[11px]',
-        pillCode: 'text-[10px]',
-        pillVal: 'text-[11px] font-bold',
-        pillSpace: 'space-y-1',
-        pillBorderW: '4px',
-        commentBox: 'mt-1 px-1.5 py-1 text-[10px] leading-snug comment-clamp-3',
-        msBox: 'px-2 py-0.5 text-[10px] font-semibold',
-        footCell: 'px-3 py-2.5 text-xs',
+        pillBox: isWideCols ? 'px-3 py-2 text-sm' : (isFocusedCols ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'),
+        pillCode: isFocusedCols ? 'text-[11px]' : 'text-[10px]',
+        pillVal: isWideCols ? 'text-sm font-extrabold' : (isFocusedCols ? 'text-xs font-extrabold' : 'text-[11px] font-bold'),
+        pillSpace: isWideCols ? 'space-y-2' : (isFocusedCols ? 'space-y-1.5' : 'space-y-1'),
+        pillBorderW: isFocusedCols ? '5px' : '4px',
+        commentBox: noteSize === 'lg'
+          ? 'mt-2 px-3 py-2 text-base font-medium leading-relaxed break-words'
+          : (noteSize === 'sm'
+              ? 'mt-1 px-2 py-1 text-xs leading-snug break-words comment-clamp-3'
+              : 'mt-1.5 px-2.5 py-1.5 text-sm leading-relaxed break-words'),
+        msBox: isFocusedCols ? 'px-2.5 py-1.5 text-xs font-bold' : 'px-2 py-1 text-[10px] font-semibold',
+        footCell: isFocusedCols ? 'px-3.5 py-2.5 text-xs' : 'px-3 py-2 text-xs',
         footSub: 'text-[10px]',
       };
 
@@ -995,36 +977,36 @@
       const colHeaders = periods.map((pk, idx) => {
         const h = formatPeriodHeader(pk, ui.timeUnit);
         const isCurrent = pk === curPeriodKey;
-        const prevArrowHtml = isMeeting && idx === 0
+        const prevArrowHtml = !isCompactGrid && idx === 0
           ? `<button type="button" onclick="shiftStartPeriod(-1)" title="Previous ${unitNoun} (Left Arrow)" aria-label="Previous ${unitNoun}"
-               class="meeting-nav-arrow w-8 h-8 rounded-lg font-extrabold text-lg leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">&lsaquo;</button>`
+               class="meeting-nav-arrow w-7 h-7 rounded-lg font-extrabold text-base leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">&lsaquo;</button>`
           : '';
-        const meetingTodayHtml = isMeeting && idx === periods.length - 1 && !hasCurrentPeriodVisible
+        const todayPillHtml = !isCompactGrid && idx === periods.length - 1 && !hasCurrentPeriodVisible
           ? `<button type="button" onclick="jumpToToday()" title="Jump to current ${unitNoun} (T)"
-               class="meeting-nav-arrow px-2 h-8 rounded-lg text-[11px] font-bold leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">Today</button>`
+               class="meeting-nav-arrow px-2 h-7 rounded-lg text-[10px] font-bold leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">Today</button>`
           : '';
-        const nextArrowHtml = isMeeting && idx === periods.length - 1
+        const nextArrowHtml = !isCompactGrid && idx === periods.length - 1
           ? `<button type="button" onclick="shiftStartPeriod(1)" title="Next ${unitNoun} (Right Arrow)" aria-label="Next ${unitNoun}"
-               class="meeting-nav-arrow w-8 h-8 rounded-lg font-extrabold text-lg leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">&rsaquo;</button>`
+               class="meeting-nav-arrow w-7 h-7 rounded-lg font-extrabold text-base leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">&rsaquo;</button>`
           : '';
-        const copyPeriodBtnHtml = !isMeeting && !isCompactGrid
+        const copyPeriodBtnHtml = !isPresent && !isCompactGrid
           ? `<button type="button" onclick="copyPeriodToNext('${pk}')" title="Copy all visible allocations from ${escapeHtml(h.title)} into the next ${unitNoun}"
                class="opacity-0 group-hover/col:opacity-100 px-1.5 py-0.5 rounded-md bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-700 text-slate-500 text-[10px] font-semibold transition shrink-0 cursor-pointer">Copy &rarr;</button>`
           : '';
         return `
           <th scope="col" class="matrix-snap-col group/col ${s.thCol} text-left border-b border-l border-slate-200 ${isCurrent ? 'matrix-th-now' : 'bg-slate-50'}">
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2 min-w-0">
+            <div class="flex items-center justify-between gap-1.5">
+              <div class="flex items-center gap-1.5 min-w-0">
                 ${prevArrowHtml}
                 <div class="min-w-0">
                   <div class="${s.thTitle} ${isCurrent ? 'text-indigo-700' : 'text-slate-800'} truncate leading-tight">${escapeHtml(h.title)}</div>
-                  <div class="${s.thSub} text-slate-500 font-medium mt-0.5 truncate">${escapeHtml(isMeeting ? h.dateRange : h.sub)}</div>
+                  <div class="${s.thSub} text-slate-500 font-medium mt-0.5 truncate">${escapeHtml(h.dateRange)}</div>
                 </div>
               </div>
-              <div class="flex items-center gap-1.5 shrink-0">
+              <div class="flex items-center gap-1 shrink-0">
                 ${copyPeriodBtnHtml}
                 ${isCurrent ? '<span class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-indigo-600 text-white">Now</span>' : ''}
-                ${meetingTodayHtml}
+                ${todayPillHtml}
                 ${nextArrowHtml}
               </div>
             </div>
@@ -1045,8 +1027,8 @@
       const bodyRows = rows.map((row, rowIdx) => {
         const isFirstRow = rowIdx === 0;
         const isLastRow = rowIdx === rows.length - 1;
-        const reorderControlsHtml = ui.axis === 'department' && rows.length > 1 && !isCompactGrid
-          ? `<div class="flex flex-col items-center justify-center shrink-0 -ml-1 mr-0.5 text-slate-400 ${isMeeting ? 'opacity-0 group-hover/row:opacity-100 transition' : ''}">
+        const reorderControlsHtml = ui.axis === 'department' && !isCompactRow && !isPresent && rows.length > 1 && !isCompactGrid
+          ? `<div class="flex flex-col items-center justify-center shrink-0 -ml-1 mr-0.5 text-slate-400">
                <button type="button" draggable="false" aria-label="Move ${escapeHtml(row.name)} up" onclick="event.stopPropagation(); moveRowOrder('${ui.axis}', '${row.id}', -1)"
                  ${isFirstRow ? 'disabled' : ''} title="Move row up"
                  class="leading-none px-1 py-0.5 rounded hover:bg-slate-200/80 hover:text-indigo-700 disabled:opacity-25 disabled:pointer-events-none text-[9px] transition">&#9650;</button>
@@ -1075,9 +1057,9 @@
             const allocFte = getDeptTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
             const pct = capFte > 0 ? Math.round((allocFte / capFte) * 100) : (allocFte > 0 ? 999 : 0);
 
-            const cellBg = pct > overT ? (isMeeting ? 'bg-rose-50' : 'bg-rose-50/50') : pct >= warnT ? (isMeeting ? 'bg-amber-50' : 'bg-amber-50/40') : 'bg-white';
+            const cellBg = pct > overT ? 'bg-rose-50/70' : pct >= warnT ? 'bg-amber-50/60' : 'bg-white';
             const barColor = pct > overT ? 'bg-rose-500' : pct >= warnT ? 'bg-amber-500' : 'bg-emerald-500';
-            const pctColorCls = pct > overT ? 'text-rose-600' : pct >= warnT ? 'text-amber-700' : 'text-emerald-700';
+            const pctBadgeCls = pct > overT ? 'bg-rose-100 text-rose-700' : pct >= warnT ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100/80 text-emerald-800';
 
             const allocDisp = formatValue(fteToDisplayValue(allocFte, pk, ui.timeUnit), ui.manpowerUnit, false);
             const capDisp = formatValue(fteToDisplayValue(capFte, pk, ui.timeUnit), ui.manpowerUnit, true);
@@ -1087,7 +1069,7 @@
               const a = getAllocationForPeriod(row.id, p.id, pk, ui.timeUnit, db.allocations);
               const cmtObj = getCellProjectComments(row.id, p.id, pk, ui.timeUnit, db);
               if (!a.hasData && !cmtObj.hasAny) return '';
-              if (!isMeeting && searchQ && !matchesSearchForPair(row, p, pk)) return '';
+              if (searchQ && !matchesSearchForPair(row, p, pk)) return '';
 
               const spotlightCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
               const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.hasData ? a.avgFte : 0, capFte, p.color);
@@ -1097,8 +1079,8 @@
 
               const spotVisCls = spotlightId === p.id
                 ? 'opacity-100'
-                : (isMeeting ? 'opacity-70 group-hover/pill:opacity-100' : 'desktop-hover-reveal opacity-0 group-hover/pill:opacity-100');
-              const spotSizeCls = isMeeting ? 'w-5 h-5 text-xs' : 'w-4 h-4 text-[10px]';
+                : 'desktop-hover-reveal opacity-0 group-hover/pill:opacity-100';
+              const spotSizeCls = isWideCols ? 'w-5 h-5 text-xs' : 'w-4 h-4 text-[10px]';
               const spotlightBtn = useColorFill
                 ? `<button type="button" onclick="event.stopPropagation(); toggleSpotlightProject('${p.id}')" title="${spotlightId === p.id ? 'Clear project spotlight' : 'Spotlight this project across all departments'}" aria-label="Spotlight ${escapeHtml(p.name)}"
                      class="${spotVisCls} ${spotlightId === p.id ? 'ring-1 ring-white/80' : ''} ${spotSizeCls} rounded font-bold flex items-center justify-center transition shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&#9678;</button>`
@@ -1115,7 +1097,7 @@
                       <div class="flex items-center justify-between gap-1.5">
                         <div class="flex items-center gap-1.5 min-w-0">
                           ${showIdentityDot ? `<span class="w-2 h-2 rounded-full ring-1 ring-white/70 shrink-0" style="background:${p.color}"></span>` : ''}
-                          <span class="font-mono font-bold ${isMeeting ? 'px-1.5 py-0.5 rounded text-[11px]' : s.pillCode} shrink-0" style="${isMeeting ? `background-color:${filledTheme.chipBg}; color:${filledTheme.text};` : `color:${filledTheme.mutedText};`}">${escapeHtml(p.code)}</span>
+                          <span class="font-mono font-bold px-1.5 py-0.5 rounded ${s.pillCode} shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">${escapeHtml(p.code)}</span>
                           <span class="truncate font-bold">${escapeHtml(p.name)}</span>
                         </div>
                         <div class="flex items-center gap-1 shrink-0">
@@ -1133,7 +1115,7 @@
                     style="--accent-color:${p.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${p.color};">
                     <div class="flex items-center justify-between gap-1.5">
                       <div class="flex items-center gap-1.5 min-w-0">
-                        <span class="font-mono font-bold ${isMeeting ? 'px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px]' : s.pillCode + ' text-slate-500'} shrink-0">${escapeHtml(p.code)}</span>
+                        <span class="font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 ${s.pillCode} shrink-0">${escapeHtml(p.code)}</span>
                         <span class="truncate font-semibold text-slate-700">${escapeHtml(p.name)}</span>
                       </div>
                       <div class="flex items-center gap-1 shrink-0">
@@ -1155,7 +1137,7 @@
 
               if (useColorFill) {
                 return `
-                  <div draggable="true"
+                  <div draggable="${!isPresent}"
                     data-drag-type="alloc" data-drag-dept="${row.id}" data-drag-proj="${p.id}" data-drag-period="${pk}"
                     ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                     onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')"
@@ -1167,18 +1149,18 @@
                       <div class="flex items-center gap-1.5 min-w-0">
                         ${showIdentityDot ? `<span class="w-2 h-2 rounded-full ring-1 ring-white/75 shrink-0" style="background:${p.color}" title="${escapeHtml(p.name)} color"></span>` : ''}
                         ${tierBadgeHtml}
-                        <span class="font-mono font-bold ${isMeeting ? 'px-1.5 py-0.5 rounded text-[11px]' : s.pillCode} shrink-0" style="${isMeeting ? `background-color:${filledTheme.chipBg}; color:${filledTheme.text};` : `color:${filledTheme.mutedText};`}">${escapeHtml(p.code)}</span>
+                        <span class="font-mono font-bold px-1.5 py-0.5 rounded ${s.pillCode} shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">${escapeHtml(p.code)}</span>
                         <span class="truncate font-bold">${escapeHtml(p.name)}</span>
-                        ${!isMeeting && a.isUneven ? `<span title="Uneven weekly split inside this month" class="w-1.5 h-1.5 rounded-full shrink-0" style="background-color:${filledTheme.text}; opacity:0.8;"></span>` : ''}
+                        ${!isPresent && a.isUneven ? `<span title="Uneven weekly split inside this month" class="w-1.5 h-1.5 rounded-full shrink-0" style="background-color:${filledTheme.text}; opacity:0.8;"></span>` : ''}
                       </div>
                       <div class="flex items-center gap-0.5 shrink-0">
                         ${spotlightBtn}
-                        ${!isMeeting ? `<button type="button" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', -1)" title="Decrease allocation" aria-label="Decrease ${escapeHtml(p.name)} allocation"
+                        ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', -1)" title="Decrease allocation" aria-label="Decrease ${escapeHtml(p.name)} allocation"
                           class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded font-bold flex items-center justify-center transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&minus;</button>` : ''}
                         <span class="${s.pillVal} tabular-nums px-0.5">${valStr}</span>
-                        ${!isMeeting ? `<button type="button" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', 1)" title="Increase allocation" aria-label="Increase ${escapeHtml(p.name)} allocation"
+                        ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', 1)" title="Increase allocation" aria-label="Increase ${escapeHtml(p.name)} allocation"
                           class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded font-bold flex items-center justify-center transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">+</button>` : ''}
-                        ${!isMeeting ? `<button type="button" onclick="quickExtendAllocation(event, '${row.id}', '${p.id}', '${pk}')" title="Copy into next period" aria-label="Extend ${escapeHtml(p.name)} into next period"
+                        ${!isPresent ? `<button type="button" onclick="quickExtendAllocation(event, '${row.id}', '${p.id}', '${pk}')" title="Copy into next period" aria-label="Extend ${escapeHtml(p.name)} into next period"
                           class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 px-1 rounded font-bold transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&rarr;</button>` : ''}
                       </div>
                     </div>
@@ -1187,7 +1169,7 @@
               }
 
               return `
-                <div draggable="true"
+                <div draggable="${!isPresent}"
                   data-drag-type="alloc" data-drag-dept="${row.id}" data-drag-proj="${p.id}" data-drag-period="${pk}"
                   ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                   onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')"
@@ -1196,18 +1178,18 @@
                   style="--accent-color:${p.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${p.color};">
                   <div class="flex items-center justify-between gap-1">
                     <div class="flex items-center gap-1.5 min-w-0">
-                      <span class="font-mono font-bold ${isMeeting ? 'px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px]' : s.pillCode + ' text-slate-500'} shrink-0">${escapeHtml(p.code)}</span>
+                      <span class="font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 ${s.pillCode} shrink-0">${escapeHtml(p.code)}</span>
                       <span class="truncate font-semibold text-slate-800">${escapeHtml(p.name)}</span>
-                      ${!isMeeting && a.isUneven ? '<span title="Uneven weekly split inside this month" class="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>' : ''}
+                      ${!isPresent && a.isUneven ? '<span title="Uneven weekly split inside this month" class="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>' : ''}
                     </div>
                     <div class="flex items-center gap-0.5 shrink-0">
                       ${spotlightBtn}
-                      ${!isMeeting ? `<button type="button" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', -1)" title="Decrease allocation" aria-label="Decrease ${escapeHtml(p.name)} allocation"
+                      ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', -1)" title="Decrease allocation" aria-label="Decrease ${escapeHtml(p.name)} allocation"
                         class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded bg-slate-100 hover:bg-rose-100 text-slate-700 hover:text-rose-700 font-bold flex items-center justify-center transition">&minus;</button>` : ''}
                       <span class="${s.pillVal} text-slate-900 tabular-nums px-0.5">${valStr}</span>
-                      ${!isMeeting ? `<button type="button" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', 1)" title="Increase allocation" aria-label="Increase ${escapeHtml(p.name)} allocation"
+                      ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', 1)" title="Increase allocation" aria-label="Increase ${escapeHtml(p.name)} allocation"
                         class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-700 font-bold flex items-center justify-center transition">+</button>` : ''}
-                      ${!isMeeting ? `<button type="button" onclick="quickExtendAllocation(event, '${row.id}', '${p.id}', '${pk}')" title="Copy into next period" aria-label="Extend ${escapeHtml(p.name)} into next period"
+                      ${!isPresent ? `<button type="button" onclick="quickExtendAllocation(event, '${row.id}', '${p.id}', '${pk}')" title="Copy into next period" aria-label="Extend ${escapeHtml(p.name)} into next period"
                         class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 px-1 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold transition">&rarr;</button>` : ''}
                     </div>
                   </div>
@@ -1226,7 +1208,7 @@
               const drift = getMilestoneDriftDays(m);
               const msSpotCls = spotlightId ? (spotlightId === m.projectId ? 'spotlight-active' : 'spotlight-dimmed') : '';
               return `
-                <div draggable="true"
+                <div draggable="${!isPresent}"
                   data-drag-type="milestone" data-drag-ms="${m.id}" data-drag-period="${pk}"
                   ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                   onclick="event.stopPropagation(); openMilestoneModal('${m.id}')"
@@ -1237,9 +1219,9 @@
                 </div>`;
             }).join('');
 
-            const cellHeaderHtml = isMeeting
+            const cellHeaderHtml = isPresent
               ? `<div class="flex items-center justify-end mb-2">
-                   <span class="px-2 py-0.5 rounded-md ${s.pctText} tabular-nums ${pct > overT ? 'bg-rose-100 text-rose-700' : pct >= warnT ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100/70 text-emerald-800'}">
+                   <span class="px-2 py-0.5 rounded-md ${s.pctText} tabular-nums ${pctBadgeCls}">
                      ${pct > 990 ? '&infin;' : pct + '%'}
                    </span>
                  </div>`
@@ -1258,7 +1240,7 @@
                        <svg class="w-3 h-3" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>
                        ${cmtCount > 0 ? `<span>${cmtCount}</span>` : ''}
                      </button>
-                     <span class="${s.pctText} tabular-nums ${pctColorCls}">
+                     <span class="px-1.5 py-0.5 rounded-md ${s.pctText} tabular-nums ${pctBadgeCls}">
                        ${pct > 990 ? '&infin;' : pct + '%'}
                      </span>
                    </div>
@@ -1267,10 +1249,10 @@
                    <div class="h-full ${barColor} rounded-full transition-all" style="width: ${Math.min(100, pct)}%"></div>
                  </div>`;
 
-            const addBtnHtml = !isMeeting
+            const addBtnHtml = !isPresent
               ? `<button type="button" onclick="event.stopPropagation(); openAllocationModal('${row.id}', '', '${pk}')"
                    title="Allocate a project to ${escapeHtml(row.name)} in ${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).title)}"
-                   class="mt-1.5 w-full py-1 rounded-lg border border-dashed border-slate-300/90 hover:border-indigo-400 hover:bg-indigo-50/70 text-[10px] font-semibold text-slate-400 hover:text-indigo-700 opacity-70 sm:opacity-45 group-hover/cell:opacity-100 transition flex items-center justify-center gap-1">
+                   class="mt-1.5 w-full py-1 rounded-lg border border-dashed border-slate-300/90 hover:border-indigo-400 hover:bg-indigo-50/70 text-[10px] font-semibold text-slate-400 hover:text-indigo-700 opacity-70 sm:opacity-0 group-hover/cell:opacity-100 transition flex items-center justify-center gap-1">
                    <span>+ Add</span>
                  </button>`
               : '';
@@ -1289,7 +1271,7 @@
               </td>`;
           }).join('');
 
-          const deptRowHeaderHtml = isMeeting
+          const deptRowHeaderHtml = isCompactRow
             ? `<th scope="row" title="${escapeHtml(row.name)} (${avgPct}% avg)"
                  class="meeting-row-accent sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 w-[62px] min-w-[62px] max-w-[62px] ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-middle font-normal text-center"
                  style="--row-accent:${row.color};">
@@ -1348,7 +1330,7 @@
               const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
               const cmtObj = getCellProjectComments(d.id, row.id, pk, ui.timeUnit, db);
               if (!a.hasData && !cmtObj.hasAny) return '';
-              if (!isMeeting && searchQ && !matchesSearchForPair(d, row, pk)) return '';
+              if (searchQ && !matchesSearchForPair(d, row, pk)) return '';
 
               const deptCap = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
               const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.hasData ? a.avgFte : 0, deptCap, d.color);
@@ -1406,7 +1388,7 @@
 
               if (useColorFill) {
                 return `
-                  <div draggable="true"
+                  <div draggable="${!isPresent}"
                     data-drag-type="alloc" data-drag-dept="${d.id}" data-drag-proj="${row.id}" data-drag-period="${pk}"
                     ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                     onclick="event.stopPropagation(); openAllocationModal('${d.id}', '${row.id}', '${pk}')"
@@ -1417,17 +1399,17 @@
                       <div class="flex items-center gap-1.5 min-w-0">
                         ${showIdentityDot ? `<span class="w-2 h-2 rounded-full ring-1 ring-white/75 shrink-0" style="background:${d.color}"></span>` : ''}
                         ${tierBadgeHtml}
-                        ${!isMeeting && !showIdentityDot ? `<span class="w-2 h-2 rounded-full ${loadDot} ring-1 ring-white/70 shrink-0"></span>` : ''}
+                        ${!isPresent && !showIdentityDot ? `<span class="w-2 h-2 rounded-full ${loadDot} ring-1 ring-white/70 shrink-0"></span>` : ''}
                         <span class="truncate font-bold">${escapeHtml(d.name)}</span>
                         ${bottleneckTagFilled}
                       </div>
                       <div class="flex items-center gap-0.5 shrink-0">
-                        ${!isMeeting ? `<button type="button" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', -1)" title="Decrease allocation"
+                        ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', -1)" title="Decrease allocation"
                           class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded font-bold flex items-center justify-center transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&minus;</button>` : ''}
                         <span class="${s.pillVal} tabular-nums px-0.5">${valStr}</span>
-                        ${!isMeeting ? `<button type="button" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', 1)" title="Increase allocation"
+                        ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', 1)" title="Increase allocation"
                           class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded font-bold flex items-center justify-center transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">+</button>` : ''}
-                        ${!isMeeting ? `<button type="button" onclick="quickExtendAllocation(event, '${d.id}', '${row.id}', '${pk}')" title="Copy into next period"
+                        ${!isPresent ? `<button type="button" onclick="quickExtendAllocation(event, '${d.id}', '${row.id}', '${pk}')" title="Copy into next period"
                           class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 px-1 rounded font-bold transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&rarr;</button>` : ''}
                       </div>
                     </div>
@@ -1436,7 +1418,7 @@
               }
 
               return `
-                <div draggable="true"
+                <div draggable="${!isPresent}"
                   data-drag-type="alloc" data-drag-dept="${d.id}" data-drag-proj="${row.id}" data-drag-period="${pk}"
                   ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                   onclick="event.stopPropagation(); openAllocationModal('${d.id}', '${row.id}', '${pk}')"
@@ -1445,17 +1427,17 @@
                   style="--accent-color:${d.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${d.color};">
                   <div class="flex items-center justify-between gap-1">
                     <div class="flex items-center gap-1.5 min-w-0">
-                      ${!isMeeting ? `<span class="w-2 h-2 rounded-full ${loadDot} shrink-0"></span>` : ''}
+                      ${!isPresent ? `<span class="w-2 h-2 rounded-full ${loadDot} shrink-0"></span>` : ''}
                       <span class="truncate font-semibold text-slate-800">${escapeHtml(d.name)}</span>
                       ${bottleneckTagAccent}
                     </div>
                     <div class="flex items-center gap-0.5 shrink-0">
-                      ${!isMeeting ? `<button type="button" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', -1)"
+                      ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', -1)"
                         class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded bg-slate-100 hover:bg-rose-100 text-slate-700 font-bold flex items-center justify-center transition">&minus;</button>` : ''}
                       <span class="${s.pillVal} text-slate-900 tabular-nums px-0.5">${valStr}</span>
-                      ${!isMeeting ? `<button type="button" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', 1)"
+                      ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', 1)"
                         class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded bg-slate-100 hover:bg-emerald-100 text-slate-700 font-bold flex items-center justify-center transition">+</button>` : ''}
-                      ${!isMeeting ? `<button type="button" onclick="quickExtendAllocation(event, '${d.id}', '${row.id}', '${pk}')"
+                      ${!isPresent ? `<button type="button" onclick="quickExtendAllocation(event, '${d.id}', '${row.id}', '${pk}')"
                         class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 px-1 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold transition">&rarr;</button>` : ''}
                     </div>
                   </div>
@@ -1466,7 +1448,7 @@
             const msHtml = getMilestonesInPeriod(pk, ui.timeUnit, db.milestones)
               .filter(m => m.projectId === row.id)
               .map(m => `
-                <div draggable="true"
+                <div draggable="${!isPresent}"
                   data-drag-type="milestone" data-drag-ms="${m.id}" data-drag-period="${pk}"
                   ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                   onclick="event.stopPropagation(); openMilestoneModal('${m.id}')"
@@ -1474,7 +1456,7 @@
                   <span class="truncate"><span class="text-violet-600 mr-1" aria-hidden="true">◆</span>${escapeHtml(m.title)}</span>
                 </div>`).join('');
 
-            const cellHeaderHtml = isMeeting
+            const cellHeaderHtml = isPresent
               ? (totFte > 0 ? `<div class="flex items-center justify-end mb-2"><span class="${s.pctText} text-slate-700 tabular-nums">${totStr}</span></div>` : '')
               : `<div class="flex items-center justify-between ${s.capText} text-slate-500 mb-1.5">
                    <span>Effort</span>
@@ -1488,9 +1470,9 @@
                    </div>
                  </div>`;
 
-            const addBtnHtml = !isMeeting
+            const addBtnHtml = !isPresent
               ? `<button type="button" onclick="event.stopPropagation(); openAllocationModal('', '${row.id}', '${pk}')"
-                   class="mt-1.5 w-full py-1 rounded-lg border border-dashed border-slate-300/90 hover:border-indigo-400 hover:bg-indigo-50/70 text-[10px] font-semibold text-slate-400 hover:text-indigo-700 opacity-70 sm:opacity-45 group-hover/cell:opacity-100 transition flex items-center justify-center gap-1">
+                   class="mt-1.5 w-full py-1 rounded-lg border border-dashed border-slate-300/90 hover:border-indigo-400 hover:bg-indigo-50/70 text-[10px] font-semibold text-slate-400 hover:text-indigo-700 opacity-70 sm:opacity-0 group-hover/cell:opacity-100 transition flex items-center justify-center gap-1">
                    <span>+ Add</span>
                  </button>`
               : '';
@@ -1518,11 +1500,11 @@
           const budgetBadgeHtml = budgetDays > 0
             ? `<span title="Total planned across all weeks: ${allTimeDays}d vs ${budgetDays}d budget (${budgetPct}%)" class="px-1.5 py-0.5 rounded-md text-[9px] font-bold shrink-0 ${budgetPct > 100 ? 'bg-rose-100 text-rose-700' : budgetPct >= 85 ? 'bg-amber-100 text-amber-800' : 'bg-indigo-50 text-indigo-700'}">${Math.round(allTimeDays)}/${Math.round(budgetDays)}d (${budgetPct}%)</span>`
             : '';
-          const shiftProjBtnHtml = !isMeeting && !isCompactGrid
+          const shiftProjBtnHtml = !isPresent && !isCompactGrid
             ? `<button type="button" onclick="event.stopPropagation(); openShiftProjectModal('${row.id}')" title="Shift all allocations, comments &amp; milestones for [${escapeHtml(row.code)}] by ±N weeks/months"
                  class="opacity-0 group-hover/row:opacity-100 px-1.5 py-0.5 rounded-md bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-700 text-[10px] font-bold transition shrink-0">&#8644; Shift</button>`
             : '';
-          const projRowHeaderHtml = isMeeting
+          const projRowHeaderHtml = isCompactRow
             ? `<th scope="row" title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)}${bottleneckCount ? ' — ' + bottleneckCount + ' overallocated dept slot(s)' : ''}"
                  onclick="toggleSpotlightProject('${row.id}')"
                  class="meeting-row-accent ${rowSpotCls} sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 w-[62px] min-w-[62px] max-w-[62px] ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-middle font-normal text-center cursor-pointer"
@@ -1577,25 +1559,25 @@
           </td>`;
       }).join('');
 
-      const footerHtml = isMeeting
+      const footerHtml = isPresent
         ? ''
         : `<tfoot>
             <tr class="bg-slate-900 text-white">
-              <th scope="row" class="sticky left-0 z-20 bg-slate-900 ${s.footCell} font-bold uppercase tracking-wider sticky-col-shadow text-left">
-                Total (${unitShortLabel()})
+              <th scope="row" class="sticky left-0 z-20 bg-slate-900 ${isCompactRow ? 'px-1.5 py-2.5 text-[10px] text-center' : s.footCell + ' text-left'} font-bold uppercase tracking-wider sticky-col-shadow">
+                ${isCompactRow ? 'Total' : `Total (${unitShortLabel()})`}
               </th>
               ${footerCells}
             </tr>
           </tfoot>`;
 
       const captionText = `Roadmap matrix grouped by ${ui.axis}, showing ${periods.length} ${ui.timeUnit}s in ${unitShortLabel()}.`;
-      const wrapperW = wrapper.clientWidth || wrapper.getBoundingClientRect().width || (isMeeting ? 1000 : 1200);
-      const colGeo = computeFullColumnGeometry(wrapperW, periods.length, isMeeting, isCompactGrid);
+      const wrapperW = wrapper.clientWidth || wrapper.getBoundingClientRect().width || 1200;
+      const colGeo = computeFullColumnGeometry(wrapperW, periods.length, isCompactRow, isCompactGrid);
       const colGroupHtml = `<colgroup>
              <col data-sticky-col="1" style="width: ${colGeo.stickyW}px;" />
              ${periods.map(() => `<col data-period-col="1" style="width: ${colGeo.colW}px;" />`).join('')}
            </colgroup>`;
-      const cornerLabel = isMeeting
+      const cornerLabel = isCompactRow
         ? (ui.axis === 'department' ? 'Dept' : 'Proj')
         : (ui.axis === 'department' ? 'Departments' : 'Projects');
 
@@ -1606,7 +1588,7 @@
           ${colGroupHtml}
           <thead>
             <tr>
-              <th scope="col" class="sticky left-0 z-20 bg-slate-50 ${isMeeting ? 'w-[62px] min-w-[62px] max-w-[62px]' : ''} ${s.thSticky} border-b border-slate-200 font-extrabold text-slate-700 uppercase tracking-wider sticky-col-shadow">
+              <th scope="col" class="sticky left-0 z-20 bg-slate-50 ${isCompactRow ? 'w-[62px] min-w-[62px] max-w-[62px]' : ''} ${s.thSticky} border-b border-slate-200 font-extrabold text-slate-700 uppercase tracking-wider sticky-col-shadow">
                 ${cornerLabel}
               </th>
               ${colHeaders}
