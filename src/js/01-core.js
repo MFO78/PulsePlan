@@ -32,12 +32,133 @@
       redFte: 2.5,
     };
 
+    const PULSEPLAN_BUILD_ID = '2026-11-22-v3';
+    const _debugLogEntries = [];
+    const MAX_DEBUG_LOG_ENTRIES = 120;
+
+    function ppDebug(level, message, details = null) {
+      const lvl = String(level || 'INFO').toUpperCase();
+      const now = new Date();
+      const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}.${String(now.getMilliseconds()).padStart(3, '0')}`;
+      let detailStr = '';
+      if (details !== null && details !== undefined) {
+        try {
+          detailStr = typeof details === 'string' ? details : JSON.stringify(details);
+        } catch (e) {
+          detailStr = String(details);
+        }
+      }
+      _debugLogEntries.push({ time, iso: now.toISOString(), level: lvl, message: String(message || ''), details: detailStr });
+      if (_debugLogEntries.length > MAX_DEBUG_LOG_ENTRIES) {
+        _debugLogEntries.splice(0, _debugLogEntries.length - MAX_DEBUG_LOG_ENTRIES);
+      }
+      try {
+        const prefix = `[PulsePlan ${time}]`;
+        if (lvl === 'ERROR') console.error(prefix, message, details ?? '');
+        else if (lvl === 'WARN') console.warn(prefix, message, details ?? '');
+        else console.info(prefix, message, details ?? '');
+      } catch (e) {}
+      try {
+        if (typeof renderSyncDebugPanel === 'function' && typeof ui !== 'undefined' && ui && ui.activeTab === 'sync') {
+          renderSyncDebugPanel();
+        }
+      } catch (e) {}
+    }
+
+    function withTimeout(promise, ms, timeoutMessage = 'Operation timed out') {
+      let timerId = null;
+      return Promise.race([
+        Promise.resolve(promise),
+        new Promise((_, reject) => {
+          timerId = setTimeout(() => {
+            const err = new Error(timeoutMessage);
+            err.name = 'TimeoutError';
+            reject(err);
+          }, ms);
+        }),
+      ]).finally(() => {
+        if (timerId !== null) clearTimeout(timerId);
+      });
+    }
+
+    function getDebugEnvironmentSummary() {
+      let swControlled = false;
+      try { swControlled = Boolean(typeof navigator !== 'undefined' && navigator.serviceWorker && navigator.serviceWorker.controller); } catch (e) {}
+      let inIframe = false;
+      try { inIframe = typeof window !== 'undefined' && window.self !== window.top; } catch (e) { inIframe = true; }
+      return {
+        build: PULSEPLAN_BUILD_ID,
+        protocol: typeof location !== 'undefined' ? location.protocol : 'n/a',
+        origin: typeof location !== 'undefined' ? location.origin : 'n/a',
+        isSecureContext: typeof window !== 'undefined' ? Boolean(window.isSecureContext) : false,
+        inIframe,
+        hasFsApi: typeof supportsFileSystemAccess === 'function' ? supportsFileSystemAccess() : false,
+        hasIndexedDB: typeof indexedDB !== 'undefined',
+        swControlled,
+        linkedFile: typeof linkedFileHandle !== 'undefined' && linkedFileHandle ? linkedFileHandle.name : null,
+        rememberedFile: typeof rememberedFileHandle !== 'undefined' && rememberedFileHandle ? rememberedFileHandle.name : null,
+        activeTab: typeof ui !== 'undefined' && ui ? ui.activeTab : 'n/a',
+        demoMode: typeof ui !== 'undefined' && ui ? Boolean(ui.demoMode) : false,
+        whatIfMode: typeof ui !== 'undefined' && ui ? Boolean(ui.whatIfMode) : false,
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'n/a',
+      };
+    }
+
+    function formatDebugReport() {
+      const env = getDebugEnvironmentSummary();
+      const lines = [
+        `PulsePlan Diagnostics Report (${env.build})`,
+        `Generated: ${new Date().toISOString()}`,
+        `URL: ${env.origin} (${env.protocol}) | SecureContext: ${env.isSecureContext} | Iframe: ${env.inIframe}`,
+        `FS Access API: ${env.hasFsApi} | IndexedDB: ${env.hasIndexedDB} | SW Controlled: ${env.swControlled}`,
+        `State: tab=${env.activeTab}, demo=${env.demoMode}, whatIf=${env.whatIfMode}, linked=${env.linkedFile || 'none'}, remembered=${env.rememberedFile || 'none'}`,
+        `UA: ${env.userAgent}`,
+        '--- Event Log ---',
+        ..._debugLogEntries.map(e => `[${e.time}] [${e.level}] ${e.message}${e.details ? ' | ' + e.details : ''}`),
+      ];
+      return lines.join('\n');
+    }
+
+    function clearDebugLog() {
+      _debugLogEntries.length = 0;
+      ppDebug('INFO', 'Debug log cleared by user');
+      if (typeof renderSyncDebugPanel === 'function') renderSyncDebugPanel();
+    }
+
+    async function copyDebugReport() {
+      const text = formatDebugReport();
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(text);
+          showToast('Diagnostics debug log copied to clipboard', 'success');
+          return;
+        }
+      } catch (e) {}
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+        showToast('Diagnostics debug log copied to clipboard', 'success');
+      } catch (e) {
+        showToast('Could not copy automatically — open browser console (F12) for [PulsePlan] logs.', 'warning');
+      }
+    }
+
     function safeGetStorage(key) {
       try { return localStorage.getItem(key); } catch (e) { return null; }
     }
 
     function safeSetStorage(key, val) {
-      try { localStorage.setItem(key, val); } catch (e) { /* sandbox fallback */ }
+      try {
+        localStorage.setItem(key, val);
+      } catch (e) {
+        ppDebug('WARN', 'localStorage.setItem failed', { key, bytes: String(val || '').length, name: e?.name, message: e?.message });
+      }
     }
 
     function uid(prefix = 'id') {

@@ -410,12 +410,20 @@
         toast.appendChild(undoBtn);
       }
 
+      toast.title = 'Click to dismiss';
+      toast.onclick = (ev) => {
+        if (ev.target && ev.target.tagName === 'BUTTON') return;
+        toast.remove();
+      };
       container.appendChild(toast);
+      const durationMs = opts && opts.undoable
+        ? 4400
+        : (type === 'error' ? 8000 : type === 'warning' ? 6000 : 3500);
       setTimeout(() => {
         toast.style.opacity = '0';
         toast.style.transform = 'translateY(6px)';
         setTimeout(() => toast.remove(), 250);
-      }, opts && opts.undoable ? 4400 : 3200);
+      }, durationMs);
     }
 
     /* ============================================================================
@@ -654,8 +662,16 @@
         demoDB = createSampleDemoDB();
       }
 
-      // 4. Retrieve previously linked shared file handle (desktop FS-API)
-      rememberedFileHandle = await loadRememberedHandle();
+      // 4. Global error & unhandled-rejection diagnostics listeners
+      try {
+        window.addEventListener('error', (ev) => {
+          ppDebug('ERROR', 'Uncaught window error', { message: ev?.message, line: ev?.lineno, col: ev?.colno });
+        });
+        window.addEventListener('unhandledrejection', (ev) => {
+          const r = ev?.reason;
+          ppDebug('ERROR', 'Unhandled promise rejection', { name: r?.name, message: r?.message || String(r || '') });
+        });
+      } catch (e) {}
 
       // 5. Accessible keyboard nav, modal focus trap, floating column headers & responsive watcher
       setupAccessibleTablistKeyboardNav();
@@ -670,24 +686,30 @@
         if (!document.hidden && linkedFileHandle && !ui.demoMode) checkExternalFileUpdates();
       });
 
-      // 7. Apply theme & render UI immediately (guarded so sync reconnect & SW updates always run)
+      // 7. Apply theme & render UI immediately BEFORE async IndexedDB handle lookup so slow/blocked IDB never stalls startup
+      ppDebug('INFO', 'PulsePlan initApp starting', getDebugEnvironmentSummary());
       applyDarkMode();
       applyPresentMode();
       try {
         renderAll();
       } catch (e) {
-        console.error('Initial render error:', e);
+        ppDebug('ERROR', 'Initial renderAll error', { name: e?.name, message: e?.message });
       }
 
-      // 8. Auto-reconnect to remembered sync file on desktop (stays clean & warning-free on mobile)
+      // 8. Retrieve previously linked shared file handle (timeout-guarded IDB) & auto-reconnect on desktop
+      rememberedFileHandle = await loadRememberedHandle();
       await autoReconnectSyncFile();
+      if (ui.activeTab === 'sync') renderSyncTab();
 
       // 9. Register offline PWA Service Worker when served over HTTPS or localhost and trigger immediate update check
       try {
         if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof location !== 'undefined' && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
           navigator.serviceWorker.register('./sw.js').then((reg) => {
+            ppDebug('INFO', 'Service Worker registered', { scope: reg?.scope });
             try { if (reg && typeof reg.update === 'function') reg.update(); } catch (e) {}
-          }).catch(() => {});
+          }).catch((swErr) => {
+            ppDebug('WARN', 'Service Worker registration skipped/failed', { message: swErr?.message });
+          });
         }
       } catch (e) {}
     }

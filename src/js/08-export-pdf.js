@@ -24,26 +24,63 @@
       showToast(`${outcome === 'shared' ? 'JSON shared' : 'JSON saved'} (${formatBytes(jsonStr.length)})`, 'success');
     }
 
+    function triggerJsonImportPicker() {
+      const inp = document.getElementById('importJsonFileInput');
+      ppDebug('INFO', 'triggerJsonImportPicker clicked', { inputFound: Boolean(inp), activeTab: ui.activeTab });
+      if (!inp) {
+        showToast('Import JSON input control was not found. Reload the page and retry.', 'error');
+        return;
+      }
+      try {
+        inp.value = '';
+        inp.click();
+      } catch (e) {
+        ppDebug('ERROR', 'triggerJsonImportPicker click failed', { name: e?.name, message: e?.message });
+        showToast(`Could not open file chooser (${e?.message || 'Error'}).`, 'error');
+      }
+    }
+
     function importJsonFile(event) {
-      const file = event.target.files?.[0];
+      const file = event && event.target && event.target.files ? event.target.files[0] : null;
+      ppDebug('INFO', 'importJsonFile change event fired', {
+        hasFile: Boolean(file),
+        name: file?.name || null,
+        size: file?.size ?? null,
+        type: file?.type || null,
+      });
       if (!file) return;
+      const t0 = Date.now();
       const reader = new FileReader();
+      reader.onabort = () => {
+        ppDebug('WARN', 'JSON FileReader aborted', { name: file.name, elapsedMs: Date.now() - t0 });
+        showToast(`Reading "${file.name}" was cancelled/aborted.`, 'warning');
+      };
       reader.onerror = () => {
-        console.error('JSON FileReader error:', reader.error);
+        ppDebug('ERROR', 'JSON FileReader error', { name: file.name, errName: reader.error?.name, message: reader.error?.message });
         showToast(`Could not read "${file.name}" (${reader.error?.message || 'file read error'}).`, 'error');
       };
       reader.onload = () => {
         let migrated = null;
         try {
           const rawText = String(reader.result || '').replace(/^\uFEFF/, '');
+          ppDebug('INFO', 'JSON FileReader onload', { name: file.name, chars: rawText.length, elapsedMs: Date.now() - t0 });
+          if (!rawText.trim()) {
+            throw new Error('File is empty (0 bytes — if on OneDrive/Google Drive, ensure it is downloaded offline)');
+          }
           const parsed = JSON.parse(rawText);
           migrated = normalizeAndMigrateDB(parsed);
           if (!migrated) {
+            ppDebug('ERROR', 'JSON import invalid structure (missing departments/projects)', { name: file.name });
             showToast('Invalid PulsePlan JSON structure — missing departments/projects.', 'error');
             return;
           }
+          ppDebug('INFO', 'JSON import migrated', {
+            depts: migrated.departments.length,
+            projs: migrated.projects.length,
+            allocs: Object.keys(migrated.allocations || {}).length,
+          });
         } catch (e) {
-          console.error('JSON import parse error:', e);
+          ppDebug('ERROR', 'JSON import parse error', { name: file.name, errName: e?.name, message: e?.message });
           showToast(`Could not parse "${file.name}": ${e?.message || 'invalid JSON'}.`, 'error');
           return;
         }
@@ -57,22 +94,22 @@
           try {
             shifted = syncHorizonAfterDBLoad(migrated);
           } catch (hErr) {
-            console.error('Horizon alignment error after import:', hErr);
+            ppDebug('WARN', 'Horizon alignment error after import', { name: hErr?.name, message: hErr?.message });
           }
           touchDBAndSave();
           renderAll();
           const allocCount = Object.keys(migrated.allocations).length;
+          ppDebug('INFO', 'JSON import completed & rendered', { name: file.name, shifted, elapsedMs: Date.now() - t0 });
           showToast(
             `Imported "${file.name}" (${migrated.departments.length} depts, ${migrated.projects.length} projects, ${allocCount} wk allocs${shifted ? ' — timeline aligned' : ''})`,
             'success'
           );
         } catch (renderErr) {
-          console.error('Post-import render error:', renderErr);
+          ppDebug('ERROR', 'Post-import render error', { name: renderErr?.name, message: renderErr?.message });
           showToast(`Imported "${file.name}", but a display error occurred (${renderErr?.message || 'Error'}).`, 'warning');
         }
       };
       reader.readAsText(file);
-      event.target.value = '';
     }
 
     function downloadCSV(csvContent, filename) {

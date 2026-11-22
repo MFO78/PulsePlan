@@ -423,7 +423,11 @@
     }
 
     function openHandleIDB() {
-      return new Promise((resolve, reject) => {
+      return withTimeout(new Promise((resolve, reject) => {
+        if (typeof indexedDB === 'undefined') {
+          reject(new Error('IndexedDB unavailable'));
+          return;
+        }
         try {
           const req = indexedDB.open(IDB_NAME, 1);
           req.onupgradeneeded = () => {
@@ -431,72 +435,151 @@
               req.result.createObjectStore(IDB_STORE);
             }
           };
+          req.onblocked = () => {
+            ppDebug('WARN', 'IndexedDB open blocked (another tab or browser lock)');
+            reject(new Error('IndexedDB open blocked'));
+          };
           req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
+          req.onerror = () => reject(req.error || new Error('IndexedDB open error'));
         } catch (e) {
           reject(e);
         }
-      });
+      }), 1500, 'IndexedDB open timed out after 1500ms');
     }
 
     async function saveRememberedHandle(handle) {
+      let db = null;
       try {
-        const db = await openHandleIDB();
-        const tx = db.transaction(IDB_STORE, 'readwrite');
-        tx.objectStore(IDB_STORE).put(handle, HANDLE_KEY);
-      } catch (e) {}
+        db = await openHandleIDB();
+        await withTimeout(new Promise((resolve, reject) => {
+          const tx = db.transaction(IDB_STORE, 'readwrite');
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error || new Error('IDB write error'));
+          tx.onabort = () => reject(tx.error || new Error('IDB write aborted'));
+          tx.objectStore(IDB_STORE).put(handle, HANDLE_KEY);
+        }), 1500, 'IndexedDB save timed out');
+        ppDebug('INFO', 'Saved remembered file handle to IndexedDB', { name: handle?.name });
+      } catch (e) {
+        ppDebug('WARN', 'Could not persist remembered handle to IndexedDB (non-fatal)', { name: e?.name, message: e?.message });
+      } finally {
+        try { if (db) db.close(); } catch (e) {}
+      }
     }
 
     async function loadRememberedHandle() {
+      let db = null;
       try {
-        const db = await openHandleIDB();
-        return await new Promise((resolve) => {
+        db = await openHandleIDB();
+        const handle = await withTimeout(new Promise((resolve) => {
           const tx = db.transaction(IDB_STORE, 'readonly');
           const req = tx.objectStore(IDB_STORE).get(HANDLE_KEY);
           req.onsuccess = () => resolve(req.result || null);
           req.onerror = () => resolve(null);
-        });
+        }), 1500, 'IndexedDB read timed out');
+        ppDebug('INFO', 'Loaded remembered file handle from IndexedDB', { found: Boolean(handle), name: handle?.name || null });
+        return handle;
       } catch (e) {
+        ppDebug('WARN', 'Could not read remembered handle from IndexedDB (non-fatal)', { name: e?.name, message: e?.message });
         return null;
+      } finally {
+        try { if (db) db.close(); } catch (e) {}
       }
     }
 
     async function clearRememberedHandle() {
+      let db = null;
       try {
-        const db = await openHandleIDB();
-        const tx = db.transaction(IDB_STORE, 'readwrite');
-        tx.objectStore(IDB_STORE).delete(HANDLE_KEY);
-      } catch (e) {}
+        db = await openHandleIDB();
+        await withTimeout(new Promise((resolve) => {
+          const tx = db.transaction(IDB_STORE, 'readwrite');
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+          tx.onabort = () => resolve();
+          tx.objectStore(IDB_STORE).delete(HANDLE_KEY);
+        }), 1500, 'IndexedDB delete timed out');
+        ppDebug('INFO', 'Cleared remembered file handle from IndexedDB');
+      } catch (e) {
+        ppDebug('WARN', 'Could not clear remembered handle in IndexedDB', { name: e?.name, message: e?.message });
+      } finally {
+        try { if (db) db.close(); } catch (e) {}
+      }
     }
 
     async function openSharedDatabaseFile() {
+      const env = getDebugEnvironmentSummary();
+      ppDebug('INFO', 'openSharedDatabaseFile triggered', {
+        protocol: env.protocol,
+        isSecureContext: env.isSecureContext,
+        inIframe: env.inIframe,
+        hasFsApi: env.hasFsApi,
+        activeTab: env.activeTab,
+        isReloadingFromFile,
+      });
+
       if (!supportsFileSystemAccess()) {
+        ppDebug('WARN', 'File System Access API unavailable on this browser');
         showToast('Direct folder sync requires desktop Chrome/Edge over HTTPS. Use "Import JSON" in Sync.', 'warning');
         return;
       }
       if (typeof location !== 'undefined' && location.protocol === 'file:') {
+        ppDebug('WARN', 'Direct file linking attempted on file:// protocol');
         showToast('Browser security blocks direct folder linking on local file:// pages. Open PulsePlan via HTTPS or use "Import JSON" in Sync.', 'warning');
         return;
       }
+
+      const t0 = Date.now();
+      let handle = null;
       try {
-        const [handle] = await window.showOpenFilePicker({
-          types: [{ description: 'PulsePlan JSON Database', accept: { 'application/json': ['.json'], 'text/plain': ['.json'] } }],
+        ppDebug('INFO', 'Opening window.showOpenFilePicker (with .json filter)...');
+        const handles = await window.showOpenFilePicker({
+          types: [{ description: 'PulsePlan JSON Database', accept: { 'application/json': ['.json'] } }],
           multiple: false,
         });
-        if (handle) await attachAndLoadFileHandle(handle, false);
+        handle = handles && handles[0];
       } catch (e) {
-        if (e && e.name === 'AbortError') return;
-        console.error('openSharedDatabaseFile failed:', e);
-        if (e && e.name === 'SecurityError') {
-          showToast('Browser blocked direct linking to this folder (Chrome restricts Desktop/Downloads roots). Move the .json into a subfolder or use "Import JSON".', 'warning');
+        const elapsedMs = Date.now() - t0;
+        if (e && e.name === 'TypeError') {
+          ppDebug('WARN', 'showOpenFilePicker rejected filter options (TypeError); retrying without types filter', { message: e.message, elapsedMs });
+          try {
+            const handles = await window.showOpenFilePicker({ multiple: false });
+            handle = handles && handles[0];
+          } catch (e2) {
+            const elapsed2 = Date.now() - t0;
+            ppDebug('ERROR', 'showOpenFilePicker fallback retry failed', { name: e2?.name, message: e2?.message, elapsedMs: elapsed2 });
+            if (e2 && e2.name === 'AbortError' && elapsed2 >= 200) return;
+            showToast(`Could not open file picker (${e2?.name || 'Error'}: ${e2?.message || 'blocked'}). Use "Import JSON" instead.`, 'warning');
+            return;
+          }
+        } else if (e && e.name === 'AbortError') {
+          ppDebug('WARN', 'showOpenFilePicker AbortError', { elapsedMs, message: e.message || '' });
+          if (elapsedMs < 200) {
+            showToast('Browser/policy auto-aborted the direct file picker. Click "Import JSON" in Sync & Snapshots instead.', 'warning');
+          }
+          return;
         } else {
-          const detail = e && (e.message || e.name) ? ` (${e.name || 'Error'}: ${e.message || ''})` : '';
-          showToast(`Could not open file picker${detail}. Use "Import JSON" instead.`, 'warning');
+          ppDebug('ERROR', 'showOpenFilePicker failed', { name: e?.name, message: e?.message, elapsedMs });
+          if (e && e.name === 'SecurityError') {
+            showToast('Browser blocked direct linking to this folder (Chrome restricts Desktop/Downloads roots or iframes). Move the .json into a subfolder or use "Import JSON".', 'warning');
+          } else {
+            const detail = e && (e.message || e.name) ? ` (${e.name || 'Error'}: ${e.message || ''})` : '';
+            showToast(`Could not open file picker${detail}. Use "Import JSON" instead.`, 'warning');
+          }
+          return;
         }
       }
+
+      if (!handle) {
+        ppDebug('WARN', 'showOpenFilePicker resolved with no file handle');
+        showToast('No file handle was returned by the browser. Try "Import JSON" instead.', 'warning');
+        return;
+      }
+
+      ppDebug('INFO', 'showOpenFilePicker selected file', { name: handle.name, kind: handle.kind, elapsedMs: Date.now() - t0 });
+      await attachAndLoadFileHandle(handle, false);
     }
 
     async function createSharedDatabaseFile() {
+      ppDebug('INFO', 'createSharedDatabaseFile triggered', { hasFsApi: supportsFileSystemAccess(), protocol: typeof location !== 'undefined' ? location.protocol : 'n/a' });
       if (!supportsFileSystemAccess()) {
         downloadJsonBackup();
         return;
@@ -506,6 +589,7 @@
         downloadJsonBackup();
         return;
       }
+      const t0 = Date.now();
       try {
         const handle = await window.showSaveFilePicker({
           suggestedName: 'pulseplan_company_roadmap.json',
@@ -519,14 +603,20 @@
         linkedFileHandle = handle;
         rememberedFileHandle = handle;
         syncWarningState = { type: null, fileName: '', dismissed: false };
-        await saveRememberedHandle(handle);
         await writeDBToLinkedFile();
         startFilePolling();
         renderAll();
         showToast(`Created & linked "${handle.name}" for auto-save`, 'success');
+        saveRememberedHandle(handle);
       } catch (e) {
-        if (e && e.name === 'AbortError') return;
-        console.error('createSharedDatabaseFile failed:', e);
+        const elapsedMs = Date.now() - t0;
+        ppDebug('WARN', 'createSharedDatabaseFile failed/aborted', { name: e?.name, message: e?.message, elapsedMs });
+        if (e && e.name === 'AbortError') {
+          if (elapsedMs < 200) {
+            showToast('Browser/policy auto-aborted the save file picker. Use "Share / Save JSON" instead.', 'warning');
+          }
+          return;
+        }
         if (e && e.name === 'SecurityError') {
           showToast('Browser blocked saving directly in this folder (Chrome restricts Desktop/Downloads roots). Choose a subfolder or use "Share / Save JSON".', 'warning');
         } else {
@@ -536,9 +626,15 @@
     }
 
     async function reconnectRememberedFile() {
-      if (!rememberedFileHandle) return;
+      ppDebug('INFO', 'reconnectRememberedFile triggered', { hasRemembered: Boolean(rememberedFileHandle), name: rememberedFileHandle?.name || null });
+      if (!rememberedFileHandle) {
+        ppDebug('WARN', 'No remembered handle in memory; falling back to openSharedDatabaseFile');
+        await openSharedDatabaseFile();
+        return;
+      }
       try {
         const perm = await rememberedFileHandle.requestPermission({ mode: 'readwrite' });
+        ppDebug('INFO', 'requestPermission result', { name: rememberedFileHandle.name, perm });
         if (perm === 'granted') {
           await attachAndLoadFileHandle(rememberedFileHandle, false);
         } else {
@@ -546,7 +642,7 @@
           showToast('Permission denied to access the remembered sync file.', 'warning');
         }
       } catch (e) {
-        console.error('reconnectRememberedFile failed:', e);
+        ppDebug('ERROR', 'reconnectRememberedFile failed', { name: e?.name, message: e?.message });
         if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
           setSyncWarning('permission', rememberedFileHandle.name);
           showToast(`Browser blocked permission for "${rememberedFileHandle.name}". Click "Choose Different File" or use "Import JSON".`, 'warning');
@@ -558,6 +654,12 @@
     }
 
     async function autoReconnectSyncFile() {
+      ppDebug('INFO', 'autoReconnectSyncFile check', {
+        hasFsApi: supportsFileSystemAccess(),
+        hasRemembered: Boolean(rememberedFileHandle),
+        rememberedName: rememberedFileHandle?.name || null,
+        demoMode: ui.demoMode,
+      });
       // On mobile browsers without File System Access API, stay cleanly in local storage without showing desktop warnings
       if (!supportsFileSystemAccess()) {
         syncWarningState = { type: null, fileName: '', dismissed: false };
@@ -570,7 +672,12 @@
       }
       try {
         if (typeof rememberedFileHandle.queryPermission === 'function') {
-          const perm = await rememberedFileHandle.queryPermission({ mode: 'readwrite' });
+          const perm = await withTimeout(
+            rememberedFileHandle.queryPermission({ mode: 'readwrite' }),
+            3000,
+            'queryPermission timed out'
+          );
+          ppDebug('INFO', 'autoReconnect queryPermission', { name: rememberedFileHandle.name, perm });
           if (perm === 'granted') {
             await attachAndLoadFileHandle(rememberedFileHandle, true);
             return;
@@ -580,6 +687,7 @@
           }
         }
       } catch (e) {
+        ppDebug('WARN', 'autoReconnectSyncFile failed', { name: e?.name, message: e?.message });
         if (e && (e.name === 'NotFoundError' || e.name === 'NotReadableError')) {
           setSyncWarning('missing', rememberedFileHandle.name);
           showToast(`Warning: Sync file "${rememberedFileHandle.name}" is missing or disconnected.`, 'error');
@@ -640,18 +748,37 @@
     }
 
     async function attachAndLoadFileHandle(handle, isAutoReconnect = false, isSilentAutoReload = false) {
+      const tStart = Date.now();
+      ppDebug('INFO', 'attachAndLoadFileHandle start', {
+        name: handle?.name,
+        isAutoReconnect,
+        isSilentAutoReload,
+        wasReloading: isReloadingFromFile,
+      });
+
       let file;
       try {
-        file = await handle.getFile();
+        file = await withTimeout(
+          handle.getFile(),
+          15000,
+          'Reading file handle timed out after 15s (cloud drive / OneDrive / Google Drive may be offline or syncing)'
+        );
+        ppDebug('INFO', 'handle.getFile succeeded', {
+          name: file?.name,
+          size: file?.size,
+          type: file?.type,
+          lastModified: file?.lastModified,
+          elapsedMs: Date.now() - tStart,
+        });
       } catch (e) {
-        console.error('Sync file handle.getFile failed:', e);
+        ppDebug('ERROR', 'handle.getFile failed', { name: e?.name, message: e?.message, elapsedMs: Date.now() - tStart });
         linkedFileHandle = null;
         if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) {
           setSyncWarning('permission', handle.name);
           if (!isSilentAutoReload) showToast(`Permission required to read "${handle.name}". Click Reconnect or choose the file again.`, 'warning');
         } else {
           setSyncWarning('missing', handle.name);
-          if (!isSilentAutoReload) showToast(`Warning: Sync file "${handle.name}" was not found or is unreachable (${e?.name || 'Error'}).`, 'error');
+          if (!isSilentAutoReload) showToast(`Could not read "${handle.name}": ${e?.message || e?.name || 'file unreachable'}.`, 'error');
         }
         return;
       }
@@ -660,15 +787,39 @@
       try {
         let migrated = null;
         try {
-          const rawText = (await file.text()).replace(/^\uFEFF/, '');
+          const rawText = (await withTimeout(
+            file.text(),
+            15000,
+            'Reading file contents timed out after 15s'
+          )).replace(/^\uFEFF/, '');
+          ppDebug('INFO', 'file.text succeeded', {
+            chars: rawText.length,
+            startsWithBrace: rawText.trimStart().startsWith('{'),
+            elapsedMs: Date.now() - tStart,
+          });
+          if (!rawText.trim()) {
+            throw new Error('File is empty (0 bytes — cloud placeholder may not be downloaded locally)');
+          }
           const parsed = JSON.parse(rawText);
+          ppDebug('INFO', 'JSON.parse succeeded', {
+            topKeys: parsed && typeof parsed === 'object' ? Object.keys(parsed).slice(0, 12) : typeof parsed,
+          });
           migrated = normalizeAndMigrateDB(parsed);
           if (!migrated) {
+            ppDebug('ERROR', 'normalizeAndMigrateDB returned null (missing departments/projects)');
             if (!isSilentAutoReload) showToast(`"${handle.name}" is not a valid PulsePlan database (missing departments/projects).`, 'error');
             return;
           }
+          ppDebug('INFO', 'normalizeAndMigrateDB succeeded', {
+            depts: migrated.departments.length,
+            projs: migrated.projects.length,
+            allocs: Object.keys(migrated.allocations || {}).length,
+            overrides: Object.keys(migrated.capacityOverrides || {}).length,
+            milestones: (migrated.milestones || []).length,
+            snapshots: (migrated.snapshots || []).length,
+          });
         } catch (err) {
-          console.error('Sync file parse/migrate error:', err);
+          ppDebug('ERROR', 'Sync file parse/migrate error', { name: err?.name, message: err?.message });
           if (!isSilentAutoReload) {
             showToast(`Failed to parse "${handle.name}": ${err?.message || 'invalid JSON'}`, 'error');
           }
@@ -686,8 +837,9 @@
           if (!isSilentAutoReload) {
             try {
               shifted = syncHorizonAfterDBLoad(liveDB);
+              ppDebug('INFO', 'syncHorizonAfterDBLoad completed', { shifted, startMonth: ui.startMonth, startWeek: ui.startWeek });
             } catch (hErr) {
-              console.error('Horizon alignment error after DB load:', hErr);
+              ppDebug('WARN', 'Horizon alignment error after DB load', { name: hErr?.name, message: hErr?.message });
             }
           }
 
@@ -698,14 +850,14 @@
           pendingAutoReload = false;
           syncWarningState = { type: null, fileName: '', dismissed: false };
           document.getElementById('externalUpdateBanner')?.classList.add('hidden');
-          if (!isSilentAutoReload) await saveRememberedHandle(handle);
           safeSetStorage(STORAGE_KEYS.LIVE_DB, JSON.stringify(liveDB));
           startFilePolling();
 
           try {
             renderAll();
+            ppDebug('INFO', 'Post-load renderAll completed', { activeTab: ui.activeTab, elapsedMs: Date.now() - tStart });
           } catch (renderErr) {
-            console.error('Post-load renderAll error:', renderErr);
+            ppDebug('ERROR', 'Post-load renderAll error', { name: renderErr?.name, message: renderErr?.message });
             if (!isSilentAutoReload) showToast(`Loaded "${handle.name}", but a view render error occurred (${renderErr?.message || 'Error'}).`, 'warning');
             return;
           }
@@ -720,8 +872,13 @@
               'success'
             );
           }
+
+          // Persist handle to IndexedDB non-blockingly AFTER UI has already rendered so IDB stalls never freeze file opening
+          if (!isSilentAutoReload) {
+            saveRememberedHandle(handle);
+          }
         } catch (postErr) {
-          console.error('Post-load attach error:', postErr);
+          ppDebug('ERROR', 'Post-load attach error', { name: postErr?.name, message: postErr?.message });
           if (!isSilentAutoReload) showToast(`Loaded "${handle.name}", but setup failed: ${postErr?.message || 'unexpected error'}`, 'error');
         }
       } finally {
@@ -1100,6 +1257,56 @@
               </tbody>
             </table>`;
         }
+      }
+
+      renderSyncDebugPanel();
+    }
+
+    function renderSyncDebugPanel() {
+      const envEl = document.getElementById('syncDebugEnvSummary');
+      const logEl = document.getElementById('syncDebugLogOutput');
+      const cntEl = document.getElementById('syncDebugCountBadge');
+      if (!envEl && !logEl) return;
+
+      const env = getDebugEnvironmentSummary();
+      if (cntEl) cntEl.textContent = `${_debugLogEntries.length} event${_debugLogEntries.length === 1 ? '' : 's'}`;
+      if (envEl) {
+        envEl.innerHTML = `
+          <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono">Build: ${escapeHtml(env.build)}</span>
+          <span class="px-2 py-0.5 rounded ${env.hasFsApi && env.protocol !== 'file:' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'} font-mono">FS API: ${env.hasFsApi ? 'Yes' : 'No'} (${escapeHtml(env.protocol)})</span>
+          <span class="px-2 py-0.5 rounded ${env.isSecureContext ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'} font-mono">Secure: ${env.isSecureContext ? 'Yes' : 'No'}</span>
+          <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono">SW: ${env.swControlled ? 'Active' : 'None'}</span>
+          <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-mono">Iframe: ${env.inIframe ? 'Yes' : 'No'}</span>`;
+      }
+      if (logEl) {
+        if (_debugLogEntries.length === 0) {
+          logEl.textContent = 'No events logged yet. Click "Open & Link Shared File" or "Import JSON" to capture a trace.';
+        } else {
+          logEl.textContent = _debugLogEntries
+            .slice()
+            .reverse()
+            .map(e => `[${e.time}] [${e.level}] ${e.message}${e.details ? ' | ' + e.details : ''}`)
+            .join('\n');
+        }
+      }
+    }
+
+    async function resetPwaCacheAndReload() {
+      ppDebug('INFO', 'User triggered Clear App Cache & Reload');
+      try {
+        if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+          const regs = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(regs.map(r => r.unregister()));
+        }
+        if (typeof caches !== 'undefined' && typeof caches.keys === 'function') {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(k => caches.delete(k)));
+        }
+        showToast('App cache cleared — reloading fresh copy...', 'info');
+        setTimeout(() => { location.reload(); }, 350);
+      } catch (e) {
+        ppDebug('ERROR', 'resetPwaCacheAndReload failed', { name: e?.name, message: e?.message });
+        showToast(`Could not clear cache automatically (${e?.message || 'Error'}). Press Ctrl+Shift+R.`, 'warning');
       }
     }
 
