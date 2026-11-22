@@ -417,7 +417,7 @@
               <div class="min-w-0">
                 <div class="font-bold text-slate-900 truncate">${escapeHtml(v.name)}</div>
                 <div class="text-[10px] text-slate-500 truncate">
-                  ${v.state.axis === 'project' ? 'By Project' : 'By Dept'} &bull; ${hVal} ${uVal} &bull; ${escapeHtml(cVal)} &bull; ${rLbl}${v.state.hideEmptyRows ? ' • Active Only' : ''}
+                  ${v.state.axis === 'project' ? 'By Project' : v.state.axis === 'timeline' ? 'Timeline' : 'By Dept'} &bull; ${hVal} ${uVal} &bull; ${escapeHtml(cVal)} &bull; ${rLbl}${v.state.hideEmptyRows ? ' • Active Only' : ''}${v.state.includeTentative === false ? ' • Committed Only' : ''}
                 </div>
               </div>
               <div class="flex items-center gap-1.5 shrink-0">
@@ -469,6 +469,7 @@
           filterDept: ui.filterDept,
           filterProj: ui.filterProj,
           hideEmptyRows: ui.hideEmptyRows,
+          includeTentative: ui.includeTentative,
           filterOverOnly: ui.filterOverOnly,
           filterAtRiskOnly: ui.filterAtRiskOnly,
           filterHasNotesOnly: ui.filterHasNotesOnly,
@@ -541,7 +542,7 @@
       }, 60);
     }
 
-    /* ---------- 14F. Paste from Excel / CSV Importer ---------- */
+    /* ---------- 14F. Multi-Mode Paste from Excel / CSV Importer ---------- */
 
     function parseDelimitedAllocations(rawText, unit = 'fte', db = getActiveDB()) {
       const lines = String(rawText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').map(l => l.trim()).filter(Boolean);
@@ -589,10 +590,130 @@
       return { valid, errors };
     }
 
-    let _pendingCsvImportRows = [];
+    function parseDelimitedCapacities(rawText, unit = 'fte', db = getActiveDB()) {
+      const lines = String(rawText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').map(l => l.trim()).filter(Boolean);
+      const valid = [];
+      const errors = [];
+      const findDept = (token) => {
+        const t = token.trim().toLowerCase();
+        return (db.departments || []).find(d => d.code.toLowerCase() === t || d.name.toLowerCase() === t || d.id.toLowerCase() === t) || null;
+      };
 
-    function openCsvImportModal() {
+      lines.forEach((line, idx) => {
+        const sep = line.includes('\t') ? '\t' : (line.includes(';') ? ';' : ',');
+        const cols = line.split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
+        if (cols.length < 3) {
+          errors.push({ line: idx + 1, raw: line, reason: 'Expected 3 columns: Dept, Period, Capacity' });
+          return;
+        }
+        const numVal = parseFloat(cols[2].replace(',', '.'));
+        if (idx === 0 && isNaN(numVal)) return;
+
+        const dept = findDept(cols[0]);
+        const pInfo = normalizeWeekKeyFormat(cols[1]);
+        if (!dept) { errors.push({ line: idx + 1, raw: line, reason: `Unknown department "${cols[0]}"` }); return; }
+        if (!pInfo) { errors.push({ line: idx + 1, raw: line, reason: `Invalid period "${cols[1]}" (use YYYY-MM or YYYY-Www)` }); return; }
+        if (isNaN(numVal) || numVal < 0) { errors.push({ line: idx + 1, raw: line, reason: `Invalid capacity "${cols[2]}"` }); return; }
+
+        const fte = Math.round(displayValueToFte(numVal, pInfo.key, pInfo.kind, unit) * 1000) / 1000;
+        valid.push({
+          line: idx + 1,
+          deptId: dept.id, deptCode: dept.code,
+          periodKey: pInfo.key, timeUnit: pInfo.kind,
+          rawVal: numVal, unit, fte,
+        });
+      });
+
+      return { valid, errors };
+    }
+
+    function parseDelimitedMilestones(rawText, db = getActiveDB()) {
+      const lines = String(rawText || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').map(l => l.trim()).filter(Boolean);
+      const valid = [];
+      const errors = [];
+      const findDept = (token) => {
+        const t = (token || '').trim().toLowerCase();
+        if (!t) return null;
+        return (db.departments || []).find(d => d.code.toLowerCase() === t || d.name.toLowerCase() === t || d.id.toLowerCase() === t) || null;
+      };
+      const findProj = (token) => {
+        const t = (token || '').trim().toLowerCase();
+        return (db.projects || []).find(p => p.code.toLowerCase() === t || p.name.toLowerCase() === t || p.id.toLowerCase() === t) || null;
+      };
+      const parseIso = (s) => {
+        const m = String(s || '').trim().match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+        return m ? `${m[1]}-${pad2(parseInt(m[2], 10))}-${pad2(parseInt(m[3], 10))}` : '';
+      };
+
+      lines.forEach((line, idx) => {
+        const sep = line.includes('\t') ? '\t' : (line.includes(';') ? ';' : ',');
+        const cols = line.split(sep).map(c => c.trim().replace(/^"|"$/g, ''));
+        if (cols.length < 3) {
+          errors.push({ line: idx + 1, raw: line, reason: 'Expected at least 3 columns: Project, Title, TargetDate (YYYY-MM-DD)' });
+          return;
+        }
+        const dateIso = parseIso(cols[2]);
+        if (idx === 0 && !dateIso && /date|target/i.test(cols[2])) return;
+
+        const proj = findProj(cols[0]);
+        const title = cols[1];
+        if (!proj) { errors.push({ line: idx + 1, raw: line, reason: `Unknown project "${cols[0]}"` }); return; }
+        if (!title) { errors.push({ line: idx + 1, raw: line, reason: 'Milestone title is required' }); return; }
+        if (!dateIso) { errors.push({ line: idx + 1, raw: line, reason: `Invalid target date "${cols[2]}" (use YYYY-MM-DD)` }); return; }
+
+        const baseIso = cols[3] ? (parseIso(cols[3]) || dateIso) : dateIso;
+        const dept = cols[4] ? findDept(cols[4]) : null;
+        const status = cols[5] && ['Pending', 'In Progress', 'At Risk', 'Completed'].includes(cols[5]) ? cols[5] : 'Pending';
+        const notes = cols[6] || '';
+
+        valid.push({
+          line: idx + 1,
+          projectId: proj.id, projCode: proj.code,
+          deptId: dept ? dept.id : '', deptCode: dept ? dept.code : 'Auto',
+          title, date: dateIso, baselineDate: baseIso, status, notes,
+        });
+      });
+
+      return { valid, errors };
+    }
+
+    let _pendingCsvImportRows = [];
+    let _pendingCsvImportMode = 'allocations';
+
+    function onCsvImportModeChange() {
+      const mode = document.getElementById('mCsvMode')?.value || 'allocations';
+      const db = getActiveDB();
+      const exDept = db.departments[0]?.code || 'ENG';
+      const exProj = db.projects[0]?.code || 'NVA';
+      const exPeriod = ui.timeUnit === 'month' ? ui.startMonth : ui.startWeek;
+      const todayISO = new Date().toISOString().slice(0, 10);
+
+      const unitWrap = document.getElementById('mCsvUnitWrap');
+      const hintEl = document.getElementById('mCsvFormatHint');
+      const inp = document.getElementById('mCsvInput');
+      if (unitWrap) unitWrap.classList.toggle('hidden', mode === 'milestones');
+      if (hintEl) {
+        if (mode === 'capacities') {
+          hintEl.innerHTML = 'Columns: <code class="font-mono">Dept, Period, Capacity</code> (e.g. <code class="font-mono">ENG, 2026-05, 9.5</code>).';
+        } else if (mode === 'milestones') {
+          hintEl.innerHTML = 'Columns: <code class="font-mono">Project, Title, TargetDate</code> + optional <code class="font-mono">BaselineDate, Dept, Status, Notes</code>.';
+        } else {
+          hintEl.innerHTML = 'Columns: <code class="font-mono">Department, Project, Period, Value</code> (matches by Code or Name; Period: <code class="font-mono">YYYY-MM</code> or <code class="font-mono">YYYY-Www</code>).';
+        }
+      }
+      if (inp) {
+        inp.placeholder = mode === 'capacities'
+          ? `${exDept}, ${exPeriod}, 9.5`
+          : mode === 'milestones'
+            ? `${exProj}, Beta Launch, ${todayISO}, ${todayISO}, ${exDept}, Pending`
+            : `${exDept}, ${exProj}, ${exPeriod}, 2.5`;
+      }
+      previewCsvImport();
+    }
+
+    function openCsvImportModal(defaultMode = 'allocations') {
       _pendingCsvImportRows = [];
+      _pendingCsvImportMode = defaultMode;
       const db = getActiveDB();
       const exDept = db.departments[0]?.code || 'ENG';
       const exProj = db.projects[0]?.code || 'NVA';
@@ -603,14 +724,22 @@
           <div class="w-10 h-1.5 rounded-full bg-slate-300 mx-auto sm:hidden" aria-hidden="true"></div>
           <div class="flex items-start justify-between gap-2">
             <div>
-              <h3 id="modalTitle" class="text-base font-bold text-slate-900">Import Allocations (Paste from Excel / CSV)</h3>
-              <p class="text-[11px] text-slate-500 mt-0.5">Paste tab- or comma-separated rows: <code class="px-1 rounded bg-slate-100 font-mono">Department, Project, Period, Value</code></p>
+              <h3 id="modalTitle" class="text-base font-bold text-slate-900">Import from Excel / CSV</h3>
+              <p id="mCsvFormatHint" class="text-[11px] text-slate-500 mt-0.5">Columns: <code class="font-mono">Department, Project, Period, Value</code> (matches by Code or Name; Period: <code class="font-mono">YYYY-MM</code> or <code class="font-mono">YYYY-Www</code>).</p>
             </div>
             <button type="button" aria-label="Close dialog" onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none">&times;</button>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
+              <label for="mCsvMode" class="block font-semibold text-slate-700 mb-1">Import Target</label>
+              <select id="mCsvMode" onchange="onCsvImportModeChange()" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold">
+                <option value="allocations" ${defaultMode === 'allocations' ? 'selected' : ''}>Allocations (Dept, Project, Period, Value)</option>
+                <option value="capacities" ${defaultMode === 'capacities' ? 'selected' : ''}>Variable Capacities (Dept, Period, Capacity)</option>
+                <option value="milestones" ${defaultMode === 'milestones' ? 'selected' : ''}>Milestones (Project, Title, TargetDate...)</option>
+              </select>
+            </div>
+            <div id="mCsvUnitWrap" class="${defaultMode === 'milestones' ? 'hidden' : ''}">
               <label for="mCsvUnit" class="block font-semibold text-slate-700 mb-1">Input Value Unit</label>
               <select id="mCsvUnit" onchange="previewCsvImport()" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold">
                 <option value="fte" ${ui.manpowerUnit === 'fte' ? 'selected' : ''}>FTE (Headcount Rate)</option>
@@ -618,13 +747,10 @@
                 <option value="hours" ${ui.manpowerUnit === 'hours' ? 'selected' : ''}>Hours</option>
               </select>
             </div>
-            <div class="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
-              Matches Departments &amp; Projects by <strong>Code</strong> or <strong>Name</strong>. Period accepts <code class="font-mono">YYYY-MM</code> or <code class="font-mono">YYYY-Www</code>.
-            </div>
           </div>
 
           <div>
-            <label for="mCsvInput" class="block font-semibold text-slate-700 mb-1">Paste Rows Here</label>
+            <label for="mCsvInput" class="block font-semibold text-slate-700 mb-1">Paste Rows Here (Tab, Comma, or Semicolon)</label>
             <textarea id="mCsvInput" rows="6" oninput="previewCsvImport()"
               placeholder="${escapeHtml(exDept)}, ${escapeHtml(exProj)}, ${escapeHtml(exPeriod)}, 2.5"
               class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-mono text-xs leading-relaxed"></textarea>
@@ -639,15 +765,18 @@
             <button id="btnExecuteCsvImport" type="button" disabled onclick="executeCsvImport()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white font-semibold">Import Valid Rows</button>
           </div>
         </div>`, 'max-w-2xl');
+      onCsvImportModeChange();
     }
 
     function previewCsvImport() {
       const text = document.getElementById('mCsvInput')?.value || '';
       const unit = document.getElementById('mCsvUnit')?.value || 'fte';
+      const mode = document.getElementById('mCsvMode')?.value || 'allocations';
       const box = document.getElementById('mCsvPreviewBox');
       const btn = document.getElementById('btnExecuteCsvImport');
       if (!box || !btn) return;
 
+      _pendingCsvImportMode = mode;
       if (!text.trim()) {
         _pendingCsvImportRows = [];
         btn.disabled = true;
@@ -655,18 +784,43 @@
         return;
       }
 
-      const { valid, errors } = parseDelimitedAllocations(text, unit, getActiveDB());
+      const db = getActiveDB();
+      const parsed = mode === 'capacities'
+        ? parseDelimitedCapacities(text, unit, db)
+        : mode === 'milestones'
+          ? parseDelimitedMilestones(text, db)
+          : parseDelimitedAllocations(text, unit, db);
+
+      const { valid, errors } = parsed;
       _pendingCsvImportRows = valid;
       btn.disabled = valid.length === 0;
       btn.textContent = valid.length > 0 ? `Import ${valid.length} Row${valid.length === 1 ? '' : 's'}` : 'Import Valid Rows';
 
-      const previewRows = valid.slice(0, 6).map(r => `
-        <tr class="border-t border-slate-200/70">
-          <td class="py-1 pr-2 font-mono font-bold">${escapeHtml(r.deptCode)}</td>
-          <td class="py-1 pr-2 font-mono font-bold text-indigo-700">${escapeHtml(r.projCode)}</td>
-          <td class="py-1 pr-2 font-mono">${escapeHtml(r.periodKey)}</td>
-          <td class="py-1 font-bold tabular-nums">${formatValue(r.rawVal, r.unit)} (${formatValue(r.fte, 'fte')})</td>
-        </tr>`).join('');
+      let previewRows = '';
+      if (mode === 'capacities') {
+        previewRows = valid.slice(0, 6).map(r => `
+          <tr class="border-t border-slate-200/70">
+            <td class="py-1 pr-2 font-mono font-bold">${escapeHtml(r.deptCode)}</td>
+            <td class="py-1 pr-2 font-mono">${escapeHtml(r.periodKey)}</td>
+            <td class="py-1 font-bold text-sky-700 tabular-nums">${formatValue(r.rawVal, r.unit)} (${formatValue(r.fte, 'fte')})</td>
+          </tr>`).join('');
+      } else if (mode === 'milestones') {
+        previewRows = valid.slice(0, 6).map(r => `
+          <tr class="border-t border-slate-200/70">
+            <td class="py-1 pr-2 font-mono font-bold text-indigo-700">${escapeHtml(r.projCode)}</td>
+            <td class="py-1 pr-2 font-bold text-slate-800">${escapeHtml(r.title)}</td>
+            <td class="py-1 pr-2 font-mono">${escapeHtml(r.date)}</td>
+            <td class="py-1 text-slate-500">${escapeHtml(r.deptCode)}</td>
+          </tr>`).join('');
+      } else {
+        previewRows = valid.slice(0, 6).map(r => `
+          <tr class="border-t border-slate-200/70">
+            <td class="py-1 pr-2 font-mono font-bold">${escapeHtml(r.deptCode)}</td>
+            <td class="py-1 pr-2 font-mono font-bold text-indigo-700">${escapeHtml(r.projCode)}</td>
+            <td class="py-1 pr-2 font-mono">${escapeHtml(r.periodKey)}</td>
+            <td class="py-1 font-bold tabular-nums">${formatValue(r.rawVal, r.unit)} (${formatValue(r.fte, 'fte')})</td>
+          </tr>`).join('');
+      }
 
       const errHtml = errors.length > 0
         ? `<div class="mt-2 p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 space-y-0.5 text-[11px]">
@@ -687,16 +841,43 @@
     function executeCsvImport() {
       if (_pendingCsvImportRows.length === 0) return;
       const db = getActiveDB();
-      pushUndoState(`Import ${_pendingCsvImportRows.length} CSV allocations`);
-      _pendingCsvImportRows.forEach(r => {
-        setAllocationForPeriod(r.deptId, r.projId, r.periodKey, r.timeUnit, r.fte, db);
-      });
+      const mode = _pendingCsvImportMode || 'allocations';
       const count = _pendingCsvImportRows.length;
+
+      if (mode === 'capacities') {
+        pushUndoState(`Import ${count} CSV capacity overrides`);
+        _pendingCsvImportRows.forEach(r => {
+          const wks = r.timeUnit === 'month' ? getWeeksInMonth(r.periodKey) : [r.periodKey];
+          wks.forEach(wk => { db.capacityOverrides[`${r.deptId}::${wk}`] = r.fte; });
+        });
+        recordChange('Capacity', `Bulk imported ${count} variable capacity row${count === 1 ? '' : 's'} via CSV/Excel paste`);
+      } else if (mode === 'milestones') {
+        pushUndoState(`Import ${count} CSV milestones`);
+        _pendingCsvImportRows.forEach(r => {
+          db.milestones.push({
+            id: uid('ms'),
+            title: r.title,
+            projectId: r.projectId,
+            deptId: r.deptId,
+            date: r.date,
+            baselineDate: r.baselineDate,
+            status: r.status,
+            notes: r.notes,
+          });
+        });
+        recordChange('Milestone', `Bulk imported ${count} milestone${count === 1 ? '' : 's'} via CSV/Excel paste`);
+      } else {
+        pushUndoState(`Import ${count} CSV allocations`);
+        _pendingCsvImportRows.forEach(r => {
+          setAllocationForPeriod(r.deptId, r.projId, r.periodKey, r.timeUnit, r.fte, db);
+        });
+        recordChange('Import', `Bulk imported ${count} allocation row${count === 1 ? '' : 's'} via CSV/Excel paste`);
+      }
+
       _pendingCsvImportRows = [];
-      recordChange('Import', `Bulk imported ${count} allocation row${count === 1 ? '' : 's'} via CSV/Excel paste`);
       closeModal();
       renderAll();
-      showToast(`Imported ${count} allocation${count === 1 ? '' : 's'}`, 'success', { undoable: true });
+      showToast(`Imported ${count} ${mode === 'capacities' ? 'capacity override' : mode === 'milestones' ? 'milestone' : 'allocation'}${count === 1 ? '' : 's'}`, 'success', { undoable: true });
     }
 
     /* ---------- 14G. Heatmap Cell Jump & Project Archiving ---------- */
@@ -729,4 +910,443 @@
       ui.showArchivedProjects = !ui.showArchivedProjects;
       persistUIPrefs();
       renderDataTab();
+    }
+
+    /* ---------- 14H. One-Click Bottleneck Resolver ("Fix >100% Slot") ---------- */
+
+    function computeBottleneckOptions(deptId, pk, timeUnit = ui.timeUnit, db = getActiveDB()) {
+      const dept = (db.departments || []).find(d => d.id === deptId);
+      if (!dept) return null;
+      const capFte = getDeptCapacityForPeriod(deptId, pk, timeUnit, db).avgFte;
+      const allocFte = getDeptTotalAllocatedFte(deptId, pk, timeUnit, db);
+      const excessFte = Math.max(0, Math.round((allocFte - capFte) * 1000) / 1000);
+      const pct = capFte > 0 ? Math.round((allocFte / capFte) * 100) : (allocFte > 0 ? 999 : 0);
+
+      const prioRank = { Low: 0, Medium: 1, High: 2, Critical: 3 };
+      const items = (db.projects || [])
+        .filter(p => !p.archived && isProjectIncludedInPlan(p))
+        .map(p => {
+          const a = getAllocationForPeriod(deptId, p.id, pk, timeUnit, db.allocations);
+          return a.hasData ? { proj: p, fte: a.avgFte } : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          if (Boolean(b.proj.tentative) !== Boolean(a.proj.tentative)) return b.proj.tentative ? 1 : -1;
+          const pa = prioRank[a.proj.priority] ?? 1;
+          const pb = prioRank[b.proj.priority] ?? 1;
+          if (pa !== pb) return pa - pb;
+          return a.fte - b.fte;
+        });
+
+      const candidate = items[0] || null;
+      const trimTargetFte = candidate ? Math.max(0, Math.round((candidate.fte - excessFte) * 100) / 100) : 0;
+      const afterTrimAlloc = candidate ? Math.max(0, allocFte - (candidate.fte - trimTargetFte)) : allocFte;
+      const afterTrimPct = capFte > 0 ? Math.round((afterTrimAlloc / capFte) * 100) : 0;
+
+      const nextPk = timeUnit === 'month' ? addMonthsToMonthKey(pk, 1) : addWeeksToWeekKey(pk, 1);
+      const nextCap = getDeptCapacityForPeriod(deptId, nextPk, timeUnit, db).avgFte;
+      const nextAlloc = getDeptTotalAllocatedFte(deptId, nextPk, timeUnit, db);
+      const afterShiftPctHere = candidate && capFte > 0 ? Math.round((Math.max(0, allocFte - candidate.fte) / capFte) * 100) : pct;
+      const afterShiftPctNext = candidate && nextCap > 0 ? Math.round(((nextAlloc + candidate.fte) / nextCap) * 100) : 0;
+
+      const bufferCapFte = Math.ceil(allocFte * 4) / 4;
+      const afterBufferPct = bufferCapFte > 0 ? Math.round((allocFte / bufferCapFte) * 100) : 0;
+
+      return {
+        dept, pk, timeUnit, nextPk, capFte, allocFte, excessFte, pct,
+        items, candidate, trimTargetFte, afterTrimPct,
+        afterShiftPctHere, afterShiftPctNext,
+        bufferCapFte, afterBufferPct,
+      };
+    }
+
+    function openBottleneckResolverModal(deptId, pk) {
+      const db = getActiveDB();
+      const plan = computeBottleneckOptions(deptId, pk, ui.timeUnit, db);
+      if (!plan) return;
+      const hdr = formatPeriodHeader(pk, ui.timeUnit);
+      const nextHdr = formatPeriodHeader(plan.nextPk, ui.timeUnit);
+
+      const candOpts = plan.items.map((it, idx) =>
+        `<option value="${it.proj.id}" ${idx === 0 ? 'selected' : ''}>[${escapeHtml(it.proj.code)}] ${escapeHtml(it.proj.name)} — ${formatValue(fteToDisplayValue(it.fte, pk, ui.timeUnit))} (${escapeHtml(it.proj.priority || 'Medium')}${it.proj.tentative ? ', Pipeline' : ''})</option>`
+      ).join('');
+
+      showModal(`
+        <div class="p-5 space-y-4 text-xs">
+          <div class="w-10 h-1.5 rounded-full bg-slate-300 mx-auto sm:hidden" aria-hidden="true"></div>
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <h3 id="modalTitle" class="text-base font-bold text-rose-700">Resolve Bottleneck — ${escapeHtml(plan.dept.name)}</h3>
+              <p class="text-[11px] text-slate-500 mt-0.5">${escapeHtml(hdr.title)}: Allocated <strong>${formatValue(fteToDisplayValue(plan.allocFte, pk, ui.timeUnit))}</strong> vs. Capacity <strong>${formatValue(fteToDisplayValue(plan.capFte, pk, ui.timeUnit))}</strong> (<strong class="text-rose-600">${plan.pct}%</strong>, excess +${formatValue(fteToDisplayValue(plan.excessFte, pk, ui.timeUnit))}).</p>
+            </div>
+            <button type="button" aria-label="Close dialog" onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none">&times;</button>
+          </div>
+
+          ${plan.items.length > 0 ? `
+            <div>
+              <label for="mBotProjSelect" class="block font-semibold text-slate-700 mb-1">Target Project for Trim / Shift (auto-suggested lowest priority / pipeline)</label>
+              <select id="mBotProjSelect" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-800">
+                ${candOpts}
+              </select>
+            </div>` : ''}
+
+          <div class="space-y-2.5">
+            ${plan.candidate ? `
+              <div class="p-3 rounded-xl border border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
+                <div class="min-w-0 flex-1 space-y-0.5">
+                  <div class="font-bold text-slate-900">1. Trim Allocation to Fit Capacity</div>
+                  <div class="text-[11px] text-slate-600">Reduce selected project by excess (${formatValue(fteToDisplayValue(plan.excessFte, pk, ui.timeUnit))}) so utilisation drops toward <strong>&le;100%</strong>.</div>
+                </div>
+                <button type="button" onclick="applyBottleneckTrim('${deptId}', '${pk}')"
+                  class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shrink-0 transition">Apply Trim</button>
+              </div>
+              <div class="p-3 rounded-xl border border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-2">
+                <div class="min-w-0 flex-1 space-y-0.5">
+                  <div class="font-bold text-slate-900">2. Defer Slot to ${escapeHtml(nextHdr.title)} (+1 ${ui.timeUnit})</div>
+                  <div class="text-[11px] text-slate-600">Move selected project&rsquo;s load in ${escapeHtml(hdr.title)} forward into ${escapeHtml(nextHdr.title)} (current ${plan.afterShiftPctHere}% / next ~${plan.afterShiftPctNext}%).</div>
+                </div>
+                <button type="button" onclick="applyBottleneckShift('${deptId}', '${pk}')"
+                  class="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold shrink-0 transition">Move +1</button>
+              </div>` : ''}
+
+            <div class="p-3 rounded-xl border border-sky-200 bg-sky-50/70 flex flex-wrap items-center justify-between gap-2">
+              <div class="min-w-0 flex-1 space-y-0.5">
+                <div class="font-bold text-sky-900">3. Add Temporary Capacity Buffer (Contractors / Surge)</div>
+                <div class="text-[11px] text-sky-800">Set variable capacity override in ${escapeHtml(hdr.title)} to <strong>${plan.bufferCapFte} FTE</strong> (utilisation drops to <strong>${plan.afterBufferPct}%</strong>).</div>
+              </div>
+              <button type="button" onclick="applyBottleneckBuffer('${deptId}', '${pk}', ${plan.bufferCapFte})"
+                class="px-3.5 py-2 rounded-xl bg-sky-600 hover:bg-sky-700 text-white font-bold shrink-0 transition">Set ${plan.bufferCapFte} FTE</button>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between pt-2 border-t border-slate-100 text-[11px] text-slate-500">
+            <span>All fixes are 1-click Undoable (Ctrl+Z).</span>
+            <button type="button" onclick="closeModal()" class="px-3.5 py-1.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold">Close</button>
+          </div>
+        </div>`, 'max-w-lg');
+    }
+
+    function applyBottleneckTrim(deptId, pk) {
+      const db = getActiveDB();
+      const projId = document.getElementById('mBotProjSelect')?.value;
+      const plan = computeBottleneckOptions(deptId, pk, ui.timeUnit, db);
+      if (!plan || !projId) return;
+      const cur = getAllocationForPeriod(deptId, projId, pk, ui.timeUnit, db.allocations);
+      const nextFte = Math.max(0, Math.round((cur.avgFte - plan.excessFte) * 100) / 100);
+      const pCode = db.projects.find(p => p.id === projId)?.code || projId;
+      pushUndoState(`Trim [${plan.dept.code} -> ${pCode}] in ${pk}`);
+      setAllocationForPeriod(deptId, projId, pk, ui.timeUnit, nextFte, db);
+      recordChange('Bottleneck', `Resolved [${plan.dept.code}] bottleneck in ${pk}: trimmed [${pCode}] from ${formatValue(cur.avgFte, 'fte')} to ${formatValue(nextFte, 'fte')}`);
+      closeModal();
+      renderAll();
+      showToast(`Trimmed [${pCode}] to ${formatValue(nextFte, 'fte')}`, 'success', { undoable: true });
+    }
+
+    function applyBottleneckShift(deptId, pk) {
+      const db = getActiveDB();
+      const projId = document.getElementById('mBotProjSelect')?.value;
+      const plan = computeBottleneckOptions(deptId, pk, ui.timeUnit, db);
+      if (!plan || !projId) return;
+      const cur = getAllocationForPeriod(deptId, projId, pk, ui.timeUnit, db.allocations);
+      if (!cur.hasData) return;
+      const pCode = db.projects.find(p => p.id === projId)?.code || projId;
+      const dstExisting = getAllocationForPeriod(deptId, projId, plan.nextPk, ui.timeUnit, db.allocations).avgFte;
+      pushUndoState(`Defer [${plan.dept.code} -> ${pCode}] to ${plan.nextPk}`);
+      setAllocationForPeriod(deptId, projId, pk, ui.timeUnit, 0, db);
+      setAllocationForPeriod(deptId, projId, plan.nextPk, ui.timeUnit, dstExisting + cur.avgFte, db);
+      recordChange('Bottleneck', `Resolved [${plan.dept.code}] bottleneck in ${pk}: moved [${pCode}] (${formatValue(cur.avgFte, 'fte')}) to ${plan.nextPk}`);
+      closeModal();
+      renderAll();
+      showToast(`Moved [${pCode}] to ${formatPeriodHeader(plan.nextPk, ui.timeUnit).title}`, 'success', { undoable: true });
+    }
+
+    function applyBottleneckBuffer(deptId, pk, targetCapFte) {
+      const db = getActiveDB();
+      const dept = db.departments.find(d => d.id === deptId);
+      if (!dept) return;
+      const cleanCap = Math.max(0, Math.round(Number(targetCapFte) * 100) / 100);
+      pushUndoState(`Add capacity buffer for [${dept.code}] in ${pk}`);
+      const wks = ui.timeUnit === 'month' ? getWeeksInMonth(pk) : [pk];
+      wks.forEach(wk => { db.capacityOverrides[`${deptId}::${wk}`] = cleanCap; });
+      recordChange('Bottleneck', `Resolved [${dept.code}] bottleneck in ${pk}: temporary capacity buffer set to ${cleanCap} FTE`);
+      closeModal();
+      renderAll();
+      showToast(`Set [${dept.code}] capacity to ${cleanCap} FTE`, 'success', { undoable: true });
+    }
+
+    /* ---------- 14I. Executive Summary Briefing Copy ---------- */
+
+    function buildExecutiveBriefingText(db = getActiveDB()) {
+      const periods = getVisiblePeriods();
+      const warnT = db.settings.warnThreshold || 85;
+      const overT = db.settings.overThreshold || 100;
+      const visibleDepts = (db.departments || []).filter(d => ui.filterDept === 'all' || d.id === ui.filterDept);
+      const visibleProjs = getSortedProjects(db).filter(p => !p.archived && isProjectIncludedInPlan(p) && (ui.filterProj === 'all' || p.id === ui.filterProj));
+      const startLbl = periods.length ? formatPeriodHeader(periods[0], ui.timeUnit).title : '';
+      const endLbl = periods.length ? formatPeriodHeader(periods[periods.length - 1], ui.timeUnit).title : '';
+
+      let totA = 0, totC = 0;
+      const bottlenecks = [];
+      const periodSummaries = [];
+
+      periods.forEach(pk => {
+        let pA = 0, pC = 0;
+        const pTitle = formatPeriodHeader(pk, ui.timeUnit).title;
+        visibleDepts.forEach(d => {
+          const da = getDeptTotalAllocatedFte(d.id, pk, ui.timeUnit, db);
+          const dc = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
+          pA += da; pC += dc;
+          const dp = dc > 0 ? Math.round((da / dc) * 100) : (da > 0 ? 999 : 0);
+          if (dp > overT) {
+            const topProjs = visibleProjs
+              .map(p => ({ p, fte: getAllocationForPeriod(d.id, p.id, pk, ui.timeUnit, db.allocations).avgFte }))
+              .filter(x => x.fte > 0.001)
+              .sort((a, b) => b.fte - a.fte)
+              .slice(0, 3)
+              .map(x => `[${x.p.code}] ${formatValue(fteToDisplayValue(x.fte, pk, ui.timeUnit))}`);
+            bottlenecks.push(`- ${d.name} (${pTitle}): ${dp > 990 ? '>100%' : dp + '%'} (${formatValue(fteToDisplayValue(da, pk, ui.timeUnit))} / ${formatValue(fteToDisplayValue(dc, pk, ui.timeUnit))}) — ${topProjs.join(', ')}`);
+          }
+        });
+        totA += pA; totC += pC;
+        const pPct = pC > 0 ? Math.round((pA / pC) * 100) : 0;
+        periodSummaries.push(`${pTitle}: ${pPct}%`);
+      });
+
+      const avgPct = totC > 0 ? Math.round((totA / totC) * 100) : 0;
+      const slippedMs = (db.milestones || []).filter(m => getMilestoneDriftDays(m) > 0 && m.status !== 'Completed');
+      const atRiskMs = (db.milestones || []).filter(m => m.status === 'At Risk' && getMilestoneDriftDays(m) <= 0);
+
+      const budgetWarnings = [];
+      const hasRates = hasAnyDayRates(db);
+      let totalCost = 0;
+      visibleProjs.forEach(p => {
+        const dPlanned = getProjectTotalPlannedDays(p.id, db);
+        const dBud = Number(p.budgetDays) || 0;
+        if (dBud > 0 && (dPlanned / dBud) * 100 >= warnT) {
+          budgetWarnings.push(`- [${p.code}] ${p.name}: ${dPlanned}/${dBud}d (${Math.round((dPlanned / dBud) * 100)}%)`);
+        }
+        if (hasRates) {
+          const cPlanned = getProjectTotalPlannedCost(p.id, db);
+          totalCost += cPlanned;
+          const cBud = Number(p.budgetCost) || 0;
+          if (cBud > 0 && (cPlanned / cBud) * 100 >= warnT) {
+            budgetWarnings.push(`- [${p.code}] ${p.name} Cost: ${formatCurrency(cPlanned, db)} / ${formatCurrency(cBud, db)} (${Math.round((cPlanned / cBud) * 100)}%)`);
+          }
+        }
+      });
+
+      const notes = [];
+      periods.forEach(pk => {
+        const pTitle = formatPeriodHeader(pk, ui.timeUnit).title;
+        visibleDepts.forEach(d => {
+          visibleProjs.forEach(p => {
+            if (notes.length >= 8) return;
+            const c = getCellProjectComments(d.id, p.id, pk, ui.timeUnit, db);
+            if (c.direct) notes.push(`- ${pTitle} | ${d.code} -> [${p.code}]: ${c.direct.replace(/\s+/g, ' ').slice(0, 140)}`);
+          });
+        });
+      });
+
+      const lines = [
+        `PULSEPLAN EXECUTIVE BRIEFING (${startLbl}${endLbl && endLbl !== startLbl ? ' – ' + endLbl : ''})`,
+        `Horizon: ${periods.length} ${ui.timeUnit}${periods.length === 1 ? '' : 's'} | Scope: ${ui.includeTentative ? 'Committed + Pipeline' : 'Committed Only'} | Unit: ${unitShortLabel()}`,
+        `Org Utilisation: ${avgPct}% avg (${periodSummaries.join(' | ')})`,
+      ];
+      if (hasRates && totalCost > 0) lines.push(`Estimated Portfolio Cost: ${formatCurrency(totalCost, db)}`);
+
+      lines.push('');
+      lines.push(`BOTTLENECKS (>${overT}%): ${bottlenecks.length}`);
+      if (bottlenecks.length > 0) lines.push(...bottlenecks);
+      else lines.push('- None in visible horizon.');
+
+      lines.push('');
+      lines.push(`MILESTONES: ${slippedMs.length} slipped, ${atRiskMs.length} at risk (of ${(db.milestones || []).length} total)`);
+      [...slippedMs, ...atRiskMs].forEach(m => {
+        const p = db.projects.find(x => x.id === m.projectId);
+        const drift = getMilestoneDriftDays(m);
+        lines.push(`- ${m.title}${p ? ` [${p.code}]` : ''}: ${m.date}${drift > 0 ? ` (+${drift}d slip)` : ''} [${m.status}]`);
+      });
+
+      if (budgetWarnings.length > 0) {
+        lines.push('');
+        lines.push('BUDGET WATCHLIST:');
+        lines.push(...budgetWarnings);
+      }
+
+      if (notes.length > 0) {
+        lines.push('');
+        lines.push('KEY NOTES:');
+        lines.push(...notes);
+      }
+
+      return lines.join('\n');
+    }
+
+    async function copyExecutiveBriefing() {
+      const text = buildExecutiveBriefingText(getActiveDB());
+      let copied = false;
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(text);
+          copied = true;
+        }
+      } catch (e) {}
+
+      if (copied) {
+        showToast('Executive briefing copied to clipboard — ready to paste into Email/Slack/Teams', 'success');
+        return;
+      }
+
+      showModal(`
+        <div class="p-5 space-y-3 text-xs">
+          <div class="flex items-center justify-between">
+            <h3 id="modalTitle" class="text-base font-bold text-slate-900">Executive Summary Briefing</h3>
+            <button type="button" aria-label="Close dialog" onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none">&times;</button>
+          </div>
+          <p class="text-slate-500">Select all and copy (<code class="font-mono">Ctrl+C</code> / <code class="font-mono">Cmd+C</code>) to share in Email, Slack, or Teams:</p>
+          <textarea id="mBriefingText" rows="12" readonly class="w-full p-3 rounded-xl border border-slate-200 bg-slate-50 font-mono text-[11px] leading-relaxed">${escapeHtml(text)}</textarea>
+          <div class="flex justify-end gap-2">
+            <button type="button" onclick="const t=document.getElementById('mBriefingText'); if(t){t.select(); document.execCommand?.('copy'); showToast('Copied briefing','success');}" class="px-4 py-2 rounded-xl bg-indigo-600 text-white font-semibold">Select &amp; Copy</button>
+            <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 font-semibold">Close</button>
+          </div>
+        </div>`, 'max-w-xl');
+    }
+
+    /* ---------- 14J. Clear Period Allocations & Duplicate Project ---------- */
+
+    function clearPeriodAllocations(periodKey) {
+      const db = getActiveDB();
+      const visibleDepts = db.departments.filter(d => ui.filterDept === 'all' || d.id === ui.filterDept);
+      const visibleProjs = db.projects.filter(p => (ui.filterProj === 'all' || p.id === ui.filterProj) && isProjectIncludedInPlan(p));
+      const targets = [];
+      visibleDepts.forEach(d => {
+        visibleProjs.forEach(p => {
+          if (getAllocationForPeriod(d.id, p.id, periodKey, ui.timeUnit, db.allocations).hasData) {
+            targets.push({ deptId: d.id, projId: p.id });
+          }
+        });
+      });
+      const title = formatPeriodHeader(periodKey, ui.timeUnit).title;
+      if (targets.length === 0) {
+        showToast(`No visible allocations to clear in ${title}.`, 'info');
+        return;
+      }
+      openConfirmModal(
+        `Clear ${title}`,
+        `Remove all ${targets.length} visible allocation${targets.length === 1 ? '' : 's'} in ${title}? You can undo this immediately with Ctrl+Z.`,
+        'Clear Period',
+        () => {
+          pushUndoState(`Clear allocations in ${title}`);
+          targets.forEach(({ deptId, projId }) => setAllocationForPeriod(deptId, projId, periodKey, ui.timeUnit, 0, db));
+          recordChange('Allocation', `Cleared ${targets.length} visible allocation${targets.length === 1 ? '' : 's'} in ${title}`);
+          renderAll();
+          showToast(`Cleared ${targets.length} allocation${targets.length === 1 ? '' : 's'} in ${title}`, 'info', { undoable: true });
+        }
+      );
+    }
+
+    function duplicateProject(projId, opts = {}, db = getActiveDB()) {
+      const src = (db.projects || []).find(p => p.id === projId);
+      if (!src) return null;
+      const newId = uid('p');
+      const existingCodes = new Set((db.projects || []).map(p => String(p.code || '').toUpperCase()));
+      let defaultCode = `${src.code}2`.slice(0, 8);
+      let n = 2;
+      while (existingCodes.has(defaultCode.toUpperCase()) && n < 99) {
+        defaultCode = `${src.code.slice(0, 6)}${n}`;
+        n++;
+      }
+      const newProj = {
+        ...src,
+        id: newId,
+        name: String(opts.name || `${src.name} (Copy)`).trim(),
+        code: String(opts.code || defaultCode).trim().toUpperCase(),
+        tentative: opts.tentative !== undefined ? Boolean(opts.tentative) : Boolean(src.tentative),
+        archived: false,
+      };
+      db.projects.push(newProj);
+      db.projects = getSortedProjects(db);
+
+      let copiedAllocs = 0;
+      if (opts.copyAllocations !== false) {
+        Object.entries({ ...(db.allocations || {}) }).forEach(([k, v]) => {
+          const parts = k.split('::');
+          if (parts[1] === projId) {
+            db.allocations[`${parts[0]}::${newId}::${parts[2]}`] = v;
+            copiedAllocs++;
+          }
+        });
+      }
+      let copiedMs = 0;
+      if (opts.copyMilestones !== false) {
+        const srcMs = (db.milestones || []).filter(m => m.projectId === projId);
+        srcMs.forEach(m => {
+          db.milestones.push({ ...m, id: uid('ms'), projectId: newId });
+          copiedMs++;
+        });
+      }
+      return { project: newProj, copiedAllocs, copiedMs };
+    }
+
+    function openDuplicateProjectModal(projId) {
+      const db = getActiveDB();
+      const src = db.projects.find(p => p.id === projId);
+      if (!src) return;
+      const suggestedCode = `${src.code.slice(0, 6)}2`.toUpperCase();
+      showModal(`
+        <div class="p-5 space-y-4 text-xs">
+          <div class="w-10 h-1.5 rounded-full bg-slate-300 mx-auto sm:hidden" aria-hidden="true"></div>
+          <div class="flex items-center justify-between">
+            <h3 id="modalTitle" class="text-base font-bold text-slate-900">Duplicate Project</h3>
+            <button type="button" aria-label="Close dialog" onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none">&times;</button>
+          </div>
+          <input type="hidden" id="mDupProjId" value="${src.id}" />
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="sm:col-span-2">
+              <label for="mDupProjName" class="block font-semibold text-slate-700 mb-1">New Project Name</label>
+              <input id="mDupProjName" type="text" value="${escapeHtml(src.name)} (Copy)" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
+            </div>
+            <div>
+              <label for="mDupProjCode" class="block font-semibold text-slate-700 mb-1">Code</label>
+              <input id="mDupProjCode" type="text" maxlength="8" value="${escapeHtml(suggestedCode)}" class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-mono uppercase font-bold" />
+            </div>
+          </div>
+          <div class="space-y-2">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input id="mDupCopyAllocs" type="checkbox" checked class="rounded text-indigo-600" />
+              <span class="font-semibold text-slate-700">Copy all weekly manpower allocations</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input id="mDupCopyMs" type="checkbox" checked class="rounded text-indigo-600" />
+              <span class="font-semibold text-slate-700">Copy project milestones</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input id="mDupTentative" type="checkbox" ${src.tentative ? 'checked' : ''} class="rounded text-indigo-600" />
+              <span class="font-semibold text-violet-800">Mark duplicate as Tentative / Pipeline</span>
+            </label>
+          </div>
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold">Cancel</button>
+            <button type="button" onclick="applyDuplicateProjectModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">Duplicate Project</button>
+          </div>
+        </div>`, 'max-w-md');
+    }
+
+    function applyDuplicateProjectModal() {
+      const db = getActiveDB();
+      const srcId = document.getElementById('mDupProjId')?.value;
+      const name = (document.getElementById('mDupProjName')?.value || '').trim();
+      const code = (document.getElementById('mDupProjCode')?.value || '').trim().toUpperCase();
+      const copyAllocations = Boolean(document.getElementById('mDupCopyAllocs')?.checked);
+      const copyMilestones = Boolean(document.getElementById('mDupCopyMs')?.checked);
+      const tentative = Boolean(document.getElementById('mDupTentative')?.checked);
+      if (!name) { showToast('Project name is required.', 'warning'); return; }
+
+      pushUndoState(`Duplicate project [${code || 'COPY'}]`);
+      const res = duplicateProject(srcId, { name, code, copyAllocations, copyMilestones, tentative }, db);
+      if (!res) return;
+      recordChange('Project', `Duplicated project as [${res.project.code}] ${res.project.name} (${res.copiedAllocs} alloc wks, ${res.copiedMs} milestones)`);
+      closeModal();
+      renderAll();
+      showToast(`Created [${res.project.code}] ${res.project.name}`, 'success', { undoable: true });
     }

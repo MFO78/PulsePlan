@@ -38,9 +38,85 @@
     }
 
     function getMobileVisibleRows(db = getActiveDB()) {
+      const periods = getVisiblePeriods();
+      const selectedPk = getMobileSelectedPeriod();
+      const overT = db.settings.overThreshold || 100;
+      const searchQ = (ui.matrixSearch || '').trim().toLowerCase();
       const visibleDepts = db.departments.filter(d => ui.filterDept === 'all' || d.id === ui.filterDept);
-      const visibleProjs = getSortedProjects(db).filter(p => (!p.archived || ui.filterProj === p.id) && (ui.filterProj === 'all' || p.id === ui.filterProj));
-      return ui.axis === 'department' ? visibleDepts : visibleProjs;
+      const visibleProjs = getSortedProjects(db).filter(p => {
+        if (p.archived && ui.filterProj !== p.id) return false;
+        if (!ui.includeTentative && p.tentative && ui.filterProj !== p.id) return false;
+        if (ui.filterProj !== 'all' && p.id !== ui.filterProj) return false;
+        if (ui.filterAtRiskOnly && p.status !== 'At Risk') return false;
+        return true;
+      });
+      const rawRows = ui.axis === 'department' ? visibleDepts : visibleProjs;
+
+      return rawRows.filter(row => {
+        if (ui.hideEmptyRows) {
+          if (ui.axis === 'department') {
+            const hasActive = visibleProjs.some(p => {
+              const a = getAllocationForPeriod(row.id, p.id, selectedPk, ui.timeUnit, db.allocations);
+              const c = getCellProjectComments(row.id, p.id, selectedPk, ui.timeUnit, db);
+              return a.hasData || c.hasAny;
+            });
+            if (!hasActive) return false;
+          } else {
+            const checkPks = ui.axis === 'timeline' ? periods : [selectedPk];
+            const hasActive = checkPks.some(pk => visibleDepts.some(d => {
+              const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
+              const c = getCellProjectComments(d.id, row.id, pk, ui.timeUnit, db);
+              return a.hasData || c.hasAny;
+            }));
+            if (!hasActive) return false;
+          }
+        }
+        if (ui.filterOverOnly) {
+          if (ui.axis === 'department') {
+            const c = getDeptCapacityForPeriod(row.id, selectedPk, ui.timeUnit, db).avgFte;
+            const a = getDeptTotalAllocatedFte(row.id, selectedPk, ui.timeUnit, db);
+            const pct = c > 0 ? Math.round((a / c) * 100) : (a > 0 ? 999 : 0);
+            if (pct <= overT) return false;
+          } else {
+            const checkPks = ui.axis === 'timeline' ? periods : [selectedPk];
+            const hasBot = checkPks.some(pk => visibleDepts.some(d => {
+              if (!getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations).hasData) return false;
+              const dc = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
+              const dt = getDeptTotalAllocatedFte(d.id, pk, ui.timeUnit, db);
+              const dp = dc > 0 ? Math.round((dt / dc) * 100) : (dt > 0 ? 999 : 0);
+              return dp > overT;
+            }));
+            if (!hasBot) return false;
+          }
+        }
+        if (ui.filterHasNotesOnly) {
+          const checkPks = ui.axis === 'timeline' ? periods : [selectedPk];
+          const axisKind = ui.axis === 'department' ? 'department' : 'project';
+          const hasNotes = checkPks.some(pk => getCellTotalCommentCount(row.id, pk, axisKind, ui.timeUnit, db) > 0);
+          if (!hasNotes) return false;
+        }
+        if (searchQ) {
+          if (ui.axis === 'department') {
+            if ((`${row.name} ${row.code} ${row.manager || ''}`).toLowerCase().includes(searchQ)) return true;
+            return visibleProjs.some(p => {
+              const a = getAllocationForPeriod(row.id, p.id, selectedPk, ui.timeUnit, db.allocations);
+              const c = getCellProjectComments(row.id, p.id, selectedPk, ui.timeUnit, db);
+              if (!a.hasData && !c.hasAny) return false;
+              return (`${p.name} ${p.code} ${p.owner || ''} ${c.direct || ''}`).toLowerCase().includes(searchQ);
+            });
+          } else {
+            if ((`${row.name} ${row.code} ${row.owner || ''} ${row.status || ''}`).toLowerCase().includes(searchQ)) return true;
+            const checkPks = ui.axis === 'timeline' ? periods : [selectedPk];
+            return checkPks.some(pk => visibleDepts.some(d => {
+              const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
+              const c = getCellProjectComments(d.id, row.id, pk, ui.timeUnit, db);
+              if (!a.hasData && !c.hasAny) return false;
+              return (`${d.name} ${d.code} ${c.direct || ''}`).toLowerCase().includes(searchQ);
+            }));
+          }
+        }
+        return true;
+      });
     }
 
     function updateMobileCollapseAllButton() {
@@ -116,8 +192,36 @@
       const showComments = Boolean(ui.showCellComments);
 
       const visibleDepts = db.departments.filter(d => ui.filterDept === 'all' || d.id === ui.filterDept);
-      const visibleProjs = getSortedProjects(db).filter(p => (!p.archived || ui.filterProj === p.id) && (ui.filterProj === 'all' || p.id === ui.filterProj));
-      const rows = ui.axis === 'department' ? visibleDepts : visibleProjs;
+      const visibleProjs = getSortedProjects(db).filter(p => {
+        if (p.archived && ui.filterProj !== p.id) return false;
+        if (!ui.includeTentative && p.tentative && ui.filterProj !== p.id) return false;
+        if (ui.filterProj !== 'all' && p.id !== ui.filterProj) return false;
+        if (ui.filterAtRiskOnly && p.status !== 'At Risk') return false;
+        return true;
+      });
+      const rows = getMobileVisibleRows(db);
+      const spotlightId = ui.spotlightProjId || '';
+      const searchQ = (ui.matrixSearch || '').trim().toLowerCase();
+      const showCost = hasAnyDayRates(db);
+
+      const activeFilterTags = [];
+      if (spotlightId) {
+        const sp = db.projects.find(p => p.id === spotlightId);
+        if (sp) activeFilterTags.push(`Spotlight: [${sp.code}]`);
+      }
+      if (!ui.includeTentative) activeFilterTags.push('Committed Only');
+      if (searchQ) activeFilterTags.push(`"${ui.matrixSearch.trim()}"`);
+      if (ui.filterOverOnly) activeFilterTags.push('Overallocated');
+      if (ui.filterAtRiskOnly) activeFilterTags.push('At Risk');
+      if (ui.filterHasNotesOnly) activeFilterTags.push('Has Notes');
+      if (ui.hideEmptyRows) activeFilterTags.push('Active Only');
+
+      const mobileFilterBannerHtml = activeFilterTags.length > 0
+        ? `<div class="px-3 py-2 rounded-xl bg-indigo-50/80 border border-indigo-200 text-[11px] text-indigo-900 flex flex-wrap items-center justify-between gap-2">
+             <span class="font-semibold break-words min-w-0">${escapeHtml(activeFilterTags.join(' • '))}</span>
+             <button type="button" onclick="clearMatrixFilters()" class="px-2 py-0.5 rounded-lg bg-white border border-indigo-200 text-indigo-700 font-bold shrink-0">Reset</button>
+           </div>`
+        : '';
 
       if (db.departments.length === 0 || db.projects.length === 0) {
         deck.innerHTML = `
@@ -131,6 +235,82 @@
               <button type="button" onclick="switchTab('data')" class="w-full py-2.5 rounded-xl bg-indigo-600 text-white text-xs font-bold">Open Setup</button>
               <button type="button" onclick="toggleDemoMode()" class="w-full py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold">Explore Demo Data</button>
             </div>
+          </div>`;
+        return;
+      }
+
+      // Mobile Executive Timeline / Gantt Deck when ui.axis === 'timeline'
+      if (ui.axis === 'timeline') {
+        const hdrStart = formatPeriodHeader(periods[0], ui.timeUnit).shortTitle;
+        const hdrEnd = formatPeriodHeader(periods[periods.length - 1], ui.timeUnit).shortTitle;
+        const timelineCardsHtml = rows.map(p => {
+          const spotCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
+          const perVals = periods.map(pk => {
+            const totFte = getProjTotalAllocatedFte(p.id, pk, ui.timeUnit, db);
+            const activeDepts = visibleDepts.filter(d => getAllocationForPeriod(d.id, p.id, pk, ui.timeUnit, db.allocations).hasData).map(d => d.code);
+            return { pk, fte: totFte, activeDepts };
+          });
+          const maxFte = Math.max(0.1, ...perVals.map(v => v.fte));
+          const totalHorizonDays = Math.round(perVals.reduce((acc, v) => acc + fteToDisplayValue(v.fte, v.pk, ui.timeUnit, 'days'), 0));
+          const totalCost = showCost ? getProjectTotalPlannedCost(p.id, db) : 0;
+          const projMs = (db.milestones || []).filter(m => m.projectId === p.id);
+          const statusCls = p.status === 'At Risk' ? 'bg-rose-100 text-rose-700' : p.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600';
+          const barsHtml = perVals.map(v => {
+            const h = formatPeriodHeader(v.pk, ui.timeUnit);
+            const hasLoad = v.fte > 0.001;
+            const opacity = hasLoad ? (0.42 + 0.58 * (v.fte / maxFte)).toFixed(2) : '0';
+            const cellStyle = hasLoad ? `background-color:${p.color}; opacity:${opacity};` : '';
+            const tentBarCls = p.tentative && hasLoad ? 'timeline-bar-tentative' : '';
+            return `
+              <button type="button" onclick="openCellDetailModal('${p.id}', '${v.pk}')" title="${escapeHtml(h.title)}: ${hasLoad ? formatValue(fteToDisplayValue(v.fte, v.pk, ui.timeUnit)) : '0'}"
+                class="flex-1 min-w-[28px] flex flex-col items-center gap-1 py-1 rounded-lg hover:bg-slate-100 transition">
+                <span class="w-full h-5 rounded-md border ${hasLoad ? 'border-transparent' : 'border-slate-200 bg-slate-50'} ${tentBarCls}" style="${cellStyle}"></span>
+                <span class="text-[9px] font-bold text-slate-500 truncate max-w-full">${escapeHtml(h.shortTitle.split(' ')[0])}</span>
+              </button>`;
+          }).join('');
+          const msStrip = projMs.length > 0
+            ? `<div class="flex flex-wrap gap-1.5 pt-1">${projMs.slice(0, 4).map(m => {
+                const drift = getMilestoneDriftDays(m);
+                return `<button type="button" onclick="openMilestoneModal('${m.id}')" class="px-2 py-1 rounded-lg bg-violet-50 border border-violet-200 text-violet-900 text-[11px] font-bold max-w-full truncate">&#9670; ${escapeHtml(m.title)} (${escapeHtml(m.date.slice(5))}${drift > 0 ? ` +${drift}d` : ''})</button>`;
+              }).join('')}</div>`
+            : '';
+          const tentCardCls = p.tentative ? 'tentative-card border-dashed' : '';
+          return `
+            <div class="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-xs space-y-2.5 ${spotCls} ${tentCardCls}">
+              <div class="flex items-start justify-between gap-2 min-w-0">
+                <div class="flex items-start gap-2 min-w-0 flex-1">
+                  <span class="w-2.5 h-8 rounded-full shrink-0 mt-0.5" style="background:${p.color}" aria-hidden="true"></span>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-sm font-extrabold text-slate-900 break-words leading-snug">${escapeHtml(p.name)}</div>
+                    <div class="flex flex-wrap items-center gap-1.5 mt-0.5 text-[11px] text-slate-500">
+                      <span class="font-mono font-bold text-indigo-700">[${escapeHtml(p.code)}]</span>
+                      <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${statusCls}">${escapeHtml(p.status)}</span>
+                      ${p.tentative ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold">Pipeline</span>' : ''}
+                      <span class="tabular-nums font-semibold">${totalHorizonDays}d${totalCost > 0 ? ' • ' + formatCurrency(totalCost, db) : ''}</span>
+                    </div>
+                  </div>
+                </div>
+                <button type="button" onclick="openShiftProjectModal('${p.id}')" class="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 text-[11px] font-bold shrink-0">&#8644; Shift</button>
+              </div>
+              <div class="flex items-stretch gap-1 overflow-x-auto no-scrollbar pt-0.5">${barsHtml}</div>
+              ${msStrip}
+            </div>`;
+        }).join('');
+
+        deck.innerHTML = `
+          ${mobileFilterBannerHtml}
+          <div class="bg-slate-900 text-white rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-2 shadow-xs">
+            <div class="min-w-0">
+              <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Executive Timeline</div>
+              <div class="text-sm font-extrabold truncate">${escapeHtml(hdrStart)} &rarr; ${escapeHtml(hdrEnd)} (${periods.length} ${ui.timeUnit}${periods.length === 1 ? '' : 's'})</div>
+            </div>
+            <div class="inline-flex items-center rounded-xl bg-white/10 overflow-hidden shrink-0">
+              <button type="button" aria-label="Earlier periods" onclick="shiftStartPeriod(-1)" class="w-9 h-9 flex items-center justify-center hover:bg-white/15 font-bold text-base">&lsaquo;</button>
+              <button type="button" aria-label="Later periods" onclick="shiftStartPeriod(1)" class="w-9 h-9 flex items-center justify-center hover:bg-white/15 font-bold text-base border-l border-white/10">&rsaquo;</button>
+            </div>
+          </div>
+          <div class="space-y-3">
+            ${timelineCardsHtml || '<div class="bg-white rounded-2xl border border-slate-200 p-6 text-center text-xs text-slate-500">No projects match your active filters.</div>'}
           </div>`;
         return;
       }
@@ -214,17 +394,17 @@
       const renderMobileCommentBlock = (cmtObj, filledTheme) => {
         if (!showComments || !cmtObj.hasAny) return '';
         const parts = [];
-        if (cmtObj.direct) parts.push(`<div class="whitespace-pre-line">${escapeHtml(cmtObj.direct)}</div>`);
+        if (cmtObj.direct) parts.push(`<div class="whitespace-pre-line break-words mobile-wrap-anywhere">${escapeHtml(cmtObj.direct)}</div>`);
         cmtObj.weekEntries.forEach(we => {
           const wkPrefix = filledTheme
             ? `<span class="font-mono font-bold underline">${escapeHtml(we.weekShort)}:</span>`
             : `<span class="font-mono font-bold text-indigo-600">${escapeHtml(we.weekShort)}:</span>`;
-          parts.push(`<div class="whitespace-pre-line">${wkPrefix} ${escapeHtml(we.text)}</div>`);
+          parts.push(`<div class="whitespace-pre-line break-words mobile-wrap-anywhere">${wkPrefix} ${escapeHtml(we.text)}</div>`);
         });
         if (filledTheme) {
-          return `<div class="mt-2 px-2.5 py-1.5 rounded-lg text-xs leading-relaxed space-y-0.5" style="background-color:${filledTheme.commentBg}; border:1px solid ${filledTheme.commentBorder}; color:${filledTheme.commentText};">${parts.join('')}</div>`;
+          return `<div class="mt-2 px-2.5 py-1.5 rounded-lg text-xs leading-relaxed space-y-0.5 break-words" style="background-color:${filledTheme.commentBg}; border:1px solid ${filledTheme.commentBorder}; color:${filledTheme.commentText};">${parts.join('')}</div>`;
         }
-        return `<div class="accent-card-comment mt-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200/80 text-xs text-slate-600 leading-relaxed space-y-0.5">${parts.join('')}</div>`;
+        return `<div class="accent-card-comment mt-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200/80 text-xs text-slate-600 leading-relaxed space-y-0.5 break-words">${parts.join('')}</div>`;
       };
 
       // 3. Semantic <details> Accordion Cards (Departments or Projects)
@@ -234,6 +414,8 @@
         if (ui.axis === 'department') {
           const capObj = getDeptCapacityForPeriod(row.id, selectedPk, ui.timeUnit, db);
           const capFte = capObj.avgFte;
+          const capDelta = Math.round((capFte - (Number(row.defaultCapacity) || 0)) * 100) / 100;
+          const varBadgeLabel = capObj.hasOverride ? (capDelta > 0.005 ? 'Var ▲' : capDelta < -0.005 ? 'Var ▼' : 'Var') : '';
           const allocFte = getDeptTotalAllocatedFte(row.id, selectedPk, ui.timeUnit, db);
           const pct = capFte > 0 ? Math.round((allocFte / capFte) * 100) : (allocFte > 0 ? 999 : 0);
           const barColor = pct > overT ? 'bg-rose-500' : pct >= warnT ? 'bg-amber-500' : 'bg-emerald-500';
@@ -246,7 +428,10 @@
             const a = getAllocationForPeriod(row.id, p.id, selectedPk, ui.timeUnit, db.allocations);
             const cmtObj = getCellProjectComments(row.id, p.id, selectedPk, ui.timeUnit, db);
             if (!a.hasData && !cmtObj.hasAny) return '';
+            if (searchQ && !(`${row.name} ${row.code} ${p.name} ${p.code} ${p.owner || ''} ${cmtObj.direct || ''}`).toLowerCase().includes(searchQ)) return '';
 
+            const spotCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
+            const tentCls = p.tentative ? (useColorFill ? 'tentative-card-filled' : 'tentative-card') : '';
             const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.hasData ? a.avgFte : 0, capFte, p.color);
             const filledTheme = useColorFill ? getFilledCardTheme(fillHex) : null;
             const cmtHtml = renderMobileCommentBlock(cmtObj, filledTheme);
@@ -254,55 +439,69 @@
             const tierBadge = tier3
               ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};" aria-label="${escapeHtml(tier3.ariaLabel)}">${tier3.symbol}</span>`
               : '';
+            const pipeTagFilled = p.tentative
+              ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">Pipeline</span>`
+              : '';
+            const pipeTagAccent = p.tentative
+              ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[9px] font-extrabold uppercase shrink-0">Pipeline</span>'
+              : '';
 
             if (useColorFill) {
               return `
-                <div class="rounded-xl p-3 shadow-xs transition"
-                  style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: ${a.hasData ? '1px solid' : '1.5px dashed'} ${filledTheme.border};">
-                  <div class="flex items-center justify-between gap-2">
-                    <button type="button" onclick="openAllocationModal('${row.id}', '${p.id}', '${selectedPk}')" class="flex items-center gap-2 min-w-0 text-left flex-1">
-                      ${showIdentityDot ? `<span class="w-2.5 h-2.5 rounded-full ring-1 ring-white/80 shrink-0" style="background:${p.color}" aria-hidden="true"></span>` : ''}
-                      ${tierBadge}
-                      <div class="min-w-0">
-                        <div class="text-sm font-extrabold truncate">${escapeHtml(p.name)}</div>
-                        <div class="text-[11px] font-mono font-bold" style="color:${filledTheme.mutedText};">[${escapeHtml(p.code)}]${a.isUneven ? ' • Uneven wks' : ''}</div>
+                <div class="rounded-xl p-3 shadow-xs transition space-y-2 min-w-0 ${spotCls} ${tentCls}"
+                  style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: ${a.hasData && !p.tentative ? '1px solid' : '1.5px dashed'} ${filledTheme.border};">
+                  <button type="button" onclick="openAllocationModal('${row.id}', '${p.id}', '${selectedPk}')" class="w-full flex items-start gap-2 min-w-0 text-left">
+                    ${showIdentityDot ? `<span class="w-2.5 h-2.5 rounded-full ring-1 ring-white/80 shrink-0 mt-1" style="background:${p.color}" aria-hidden="true"></span>` : ''}
+                    ${tierBadge}
+                    <div class="min-w-0 flex-1">
+                      <div class="text-sm font-extrabold break-words leading-snug">${escapeHtml(p.name)}</div>
+                      <div class="flex flex-wrap items-center gap-1.5 mt-0.5 text-[11px] font-mono font-bold" style="color:${filledTheme.mutedText};">
+                        <span>[${escapeHtml(p.code)}]</span>
+                        ${pipeTagFilled}
+                        ${a.isUneven ? '<span>• Uneven wks</span>' : ''}
                       </div>
-                    </button>
-                    <div class="flex items-center gap-1 shrink-0">
+                    </div>
+                  </button>
+                  <div class="flex items-center justify-between gap-1.5 pt-1.5 border-t border-white/15">
+                    <div class="flex items-center gap-1.5">
                       ${a.hasData ? `
                         <button type="button" aria-label="Decrease ${escapeHtml(p.name)}" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${selectedPk}', -1)"
-                          class="w-9 h-9 rounded-lg font-extrabold text-base flex items-center justify-center" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&minus;</button>
-                        <span class="min-w-[54px] text-center text-xs font-extrabold tabular-nums">${valStr}</span>
+                          class="w-9 h-8 rounded-lg font-extrabold text-base flex items-center justify-center" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&minus;</button>
+                        <span class="min-w-[56px] text-center text-xs font-extrabold tabular-nums">${valStr}</span>
                         <button type="button" aria-label="Increase ${escapeHtml(p.name)}" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${selectedPk}', 1)"
-                          class="w-9 h-9 rounded-lg font-extrabold text-base flex items-center justify-center" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">+</button>
-                      ` : `<span class="px-2 py-1 rounded-lg text-[11px] font-bold" style="background-color:${filledTheme.chipBg};">Note</span>`}
-                      <button type="button" aria-label="More actions for ${escapeHtml(p.name)}" onclick="openMobileCardActionSheet('${row.id}', '${p.id}', '${selectedPk}')"
-                        class="w-9 h-9 rounded-lg font-extrabold text-base flex items-center justify-center" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&#8943;</button>
+                          class="w-9 h-8 rounded-lg font-extrabold text-base flex items-center justify-center" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">+</button>
+                      ` : `<span class="px-2 py-1 rounded-lg text-[11px] font-bold" style="background-color:${filledTheme.chipBg};">Note Only</span>`}
                     </div>
+                    <button type="button" aria-label="More actions for ${escapeHtml(p.name)}" onclick="openMobileCardActionSheet('${row.id}', '${p.id}', '${selectedPk}')"
+                      class="h-8 px-2.5 rounded-lg font-extrabold text-xs flex items-center justify-center gap-1" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">Actions &#8943;</button>
                   </div>
                   ${cmtHtml}
                 </div>`;
             }
 
             return `
-              <div class="accent-card rounded-xl p-3 bg-white border border-slate-200 shadow-2xs"
+              <div class="accent-card rounded-xl p-3 bg-white border border-slate-200 shadow-2xs space-y-2 min-w-0 ${spotCls} ${tentCls}"
                 style="--accent-color:${p.color}; --accent-w:5px; border-left: 5px solid ${p.color};">
-                <div class="flex items-center justify-between gap-2">
-                  <button type="button" onclick="openAllocationModal('${row.id}', '${p.id}', '${selectedPk}')" class="min-w-0 text-left flex-1">
-                    <div class="text-sm font-bold text-slate-900 truncate">${escapeHtml(p.name)}</div>
-                    <div class="text-[11px] font-mono font-bold text-slate-500">[${escapeHtml(p.code)}]${a.isUneven ? ' • Uneven wks' : ''}</div>
-                  </button>
-                  <div class="flex items-center gap-1 shrink-0">
+                <button type="button" onclick="openAllocationModal('${row.id}', '${p.id}', '${selectedPk}')" class="w-full min-w-0 text-left block">
+                  <div class="text-sm font-bold text-slate-900 break-words leading-snug">${escapeHtml(p.name)}</div>
+                  <div class="flex flex-wrap items-center gap-1.5 mt-0.5 text-[11px] font-mono font-bold text-slate-500">
+                    <span>[${escapeHtml(p.code)}]</span>
+                    ${pipeTagAccent}
+                    ${a.isUneven ? '<span>• Uneven wks</span>' : ''}
+                  </div>
+                </button>
+                <div class="flex items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100">
+                  <div class="flex items-center gap-1.5">
                     ${a.hasData ? `
                       <button type="button" aria-label="Decrease ${escapeHtml(p.name)}" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${selectedPk}', -1)"
-                        class="w-9 h-9 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-800 font-extrabold text-base flex items-center justify-center">&minus;</button>
-                      <span class="min-w-[54px] text-center text-xs font-extrabold text-slate-900 tabular-nums">${valStr}</span>
+                        class="w-9 h-8 rounded-lg bg-slate-100 hover:bg-rose-100 text-slate-800 font-extrabold text-base flex items-center justify-center">&minus;</button>
+                      <span class="min-w-[56px] text-center text-xs font-extrabold text-slate-900 tabular-nums">${valStr}</span>
                       <button type="button" aria-label="Increase ${escapeHtml(p.name)}" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${selectedPk}', 1)"
-                        class="w-9 h-9 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-800 font-extrabold text-base flex items-center justify-center">+</button>
-                    ` : `<span class="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[11px] font-bold">Note</span>`}
-                    <button type="button" aria-label="More actions for ${escapeHtml(p.name)}" onclick="openMobileCardActionSheet('${row.id}', '${p.id}', '${selectedPk}')"
-                      class="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 font-extrabold text-base flex items-center justify-center">&#8943;</button>
+                        class="w-9 h-8 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-800 font-extrabold text-base flex items-center justify-center">+</button>
+                    ` : `<span class="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[11px] font-bold">Note Only</span>`}
                   </div>
+                  <button type="button" aria-label="More actions for ${escapeHtml(p.name)}" onclick="openMobileCardActionSheet('${row.id}', '${p.id}', '${selectedPk}')"
+                    class="h-8 px-2.5 rounded-lg bg-slate-100 text-slate-700 font-extrabold text-xs flex items-center justify-center gap-1">Actions &#8943;</button>
                 </div>
                 ${cmtHtml}
               </div>`;
@@ -318,29 +517,34 @@
               const p = db.projects.find(x => x.id === m.projectId);
               return `
                 <button type="button" onclick="openMilestoneModal('${m.id}')"
-                  class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-violet-50 border border-violet-200 text-violet-900 text-xs font-bold flex items-center justify-between gap-2 text-left">
-                  <span class="truncate"><span class="text-violet-600 mr-1.5" aria-hidden="true">&#9670;</span>${escapeHtml(m.title)}</span>
+                  class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-violet-50 border border-violet-200 text-violet-900 text-xs font-bold flex flex-wrap items-center justify-between gap-1.5 text-left">
+                  <span class="min-w-0 break-words"><span class="text-violet-600 mr-1.5" aria-hidden="true">&#9670;</span>${escapeHtml(m.title)}</span>
                   <span class="font-mono text-[11px] text-violet-700 shrink-0">${p ? `[${escapeHtml(p.code)}] ` : ''}${escapeHtml(m.date)}</span>
                 </button>`;
             }).join('');
 
+          const mobileFixBtn = pct > overT
+            ? `<button type="button" onclick="openBottleneckResolverModal('${row.id}', '${selectedPk}')"
+                 class="w-full min-h-[38px] rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-extrabold flex items-center justify-center gap-1.5">&#9888; Resolve Overallocation (${pct}%)</button>`
+            : '';
+
           return `
             <details ${isOpen ? 'open' : ''} ontoggle="onMobileAccordionToggle('${row.id}', this.open)"
-              class="bg-white rounded-2xl border ${borderHighlight} shadow-xs overflow-hidden">
+              class="bg-white rounded-2xl border ${borderHighlight} shadow-xs overflow-hidden min-w-0">
               <summary class="no-marker cursor-pointer p-3.5 select-none space-y-2">
-                <div class="flex items-center justify-between gap-2">
-                  <div class="flex items-center gap-2.5 min-w-0">
+                <div class="flex items-center justify-between gap-2 min-w-0">
+                  <div class="flex items-center gap-2.5 min-w-0 flex-1">
                     <span class="w-2 h-9 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
-                    <div class="min-w-0">
+                    <div class="min-w-0 flex-1">
                       <div class="text-sm font-extrabold text-slate-900 truncate">${escapeHtml(row.name)}</div>
-                      <div class="text-xs text-slate-500 flex items-center gap-1.5 tabular-nums">
-                        <span>${allocDisp} / ${capDisp}</span>
-                        ${capObj.hasOverride ? '<span class="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold">Var</span>' : ''}
+                      <div class="text-xs text-slate-500 flex flex-wrap items-center gap-1.5 tabular-nums">
+                        <span class="whitespace-nowrap">${allocDisp} / ${capDisp}</span>
+                        ${capObj.hasOverride ? `<span title="Override vs base ${row.defaultCapacity} FTE" class="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold">${varBadgeLabel}</span>` : ''}
                       </div>
                     </div>
                   </div>
-                  <div class="flex items-center gap-2 shrink-0">
-                    <span class="px-2.5 py-1 rounded-lg text-xs font-extrabold tabular-nums ${badgeCls}">${pct > 990 ? '&infin;' : pct + '%'}</span>
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    <span class="px-2 py-1 rounded-lg text-xs font-extrabold tabular-nums ${badgeCls}">${pct > 990 ? '&infin;' : pct + '%'}</span>
                     <svg class="accordion-chevron w-4 h-4 text-slate-400 transition-transform" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
                     </svg>
@@ -351,15 +555,16 @@
                 </div>
               </summary>
               <div class="px-3.5 pb-3.5 pt-2 border-t border-slate-100 space-y-2.5">
+                ${mobileFixBtn}
                 ${itemsHtml || '<p class="text-xs text-slate-400 text-center py-2">No allocations in this period.</p>'}
                 ${msHtml}
-                <div class="grid grid-cols-3 gap-2 pt-1">
+                <div class="grid grid-cols-3 gap-1.5 pt-1">
                   <button type="button" onclick="openAllocationModal('${row.id}', '', '${selectedPk}')"
-                    class="col-span-1 min-h-[40px] rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold">+ Allocate</button>
+                    class="min-h-[40px] px-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-bold truncate">+ Allocate</button>
                   <button type="button" onclick="openCapacityModal('${row.id}', '${selectedPk}')"
-                    class="col-span-1 min-h-[40px] rounded-xl bg-sky-50 border border-sky-200 text-sky-700 text-xs font-bold">Capacity</button>
+                    class="min-h-[40px] px-1.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-700 text-[11px] font-bold truncate">Capacity</button>
                   <button type="button" onclick="openCellDetailModal('${row.id}', '${selectedPk}')"
-                    class="col-span-1 min-h-[40px] rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold">Notes</button>
+                    class="min-h-[40px] px-1.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-[11px] font-bold truncate">Notes</button>
                 </div>
               </div>
             </details>`;
@@ -368,11 +573,14 @@
           const totFte = getProjTotalAllocatedFte(row.id, selectedPk, ui.timeUnit, db);
           const totStr = totFte > 0 ? formatValue(fteToDisplayValue(totFte, selectedPk, ui.timeUnit)) : '0 ' + unitShortLabel();
           const statusCls = row.status === 'At Risk' ? 'bg-rose-100 text-rose-700' : row.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600';
+          const rowSpotCls = spotlightId ? (spotlightId === row.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
+          const tentProjCls = row.tentative ? 'tentative-card border-dashed' : '';
 
           const itemsHtml = visibleDepts.map(d => {
             const a = getAllocationForPeriod(d.id, row.id, selectedPk, ui.timeUnit, db.allocations);
             const cmtObj = getCellProjectComments(d.id, row.id, selectedPk, ui.timeUnit, db);
             if (!a.hasData && !cmtObj.hasAny) return '';
+            if (searchQ && !(`${d.name} ${d.code} ${row.name} ${row.code} ${cmtObj.direct || ''}`).toLowerCase().includes(searchQ)) return '';
 
             const deptCap = getDeptCapacityForPeriod(d.id, selectedPk, ui.timeUnit, db).avgFte;
             const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.hasData ? a.avgFte : 0, deptCap, d.color);
@@ -385,52 +593,52 @@
 
             if (useColorFill) {
               return `
-                <div class="rounded-xl p-3 shadow-xs"
+                <div class="rounded-xl p-3 shadow-xs space-y-2 min-w-0"
                   style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: ${a.hasData ? '1px solid' : '1.5px dashed'} ${filledTheme.border};">
-                  <div class="flex items-center justify-between gap-2">
-                    <button type="button" onclick="openAllocationModal('${d.id}', '${row.id}', '${selectedPk}')" class="flex items-center gap-2 min-w-0 text-left flex-1">
-                      ${showIdentityDot ? `<span class="w-2.5 h-2.5 rounded-full ring-1 ring-white/80 shrink-0" style="background:${d.color}" aria-hidden="true"></span>` : ''}
-                      ${tierBadge}
-                      <div class="min-w-0">
-                        <div class="text-sm font-extrabold truncate">${escapeHtml(d.name)}</div>
-                        <div class="text-[11px] font-mono font-bold" style="color:${filledTheme.mutedText};">[${escapeHtml(d.code)}]</div>
-                      </div>
-                    </button>
-                    <div class="flex items-center gap-1 shrink-0">
+                  <button type="button" onclick="openAllocationModal('${d.id}', '${row.id}', '${selectedPk}')" class="w-full flex items-start gap-2 min-w-0 text-left">
+                    ${showIdentityDot ? `<span class="w-2.5 h-2.5 rounded-full ring-1 ring-white/80 shrink-0 mt-1" style="background:${d.color}" aria-hidden="true"></span>` : ''}
+                    ${tierBadge}
+                    <div class="min-w-0 flex-1">
+                      <div class="text-sm font-extrabold break-words leading-snug">${escapeHtml(d.name)}</div>
+                      <div class="text-[11px] font-mono font-bold" style="color:${filledTheme.mutedText};">[${escapeHtml(d.code)}]</div>
+                    </div>
+                  </button>
+                  <div class="flex items-center justify-between gap-1.5 pt-1.5 border-t border-white/15">
+                    <div class="flex items-center gap-1.5">
                       ${a.hasData ? `
                         <button type="button" aria-label="Decrease ${escapeHtml(d.name)}" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${selectedPk}', -1)"
-                          class="w-9 h-9 rounded-lg font-extrabold text-base flex items-center justify-center" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&minus;</button>
-                        <span class="min-w-[54px] text-center text-xs font-extrabold tabular-nums">${valStr}</span>
+                          class="w-9 h-8 rounded-lg font-extrabold text-base flex items-center justify-center" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&minus;</button>
+                        <span class="min-w-[56px] text-center text-xs font-extrabold tabular-nums">${valStr}</span>
                         <button type="button" aria-label="Increase ${escapeHtml(d.name)}" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${selectedPk}', 1)"
-                          class="w-9 h-9 rounded-lg font-extrabold text-base flex items-center justify-center" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">+</button>
-                      ` : `<span class="px-2 py-1 rounded-lg text-[11px] font-bold" style="background-color:${filledTheme.chipBg};">Note</span>`}
-                      <button type="button" aria-label="More actions for ${escapeHtml(d.name)}" onclick="openMobileCardActionSheet('${d.id}', '${row.id}', '${selectedPk}')"
-                        class="w-9 h-9 rounded-lg font-extrabold text-base flex items-center justify-center" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&#8943;</button>
+                          class="w-9 h-8 rounded-lg font-extrabold text-base flex items-center justify-center" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">+</button>
+                      ` : `<span class="px-2 py-1 rounded-lg text-[11px] font-bold" style="background-color:${filledTheme.chipBg};">Note Only</span>`}
                     </div>
+                    <button type="button" aria-label="More actions for ${escapeHtml(d.name)}" onclick="openMobileCardActionSheet('${d.id}', '${row.id}', '${selectedPk}')"
+                      class="h-8 px-2.5 rounded-lg font-extrabold text-xs flex items-center justify-center gap-1" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">Actions &#8943;</button>
                   </div>
                   ${cmtHtml}
                 </div>`;
             }
 
             return `
-              <div class="accent-card rounded-xl p-3 bg-white border border-slate-200 shadow-2xs"
+              <div class="accent-card rounded-xl p-3 bg-white border border-slate-200 shadow-2xs space-y-2 min-w-0"
                 style="--accent-color:${d.color}; --accent-w:5px; border-left: 5px solid ${d.color};">
-                <div class="flex items-center justify-between gap-2">
-                  <button type="button" onclick="openAllocationModal('${d.id}', '${row.id}', '${selectedPk}')" class="min-w-0 text-left flex-1">
-                    <div class="text-sm font-bold text-slate-900 truncate">${escapeHtml(d.name)}</div>
-                    <div class="text-[11px] font-mono font-bold text-slate-500">[${escapeHtml(d.code)}]</div>
-                  </button>
-                  <div class="flex items-center gap-1 shrink-0">
+                <button type="button" onclick="openAllocationModal('${d.id}', '${row.id}', '${selectedPk}')" class="w-full min-w-0 text-left block">
+                  <div class="text-sm font-bold text-slate-900 break-words leading-snug">${escapeHtml(d.name)}</div>
+                  <div class="text-[11px] font-mono font-bold text-slate-500">[${escapeHtml(d.code)}]</div>
+                </button>
+                <div class="flex items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100">
+                  <div class="flex items-center gap-1.5">
                     ${a.hasData ? `
                       <button type="button" aria-label="Decrease ${escapeHtml(d.name)}" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${selectedPk}', -1)"
-                        class="w-9 h-9 rounded-lg bg-slate-100 text-slate-800 font-extrabold text-base flex items-center justify-center">&minus;</button>
-                      <span class="min-w-[54px] text-center text-xs font-extrabold text-slate-900 tabular-nums">${valStr}</span>
+                        class="w-9 h-8 rounded-lg bg-slate-100 text-slate-800 font-extrabold text-base flex items-center justify-center">&minus;</button>
+                      <span class="min-w-[56px] text-center text-xs font-extrabold text-slate-900 tabular-nums">${valStr}</span>
                       <button type="button" aria-label="Increase ${escapeHtml(d.name)}" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${selectedPk}', 1)"
-                        class="w-9 h-9 rounded-lg bg-slate-100 text-slate-800 font-extrabold text-base flex items-center justify-center">+</button>
-                    ` : `<span class="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[11px] font-bold">Note</span>`}
-                    <button type="button" aria-label="More actions for ${escapeHtml(d.name)}" onclick="openMobileCardActionSheet('${d.id}', '${row.id}', '${selectedPk}')"
-                      class="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 font-extrabold text-base flex items-center justify-center">&#8943;</button>
+                        class="w-9 h-8 rounded-lg bg-slate-100 text-slate-800 font-extrabold text-base flex items-center justify-center">+</button>
+                    ` : `<span class="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[11px] font-bold">Note Only</span>`}
                   </div>
+                  <button type="button" aria-label="More actions for ${escapeHtml(d.name)}" onclick="openMobileCardActionSheet('${d.id}', '${row.id}', '${selectedPk}')"
+                    class="h-8 px-2.5 rounded-lg bg-slate-100 text-slate-700 font-extrabold text-xs flex items-center justify-center gap-1">Actions &#8943;</button>
                 </div>
                 ${cmtHtml}
               </div>`;
@@ -440,27 +648,28 @@
             .filter(m => m.projectId === row.id)
             .map(m => `
               <button type="button" onclick="openMilestoneModal('${m.id}')"
-                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-violet-50 border border-violet-200 text-violet-900 text-xs font-bold flex items-center justify-between gap-2 text-left">
-                <span class="truncate"><span class="text-violet-600 mr-1.5" aria-hidden="true">&#9670;</span>${escapeHtml(m.title)}</span>
+                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-violet-50 border border-violet-200 text-violet-900 text-xs font-bold flex flex-wrap items-center justify-between gap-1.5 text-left">
+                <span class="min-w-0 break-words"><span class="text-violet-600 mr-1.5" aria-hidden="true">&#9670;</span>${escapeHtml(m.title)}</span>
                 <span class="font-mono text-[11px] text-violet-700 shrink-0">${escapeHtml(m.date)}</span>
               </button>`).join('');
 
           return `
             <details ${isOpen ? 'open' : ''} ontoggle="onMobileAccordionToggle('${row.id}', this.open)"
-              class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+              class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden min-w-0 ${rowSpotCls} ${tentProjCls}">
               <summary class="no-marker cursor-pointer p-3.5 select-none">
-                <div class="flex items-center justify-between gap-2">
-                  <div class="flex items-center gap-2.5 min-w-0">
+                <div class="flex items-center justify-between gap-2 min-w-0">
+                  <div class="flex items-center gap-2.5 min-w-0 flex-1">
                     <span class="w-2 h-9 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
-                    <div class="min-w-0">
+                    <div class="min-w-0 flex-1">
                       <div class="text-sm font-extrabold text-slate-900 truncate">${escapeHtml(row.name)}</div>
-                      <div class="text-xs text-slate-500 flex items-center gap-1.5">
+                      <div class="text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
                         <span class="font-mono font-bold text-indigo-700">[${escapeHtml(row.code)}]</span>
                         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${statusCls}">${escapeHtml(row.status)}</span>
+                        ${row.tentative ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold">Pipeline</span>' : ''}
                       </div>
                     </div>
                   </div>
-                  <div class="flex items-center gap-2 shrink-0">
+                  <div class="flex items-center gap-1.5 shrink-0">
                     <span class="text-xs font-extrabold text-slate-900 tabular-nums">${totStr}</span>
                     <svg class="accordion-chevron w-4 h-4 text-slate-400 transition-transform" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
@@ -471,11 +680,11 @@
               <div class="px-3.5 pb-3.5 pt-2 border-t border-slate-100 space-y-2.5">
                 ${itemsHtml || '<p class="text-xs text-slate-400 text-center py-2">No departments assigned in this period.</p>'}
                 ${msHtml}
-                <div class="grid grid-cols-2 gap-2 pt-1">
+                <div class="grid grid-cols-2 gap-1.5 pt-1">
                   <button type="button" onclick="openAllocationModal('', '${row.id}', '${selectedPk}')"
-                    class="min-h-[40px] rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold">+ Assign Dept</button>
+                    class="min-h-[40px] px-2 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold truncate">+ Assign Dept</button>
                   <button type="button" onclick="openCellDetailModal('${row.id}', '${selectedPk}')"
-                    class="min-h-[40px] rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold">Comments &amp; Notes</button>
+                    class="min-h-[40px] px-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-700 text-xs font-bold truncate">Notes</button>
                 </div>
               </div>
             </details>`;
@@ -488,7 +697,7 @@
         ? `<div class="flex items-center justify-between gap-2 px-0.5">
              <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">${rows.length} ${rowNoun}</span>
              <button id="mobileCollapseAllBtn" type="button" aria-pressed="${allCollapsed}" onclick="toggleMobileCollapseAll()"
-               class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-2xs transition cursor-pointer">
+               class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-2xs transition cursor-pointer shrink-0">
                ${allCollapsed
                  ? `<svg class="w-3.5 h-3.5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 5.25l-7.5 7.5-7.5-7.5m15 6l-7.5 7.5-7.5-7.5" /></svg><span>Expand All</span>`
                  : `<svg class="w-3.5 h-3.5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 18.75l7.5-7.5 7.5 7.5m-15-6l7.5-7.5 7.5 7.5" /></svg><span>Collapse All</span>`}
@@ -497,13 +706,14 @@
         : '';
 
       deck.innerHTML = `
+        ${mobileFilterBannerHtml}
         <nav aria-label="Select roadmap period" class="flex items-center gap-2 overflow-x-auto snap-x snap-mandatory no-scrollbar py-0.5">
           ${pillsHtml}
         </nav>
         ${summaryStripHtml}
         ${collapseBarHtml}
         <div class="space-y-3" ontouchstart="handleMobileDeckTouchStart(event)" ontouchend="handleMobileDeckTouchEnd(event)">
-          ${accordionCardsHtml}
+          ${accordionCardsHtml || '<div class="bg-white rounded-2xl border border-slate-200 p-6 text-center text-xs text-slate-500">No rows match the active filters. <button type="button" onclick="clearMatrixFilters()" class="ml-1 font-bold text-indigo-600 underline">Reset</button></div>'}
         </div>`;
     }
 
@@ -824,11 +1034,13 @@
       const searchQ = (ui.matrixSearch || '').trim().toLowerCase();
       const visibleProjs = getSortedProjects(db).filter(p => {
         if (p.archived && ui.filterProj !== p.id) return false;
+        if (!ui.includeTentative && p.tentative && ui.filterProj !== p.id) return false;
         if (ui.filterProj !== 'all' && p.id !== ui.filterProj) return false;
         if (ui.filterAtRiskOnly && p.status !== 'At Risk') return false;
         return true;
       });
       const spotlightId = ui.spotlightProjId || '';
+      const showCost = hasAnyDayRates(db);
 
       const matchesSearchForPair = (dept, proj, pk) => {
         if (!searchQ) return true;
@@ -895,7 +1107,8 @@
           }
         }
         if (ui.filterHasNotesOnly) {
-          const hasNotes = periods.some(pk => getCellTotalCommentCount(row.id, pk, ui.axis, ui.timeUnit, db) > 0);
+          const axisKind = ui.axis === 'department' ? 'department' : 'project';
+          const hasNotes = periods.some(pk => getCellTotalCommentCount(row.id, pk, axisKind, ui.timeUnit, db) > 0);
           if (!hasNotes) return false;
         }
         if (searchQ) {
@@ -938,6 +1151,13 @@
             <span class="inline-flex items-center gap-1.5 font-semibold">
               Hiding ${hiddenEmptyCount} inactive ${ui.axis === 'department' ? 'department' : 'project'}${hiddenEmptyCount === 1 ? '' : 's'}
               <button type="button" onclick="toggleHideEmptyRows()" class="px-2 py-0.5 rounded-lg bg-white border border-indigo-200 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold transition">Show All</button>
+            </span>`);
+        }
+        if (!ui.includeTentative) {
+          statusParts.push(`
+            <span class="inline-flex items-center gap-1.5 font-semibold text-amber-800">
+              Committed Only (Pipeline hidden)
+              <button type="button" onclick="toggleIncludeTentative()" class="px-2 py-0.5 rounded-lg bg-white border border-amber-300 hover:bg-amber-50 text-amber-800 text-[11px] font-bold transition">Include Pipeline</button>
             </span>`);
         }
         if (searchQ || ui.filterOverOnly || ui.filterAtRiskOnly || ui.filterHasNotesOnly) {
@@ -1048,8 +1268,14 @@
                class="meeting-nav-arrow w-7 h-7 rounded-lg font-extrabold text-base leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">&rsaquo;</button>`
           : '';
         const copyPeriodBtnHtml = !isPresent && !isCompactGrid
-          ? `<button type="button" onclick="copyPeriodToNext('${pk}')" title="Copy all visible allocations from ${escapeHtml(h.title)} into the next ${unitNoun}"
-               class="opacity-0 group-hover/col:opacity-100 px-1.5 py-0.5 rounded-md bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-700 text-slate-500 text-[10px] font-semibold transition shrink-0 cursor-pointer">Copy &rarr;</button>`
+          ? `<div class="opacity-0 group-hover/col:opacity-100 inline-flex items-center gap-0.5 transition shrink-0">
+               <button type="button" onclick="copyPeriodToNext('${pk}')" title="Copy all visible allocations from ${escapeHtml(h.title)} into the next ${unitNoun}"
+                 class="px-1.5 py-0.5 rounded-md bg-white border border-slate-200 hover:border-indigo-300 hover:text-indigo-700 text-slate-500 text-[10px] font-semibold transition cursor-pointer">Copy&rarr;</button>
+               <button type="button" onclick="openHolidayFactorModal('${pk}')" title="Apply holiday / shutdown capacity % to ${escapeHtml(h.title)}"
+                 class="px-1 py-0.5 rounded-md bg-white border border-slate-200 hover:border-sky-300 hover:text-sky-700 text-slate-500 text-[10px] font-semibold transition cursor-pointer">Hol%</button>
+               <button type="button" onclick="clearPeriodAllocations('${pk}')" title="Clear all visible allocations in ${escapeHtml(h.title)}"
+                 class="px-1 py-0.5 rounded-md bg-white border border-slate-200 hover:border-rose-300 hover:text-rose-600 text-slate-500 text-[10px] font-semibold transition cursor-pointer">&times;</button>
+             </div>`
           : '';
         return `
           <th scope="col" class="matrix-snap-col group/col ${s.thCol} text-left border-b border-l border-slate-200 ${isCurrent ? 'matrix-th-now' : 'bg-slate-50'}">
@@ -1130,10 +1356,18 @@
               if (searchQ && !matchesSearchForPair(row, p, pk)) return '';
 
               const spotlightCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
+              const tentClsFilled = p.tentative ? 'tentative-card-filled' : '';
+              const tentClsAccent = p.tentative ? 'tentative-card' : '';
               const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.hasData ? a.avgFte : 0, capFte, p.color);
               const filledTheme = useColorFill ? getFilledCardTheme(fillHex) : null;
               const cmtHtml = renderInlineCommentHtml(cmtObj, filledTheme);
               const fullTooltipNote = cmtObj.direct ? `\nNote: ${cmtObj.direct}` : '';
+              const pipeBadgeFilled = p.tentative
+                ? `<span class="px-1 rounded text-[9px] font-extrabold uppercase shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};" title="Tentative / Pipeline project">Pipe</span>`
+                : '';
+              const pipeBadgeAccent = p.tentative
+                ? '<span class="px-1 rounded bg-violet-100 text-violet-800 text-[9px] font-extrabold uppercase shrink-0" title="Tentative / Pipeline project">Pipe</span>'
+                : '';
 
               const spotVisCls = spotlightId === p.id
                 ? 'opacity-100'
@@ -1200,22 +1434,23 @@
                     ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                     onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')"
                     aria-label="${escapeHtml(p.name)}, ${valStr}, ${capShareTxt}${tierTooltip}"
-                    title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${valStr} (${capShareTxt})${tierTooltip} • Click to edit, drag to move/copy${escapeHtml(fullTooltipNote)}"
-                    class="matrix-card group/pill ${spotlightCls} ${s.pillBox} rounded-xl shadow-xs cursor-grab active:cursor-grabbing"
-                    style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1px solid ${filledTheme.border};">
+                    title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)}${p.tentative ? ' (Tentative Pipeline)' : ''} — ${valStr} (${capShareTxt})${tierTooltip} • Click value to inline-edit, card to open modal, drag to move/copy${escapeHtml(fullTooltipNote)}"
+                    class="matrix-card group/pill ${spotlightCls} ${tentClsFilled} ${s.pillBox} rounded-xl shadow-xs cursor-grab active:cursor-grabbing"
+                    style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: ${p.tentative ? '1.5px dashed' : '1px solid'} ${filledTheme.border};">
                     <div class="flex items-center justify-between gap-1.5">
                       <div class="flex items-center gap-1.5 min-w-0">
                         ${showIdentityDot ? `<span class="w-2 h-2 rounded-full ring-1 ring-white/75 shrink-0" style="background:${p.color}" title="${escapeHtml(p.name)} color"></span>` : ''}
                         ${tierBadgeHtml}
                         <span class="font-mono font-bold px-1.5 py-0.5 rounded ${s.pillCode} shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">${escapeHtml(p.code)}</span>
                         <span class="truncate font-bold">${escapeHtml(p.name)}</span>
+                        ${pipeBadgeFilled}
                         ${!isPresent && a.isUneven ? `<span title="Uneven weekly split inside this month" class="w-1.5 h-1.5 rounded-full shrink-0" style="background-color:${filledTheme.text}; opacity:0.8;"></span>` : ''}
                       </div>
                       <div class="flex items-center gap-0.5 shrink-0">
                         ${spotlightBtn}
                         ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', -1)" title="Decrease allocation" aria-label="Decrease ${escapeHtml(p.name)} allocation"
                           class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded font-bold flex items-center justify-center transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&minus;</button>` : ''}
-                        <span class="${s.pillVal} tabular-nums px-0.5">${valStr}</span>
+                        <span ${!isPresent ? `onclick="startInlineValueEdit(event, '${row.id}', '${p.id}', '${pk}')" title="Click to quick-edit value inline"` : ''} class="${s.pillVal} tabular-nums px-0.5 ${!isPresent ? 'cursor-text rounded hover:underline' : ''}">${valStr}</span>
                         ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', 1)" title="Increase allocation" aria-label="Increase ${escapeHtml(p.name)} allocation"
                           class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded font-bold flex items-center justify-center transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">+</button>` : ''}
                         ${!isPresent ? `<button type="button" onclick="quickExtendAllocation(event, '${row.id}', '${p.id}', '${pk}')" title="Copy into next period" aria-label="Extend ${escapeHtml(p.name)} into next period"
@@ -1231,20 +1466,21 @@
                   data-drag-type="alloc" data-drag-dept="${row.id}" data-drag-proj="${p.id}" data-drag-period="${pk}"
                   ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                   onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')"
-                  title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${valStr} (${capShareTxt}) • Click to edit, drag to move/copy${escapeHtml(fullTooltipNote)}"
-                  class="matrix-card accent-card group/pill ${spotlightCls} ${s.pillBox} rounded-lg bg-white border border-slate-200/90 hover:border-indigo-300 shadow-2xs cursor-grab active:cursor-grabbing"
+                  title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)}${p.tentative ? ' (Tentative Pipeline)' : ''} — ${valStr} (${capShareTxt}) • Click value to inline-edit, card to open modal, drag to move/copy${escapeHtml(fullTooltipNote)}"
+                  class="matrix-card accent-card group/pill ${spotlightCls} ${tentClsAccent} ${s.pillBox} rounded-lg bg-white border border-slate-200/90 hover:border-indigo-300 shadow-2xs cursor-grab active:cursor-grabbing"
                   style="--accent-color:${p.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${p.color};">
                   <div class="flex items-center justify-between gap-1">
                     <div class="flex items-center gap-1.5 min-w-0">
                       <span class="font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 ${s.pillCode} shrink-0">${escapeHtml(p.code)}</span>
                       <span class="truncate font-semibold text-slate-800">${escapeHtml(p.name)}</span>
+                      ${pipeBadgeAccent}
                       ${!isPresent && a.isUneven ? '<span title="Uneven weekly split inside this month" class="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>' : ''}
                     </div>
                     <div class="flex items-center gap-0.5 shrink-0">
                       ${spotlightBtn}
                       ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', -1)" title="Decrease allocation" aria-label="Decrease ${escapeHtml(p.name)} allocation"
                         class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded bg-slate-100 hover:bg-rose-100 text-slate-700 hover:text-rose-700 font-bold flex items-center justify-center transition">&minus;</button>` : ''}
-                      <span class="${s.pillVal} text-slate-900 tabular-nums px-0.5">${valStr}</span>
+                      <span ${!isPresent ? `onclick="startInlineValueEdit(event, '${row.id}', '${p.id}', '${pk}')" title="Click to quick-edit value inline"` : ''} class="${s.pillVal} text-slate-900 tabular-nums px-0.5 ${!isPresent ? 'cursor-text rounded hover:underline' : ''}">${valStr}</span>
                       ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${pk}', 1)" title="Increase allocation" aria-label="Increase ${escapeHtml(p.name)} allocation"
                         class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded bg-slate-100 hover:bg-emerald-100 text-slate-700 hover:text-emerald-700 font-bold flex items-center justify-center transition">+</button>` : ''}
                       ${!isPresent ? `<button type="button" onclick="quickExtendAllocation(event, '${row.id}', '${p.id}', '${pk}')" title="Copy into next period" aria-label="Extend ${escapeHtml(p.name)} into next period"
@@ -1277,6 +1513,16 @@
                 </div>`;
             }).join('');
 
+            const capDelta = Math.round((capFte - (Number(row.defaultCapacity) || 0)) * 100) / 100;
+            const varLabel = capDelta > 0.005 ? 'Var ▲' : capDelta < -0.005 ? 'Var ▼' : 'Var';
+            const capTooltip = capObj.hasOverride
+              ? `Variable capacity override: ${Math.round(capFte * 100) / 100} FTE vs base ${row.defaultCapacity} FTE (${capDelta >= 0 ? '+' : ''}${capDelta} FTE) — click to edit`
+              : `Default capacity (${row.defaultCapacity} FTE) — click to set variable override`;
+            const fixOverBtnHtml = pct > overT
+              ? `<button type="button" onclick="event.stopPropagation(); openBottleneckResolverModal('${row.id}', '${pk}')"
+                   title="Resolve >${overT}% overallocation with 1-click trim, shift, or capacity buffer"
+                   class="px-1.5 py-0.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-extrabold transition shrink-0 cursor-pointer">Fix</button>`
+              : '';
             const cellHeaderHtml = isPresent
               ? `<div class="flex items-center justify-end mb-2">
                    <span class="px-2 py-0.5 rounded-md ${s.pctText} tabular-nums ${pctBadgeCls}">
@@ -1285,12 +1531,12 @@
                  </div>`
               : `<div class="flex items-center justify-between gap-1 mb-1.5">
                    <button type="button" onclick="event.stopPropagation(); openCapacityModal('${row.id}', '${pk}')"
-                     title="Click to set variable capacity override for this period"
+                     title="${escapeHtml(capTooltip)}"
                      class="${s.capText} text-slate-600 hover:text-indigo-700 flex items-center gap-1 transition">
                      <span class="tabular-nums">${allocDisp} / ${capDisp}</span>
-                     ${capObj.hasOverride ? '<span class="px-1 rounded bg-sky-50 text-sky-700 border border-sky-200 text-[9px]">Var</span>' : ''}
+                     ${capObj.hasOverride ? `<span class="px-1 rounded bg-sky-50 text-sky-700 border border-sky-200 text-[9px] font-bold">${varLabel}</span>` : ''}
                    </button>
-                   <div class="flex items-center gap-1.5">
+                   <div class="flex items-center gap-1">
                      <button type="button" onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
                        title="${cmtCount ? cmtCount + ' project comment(s) — click to view/edit' : 'Click to add project comments for this cell'}"
                        aria-label="Comments for ${escapeHtml(row.name)} in ${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).title)}"
@@ -1298,6 +1544,7 @@
                        <svg class="w-3 h-3" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>
                        ${cmtCount > 0 ? `<span>${cmtCount}</span>` : ''}
                      </button>
+                     ${fixOverBtnHtml}
                      <span class="px-1.5 py-0.5 rounded-md ${s.pctText} tabular-nums ${pctBadgeCls}">
                        ${pct > 990 ? '&infin;' : pct + '%'}
                      </span>
@@ -1362,6 +1609,116 @@
               ${deptRowHeaderHtml}
               ${cellsHtml}
             </tr>`;
+        } else if (ui.axis === 'timeline') {
+          // Executive Timeline / Gantt Row View (one project per row, continuous effort bars + milestones)
+          const rowSpotCls = spotlightId ? (spotlightId === row.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
+          const perData = periods.map(pk => {
+            const totFte = getProjTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
+            const activeDepts = visibleDepts.filter(d => getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations).hasData);
+            const hasOverDept = activeDepts.some(d => {
+              const dc = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
+              const dt = getDeptTotalAllocatedFte(d.id, pk, ui.timeUnit, db);
+              return dc > 0 ? Math.round((dt / dc) * 100) > overT : dt > 0;
+            });
+            const msInPeriod = getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => m.projectId === row.id);
+            return { pk, fte: totFte, activeDepts, hasOverDept, msInPeriod };
+          });
+          const peakFte = Math.max(0.1, ...perData.map(x => x.fte));
+          let totalDays = 0;
+          let bottleneckCount = 0;
+          perData.forEach(x => {
+            totalDays += fteToDisplayValue(x.fte, x.pk, ui.timeUnit, 'days');
+            if (x.hasOverDept) bottleneckCount++;
+          });
+          const filledTheme = getFilledCardTheme(row.color);
+          const statusCls = row.status === 'At Risk' ? 'bg-rose-100 text-rose-700' : row.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600';
+
+          const cellsHtml = perData.map((x, idx) => {
+            const hasBar = x.fte > 0.001;
+            const prevHas = idx > 0 && perData[idx - 1].fte > 0.001;
+            const nextHas = idx < perData.length - 1 && perData[idx + 1].fte > 0.001;
+            let barEdgeCls = 'timeline-bar-single';
+            if (prevHas && nextHas) barEdgeCls = 'timeline-bar-mid';
+            else if (!prevHas && nextHas) barEdgeCls = 'timeline-bar-start';
+            else if (prevHas && !nextHas) barEdgeCls = 'timeline-bar-end';
+
+            const intensity = hasBar ? (0.62 + 0.38 * (x.fte / peakFte)).toFixed(2) : '1';
+            const valStr = hasBar ? formatValue(fteToDisplayValue(x.fte, x.pk, ui.timeUnit)) : '';
+            const deptCodes = x.activeDepts.map(d => d.code).join(', ');
+            const tentBarCls = row.tentative ? 'timeline-bar-tentative' : '';
+            const botBarRing = x.hasOverDept ? 'bottleneck-pill-ring' : '';
+
+            const barHtml = hasBar
+              ? `<div class="timeline-bar ${barEdgeCls} ${tentBarCls} ${botBarRing} ${rowSpotCls}"
+                   title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)} — ${valStr} (${escapeHtml(deptCodes)})${x.hasOverDept ? ' • Overallocated dept' : ''}"
+                   style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: ${row.tentative ? '1.5px dashed' : '1px solid'} ${filledTheme.border}; opacity:${intensity};">
+                   <span class="truncate font-extrabold tabular-nums">${valStr}</span>
+                   ${deptCodes ? `<span class="text-[9px] font-mono opacity-85 truncate shrink-0">${escapeHtml(deptCodes)}</span>` : ''}
+                 </div>`
+              : `<div class="min-h-[2.15rem] flex items-center justify-center text-[10px] text-slate-300 opacity-0 group-hover/cell:opacity-100 transition">+</div>`;
+
+            const msHtml = x.msInPeriod.length > 0
+              ? `<div class="px-1.5 pt-1 space-y-0.5">${x.msInPeriod.map(m => {
+                  const drift = getMilestoneDriftDays(m);
+                  return `<div onclick="event.stopPropagation(); openMilestoneModal('${m.id}')" title="${escapeHtml(m.title)} (${m.date}${drift > 0 ? ', +' + drift + 'd slip' : ''})"
+                    class="px-1.5 py-0.5 rounded bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-900 text-[10px] font-bold flex items-center justify-between gap-1 cursor-pointer">
+                    <span class="truncate"><span class="text-violet-600 mr-0.5">&#9670;</span>${escapeHtml(m.title)}</span>
+                    ${drift > 0 ? `<span class="text-rose-600 shrink-0">+${drift}d</span>` : ''}
+                  </div>`;
+                }).join('')}</div>`
+              : '';
+
+            return `
+              <td class="group/cell timeline-cell border-b border-l border-slate-200 matrix-cell-normal transition cursor-pointer"
+                onclick="openCellDetailModal('${row.id}', '${x.pk}')">
+                ${barHtml}
+                ${msHtml}
+              </td>`;
+          }).join('');
+
+          const budgetDays = Number(row.budgetDays) || 0;
+          const allTimeDays = budgetDays > 0 ? getProjectTotalPlannedDays(row.id, db) : 0;
+          const budgetPct = budgetDays > 0 ? Math.round((allTimeDays / budgetDays) * 100) : 0;
+          const budgetBadgeHtml = budgetDays > 0
+            ? `<span class="px-1.5 py-0.5 rounded-md text-[9px] font-bold shrink-0 ${budgetPct > 100 ? 'bg-rose-100 text-rose-700' : budgetPct >= 85 ? 'bg-amber-100 text-amber-800' : 'bg-indigo-50 text-indigo-700'}">${Math.round(allTimeDays)}/${Math.round(budgetDays)}d</span>`
+            : '';
+          const plannedCost = showCost ? getProjectTotalPlannedCost(row.id, db) : 0;
+          const budgetCost = Number(row.budgetCost) || 0;
+          const costPct = budgetCost > 0 ? Math.round((plannedCost / budgetCost) * 100) : 0;
+          const costBadgeHtml = (showCost && (plannedCost > 0 || budgetCost > 0))
+            ? `<span title="Est. cost ${formatCurrency(plannedCost, db)}${budgetCost > 0 ? ' vs ' + formatCurrency(budgetCost, db) + ' budget (' + costPct + '%)' : ''}" class="px-1.5 py-0.5 rounded-md text-[9px] font-bold shrink-0 ${budgetCost > 0 && costPct > 100 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-50 text-emerald-700'}">${formatCurrency(plannedCost, db)}${budgetCost > 0 ? '/' + formatCurrency(budgetCost, db) : ''}</span>`
+            : '';
+          const tentTagHtml = row.tentative ? '<span class="px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-800 text-[9px] font-bold shrink-0">Pipeline</span>' : '';
+          const shiftBtnHtml = !isPresent && !isCompactGrid
+            ? `<button type="button" onclick="event.stopPropagation(); openShiftProjectModal('${row.id}')" title="Shift schedule for [${escapeHtml(row.code)}]"
+                 class="opacity-0 group-hover/row:opacity-100 px-1.5 py-0.5 rounded-md bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-700 text-[10px] font-bold transition shrink-0">&#8644; Shift</button>`
+            : '';
+
+          const tlRowHeaderHtml = isCompactRow
+            ? `<th scope="row" title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)}" onclick="toggleSpotlightProject('${row.id}')"
+                 class="meeting-row-accent ${rowSpotCls} sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 w-[62px] min-w-[62px] max-w-[62px] ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-middle font-normal text-center cursor-pointer"
+                 style="--row-accent:${row.color};">
+                 <div class="flex flex-col items-center justify-center gap-1.5">
+                   <div class="meeting-vertical-text text-xs font-extrabold text-slate-900 tracking-wide">${escapeHtml(row.name)}</div>
+                   <span class="font-mono text-[10px] font-bold ${bottleneckCount > 0 ? 'text-rose-600' : 'text-slate-500'}">${escapeHtml(row.code)}</span>
+                 </div>
+               </th>`
+            : `<th scope="row" onclick="toggleSpotlightProject('${row.id}')" class="${rowSpotCls} sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-middle font-normal text-left cursor-pointer">
+                 <div class="flex items-start justify-between gap-1.5">
+                   <div class="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                     <span class="w-2 h-8 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
+                     <div class="min-w-0">
+                       <div class="${s.rowName} text-slate-900 truncate">${escapeHtml(isCompactGrid ? row.code : row.name)}</div>
+                       <div class="${s.rowMeta} text-slate-500 flex flex-wrap items-center gap-1 mt-0.5">
+                         <span class="font-mono font-bold">${escapeHtml(row.code)}</span><span>&bull;</span><span>${Math.round(totalDays)}d</span>${tentTagHtml}${budgetBadgeHtml}${costBadgeHtml}
+                       </div>
+                     </div>
+                   </div>
+                   ${!isCompactGrid ? `<div class="flex flex-col items-end gap-1 shrink-0"><span class="rounded-md ${s.rowBadge} ${statusCls}">${escapeHtml(row.status)}</span>${shiftBtnHtml}</div>` : ''}
+                 </div>
+               </th>`;
+
+          return `<tr class="group/row" data-row-id="${row.id}">${tlRowHeaderHtml}${cellsHtml}</tr>`;
         } else {
           // Project Row View
           let totalDays = 0;
@@ -1464,7 +1821,7 @@
                       <div class="flex items-center gap-0.5 shrink-0">
                         ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', -1)" title="Decrease allocation"
                           class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded font-bold flex items-center justify-center transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">&minus;</button>` : ''}
-                        <span class="${s.pillVal} tabular-nums px-0.5">${valStr}</span>
+                        <span ${!isPresent ? `onclick="startInlineValueEdit(event, '${d.id}', '${row.id}', '${pk}')" title="Click to quick-edit value inline"` : ''} class="${s.pillVal} tabular-nums px-0.5 ${!isPresent ? 'cursor-text rounded hover:underline' : ''}">${valStr}</span>
                         ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', 1)" title="Increase allocation"
                           class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded font-bold flex items-center justify-center transition" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">+</button>` : ''}
                         ${!isPresent ? `<button type="button" onclick="quickExtendAllocation(event, '${d.id}', '${row.id}', '${pk}')" title="Copy into next period"
@@ -1492,7 +1849,7 @@
                     <div class="flex items-center gap-0.5 shrink-0">
                       ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', -1)"
                         class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded bg-slate-100 hover:bg-rose-100 text-slate-700 font-bold flex items-center justify-center transition">&minus;</button>` : ''}
-                      <span class="${s.pillVal} text-slate-900 tabular-nums px-0.5">${valStr}</span>
+                      <span ${!isPresent ? `onclick="startInlineValueEdit(event, '${d.id}', '${row.id}', '${pk}')" title="Click to quick-edit value inline"` : ''} class="${s.pillVal} text-slate-900 tabular-nums px-0.5 ${!isPresent ? 'cursor-text rounded hover:underline' : ''}">${valStr}</span>
                       ${!isPresent ? `<button type="button" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${pk}', 1)"
                         class="desktop-hover-reveal opacity-0 group-hover/pill:opacity-100 w-4 h-4 rounded bg-slate-100 hover:bg-emerald-100 text-slate-700 font-bold flex items-center justify-center transition">+</button>` : ''}
                       ${!isPresent ? `<button type="button" onclick="quickExtendAllocation(event, '${d.id}', '${row.id}', '${pk}')"
@@ -1558,6 +1915,13 @@
           const budgetBadgeHtml = budgetDays > 0
             ? `<span title="Total planned across all weeks: ${allTimeDays}d vs ${budgetDays}d budget (${budgetPct}%)" class="px-1.5 py-0.5 rounded-md text-[9px] font-bold shrink-0 ${budgetPct > 100 ? 'bg-rose-100 text-rose-700' : budgetPct >= 85 ? 'bg-amber-100 text-amber-800' : 'bg-indigo-50 text-indigo-700'}">${Math.round(allTimeDays)}/${Math.round(budgetDays)}d (${budgetPct}%)</span>`
             : '';
+          const plannedCost = showCost ? getProjectTotalPlannedCost(row.id, db) : 0;
+          const budgetCost = Number(row.budgetCost) || 0;
+          const costPct = budgetCost > 0 ? Math.round((plannedCost / budgetCost) * 100) : 0;
+          const costBadgeHtml = (showCost && (plannedCost > 0 || budgetCost > 0))
+            ? `<span title="Est. total cost: ${formatCurrency(plannedCost, db)}${budgetCost > 0 ? ' vs ' + formatCurrency(budgetCost, db) + ' budget (' + costPct + '%)' : ''}" class="px-1.5 py-0.5 rounded-md text-[9px] font-bold shrink-0 ${budgetCost > 0 && costPct > 100 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-50 text-emerald-700'}">${formatCurrency(plannedCost, db)}${budgetCost > 0 ? '/' + formatCurrency(budgetCost, db) : ''}</span>`
+            : '';
+          const tentProjTagHtml = row.tentative ? '<span class="px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-800 text-[9px] font-bold shrink-0">Pipeline</span>' : '';
           const shiftProjBtnHtml = !isPresent && !isCompactGrid
             ? `<button type="button" onclick="event.stopPropagation(); openShiftProjectModal('${row.id}')" title="Shift all allocations, comments &amp; milestones for [${escapeHtml(row.code)}] by ±N weeks/months"
                  class="opacity-0 group-hover/row:opacity-100 px-1.5 py-0.5 rounded-md bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-700 text-[10px] font-bold transition shrink-0">&#8644; Shift</button>`
@@ -1580,7 +1944,7 @@
                      <div class="min-w-0">
                        <div class="${s.rowName} text-slate-900 truncate">${escapeHtml(isCompactGrid ? row.code : row.name)}</div>
                        <div class="${s.rowMeta} text-slate-500 flex flex-wrap items-center gap-1 mt-0.5">
-                         ${isCompactGrid ? `<span class="truncate">${escapeHtml(row.name)}</span>` : `<span class="font-mono font-bold">${escapeHtml(row.code)}</span><span>&bull;</span><span>${Math.round(totalDays)}d</span>${budgetBadgeHtml}${bottleneckBadgeHtml}`}
+                         ${isCompactGrid ? `<span class="truncate">${escapeHtml(row.name)}</span>` : `<span class="font-mono font-bold">${escapeHtml(row.code)}</span><span>&bull;</span><span>${Math.round(totalDays)}d</span>${tentProjTagHtml}${budgetBadgeHtml}${costBadgeHtml}${bottleneckBadgeHtml}`}
                        </div>
                      </div>
                    </div>
@@ -1636,8 +2000,8 @@
              ${periods.map(() => `<col data-period-col="1" style="width: ${colGeo.colW}px;" />`).join('')}
            </colgroup>`;
       const cornerLabel = isCompactRow
-        ? (ui.axis === 'department' ? 'Dept' : 'Proj')
-        : (ui.axis === 'department' ? 'Departments' : 'Projects');
+        ? (ui.axis === 'department' ? 'Dept' : ui.axis === 'timeline' ? 'Gantt' : 'Proj')
+        : (ui.axis === 'department' ? 'Departments' : ui.axis === 'timeline' ? 'Project Timeline' : 'Projects');
 
       wrapper.style.scrollPaddingLeft = `${colGeo.stickyW}px`;
       wrapper.innerHTML = `
@@ -1920,5 +2284,65 @@
       } else {
         executeCopy();
       }
+    }
+
+    function startInlineValueEdit(event, deptId, projId, periodKey) {
+      if (event) event.stopPropagation();
+      const span = event?.currentTarget;
+      if (!span || span.querySelector('input')) return;
+      const db = getActiveDB();
+      const cur = getAllocationForPeriod(deptId, projId, periodKey, ui.timeUnit, db.allocations);
+      const curDisp = Math.round(fteToDisplayValue(cur.avgFte, periodKey, ui.timeUnit, ui.manpowerUnit) * 100) / 100;
+      const { step } = getManpowerStep(ui.manpowerUnit);
+
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.step = String(step);
+      input.min = '0';
+      input.value = String(curDisp);
+      input.className = 'inline-val-input tabular-nums';
+      input.setAttribute('aria-label', `Inline edit ${unitShortLabel()} value`);
+
+      let finished = false;
+      const finish = (commit) => {
+        if (finished) return;
+        finished = true;
+        if (!commit) {
+          renderMatrix();
+          return;
+        }
+        const raw = parseFloat(input.value);
+        if (isNaN(raw) || raw < 0) {
+          renderMatrix();
+          return;
+        }
+        if (Math.abs(raw - curDisp) < 0.001) {
+          renderMatrix();
+          return;
+        }
+        const nextFte = displayValueToFte(raw, periodKey, ui.timeUnit, ui.manpowerUnit);
+        const dCode = db.departments.find(d => d.id === deptId)?.code || deptId;
+        const pCode = db.projects.find(p => p.id === projId)?.code || projId;
+        pushUndoState(`Inline edit [${dCode} -> ${pCode}]`);
+        setAllocationForPeriod(deptId, projId, periodKey, ui.timeUnit, nextFte, db);
+        recordChange('Allocation', raw <= 0.0001
+          ? `Cleared [${dCode} -> ${pCode}] allocation in ${periodKey}`
+          : `Updated [${dCode} -> ${pCode}] to ${formatValue(raw)} in ${periodKey}`);
+        renderAll();
+        showToast(raw <= 0.0001 ? `Cleared [${dCode} → ${pCode}]` : `Set [${dCode} → ${pCode}] to ${formatValue(raw)}`, 'success', { undoable: true });
+      };
+
+      input.onclick = (e) => e.stopPropagation();
+      input.onkeydown = (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+        else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+      };
+      input.onblur = () => finish(true);
+
+      span.textContent = '';
+      span.appendChild(input);
+      input.focus();
+      input.select();
     }
 

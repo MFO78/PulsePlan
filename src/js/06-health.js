@@ -15,9 +15,12 @@
       const statusTxt = s.pct > overT ? 'Overallocated' : s.pct >= warnT ? 'High Load' : 'Healthy';
       const statusCls = s.pct > overT ? 'text-rose-600' : s.pct >= warnT ? 'text-amber-700' : 'text-emerald-700';
       readout.classList.remove('hidden');
+      const pipeNote = s.tentativeDisp > 0.005
+        ? ` <span class="text-violet-700 font-semibold">(Committed ${formatValue(s.committedDisp)} + Pipeline ${formatValue(s.tentativeDisp)})</span>`
+        : '';
       readout.innerHTML = `
-        <span><strong>${escapeHtml(s.label)}</strong>: Allocated ${formatValue(s.allocDisp)} / Cap ${formatValue(s.capDisp)}</span>
-        <span class="font-extrabold ${statusCls}">${s.pct}% (${statusTxt})</span>`;
+        <span class="min-w-0 break-words"><strong>${escapeHtml(s.label)}</strong>: Allocated ${formatValue(s.allocDisp)} / Cap ${formatValue(s.capDisp)}${pipeNote}</span>
+        <span class="font-extrabold shrink-0 ${statusCls}">${s.pct}% (${statusTxt})</span>`;
       triggerHaptic(6);
     }
 
@@ -30,12 +33,15 @@
 
       let totalAllocFte = 0, totalCapFte = 0, overSlots = 0, highSlots = 0;
       const stats = periods.map(pk => {
-        let a = 0, c = 0;
+        let a = 0, comm = 0, tent = 0, c = 0;
         visibleDepts.forEach(d => {
-          const da = getDeptTotalAllocatedFte(d.id, pk, ui.timeUnit, db);
+          const split = getDeptCommittedVsTentativeFte(d.id, pk, ui.timeUnit, db);
           const dc = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
-          a += da; c += dc;
-          const dpct = dc > 0 ? Math.round((da / dc) * 100) : (da > 0 ? 999 : 0);
+          comm += split.committed;
+          tent += split.tentative;
+          a += split.total;
+          c += dc;
+          const dpct = dc > 0 ? Math.round((split.total / dc) * 100) : (split.total > 0 ? 999 : 0);
           if (dpct > overT) overSlots++;
           else if (dpct >= warnT) highSlots++;
         });
@@ -45,6 +51,8 @@
           pk,
           label: formatPeriodHeader(pk, ui.timeUnit).title,
           allocDisp: fteToDisplayValue(a, pk, ui.timeUnit),
+          committedDisp: fteToDisplayValue(comm, pk, ui.timeUnit),
+          tentativeDisp: fteToDisplayValue(tent, pk, ui.timeUnit),
           capDisp: fteToDisplayValue(c, pk, ui.timeUnit),
           pct,
         };
@@ -53,32 +61,50 @@
 
       const avgPct = totalCapFte > 0 ? Math.round((totalAllocFte / totalCapFte) * 100) : 0;
       const slippedMs = db.milestones.filter(m => getMilestoneDriftDays(m) > 0 && m.status !== 'Completed').length;
-      const budgetedProjs = db.projects.filter(p => !p.archived && (Number(p.budgetDays) || 0) > 0);
+      const activeProjs = db.projects.filter(p => !p.archived && isProjectIncludedInPlan(p));
+      const budgetedProjs = activeProjs.filter(p => (Number(p.budgetDays) || 0) > 0);
       const overBudgetCount = budgetedProjs.filter(p => getProjectTotalPlannedDays(p.id, db) > Number(p.budgetDays)).length;
+      const hasRates = hasAnyDayRates(db);
+      const totalPortfolioCost = hasRates ? activeProjs.reduce((acc, p) => acc + getProjectTotalPlannedCost(p.id, db), 0) : 0;
+      const costBudgetProjs = activeProjs.filter(p => (Number(p.budgetCost) || 0) > 0);
+      const overCostCount = hasRates ? costBudgetProjs.filter(p => getProjectTotalPlannedCost(p.id, db) > Number(p.budgetCost)).length : 0;
+
+      let kpi4Html = '';
+      if (hasRates && totalPortfolioCost > 0) {
+        kpi4Html = `
+          <div class="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-400">Planned Cost</div>
+          <div class="text-xl md:text-2xl font-extrabold mt-1 tabular-nums ${overCostCount > 0 ? 'text-rose-600' : 'text-indigo-600'}">${formatCurrency(totalPortfolioCost, db)}</div>
+          <div class="text-[11px] text-slate-500 mt-1 leading-snug">${costBudgetProjs.length > 0 ? (overCostCount > 0 ? `${overCostCount}/${costBudgetProjs.length} over cost budget` : `${costBudgetProjs.length} cost budgets OK`) : `${budgetedProjs.length > 0 ? `${budgetedProjs.length - overBudgetCount}/${budgetedProjs.length} day budgets OK` : `${db.snapshots.length} snapshots`}`}</div>`;
+      } else if (budgetedProjs.length > 0) {
+        kpi4Html = `
+          <div class="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-400">Project Budgets</div>
+          <div class="text-xl md:text-2xl font-extrabold mt-1 ${overBudgetCount > 0 ? 'text-rose-600' : 'text-emerald-600'}">${budgetedProjs.length - overBudgetCount} / ${budgetedProjs.length}</div>
+          <div class="text-[11px] text-slate-500 mt-1 leading-snug">${overBudgetCount > 0 ? `${overBudgetCount} over budget` : 'All within budget'} &bull; ${db.snapshots.length} snaps</div>`;
+      } else {
+        kpi4Html = `
+          <div class="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-400">Plan Evolution</div>
+          <div class="text-xl md:text-2xl font-extrabold mt-1 text-indigo-600">${db.changeLog.length}</div>
+          <div class="text-[11px] text-slate-500 mt-1 leading-snug">${db.snapshots.length} saved snapshots</div>`;
+      }
 
       document.getElementById('healthKpis').innerHTML = `
-        <div class="bg-white rounded-2xl border border-slate-200 p-3.5 md:p-4 shadow-xs">
-          <div class="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-400">Avg Org Utilisation</div>
+        <div class="bg-white rounded-2xl border border-slate-200 p-3.5 md:p-4 shadow-xs min-w-0 break-words">
+          <div class="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-400 leading-tight">Avg Org Utilisation</div>
           <div class="text-xl md:text-2xl font-extrabold mt-1 ${avgPct > overT ? 'text-rose-600' : avgPct >= warnT ? 'text-amber-600' : 'text-emerald-600'}">${avgPct}%</div>
-          <div class="text-[11px] text-slate-500 mt-1">Across ${periods.length} ${ui.timeUnit}${periods.length === 1 ? '' : 's'}</div>
+          <div class="text-[11px] text-slate-500 mt-1 leading-snug">Across ${periods.length} ${ui.timeUnit}${periods.length === 1 ? '' : 's'}${!ui.includeTentative ? ' (Comm. only)' : ''}</div>
         </div>
-        <div class="bg-white rounded-2xl border border-slate-200 p-3.5 md:p-4 shadow-xs">
-          <div class="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-400">Bottleneck Slots</div>
+        <div class="bg-white rounded-2xl border border-slate-200 p-3.5 md:p-4 shadow-xs min-w-0 break-words">
+          <div class="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-400 leading-tight">Bottleneck Slots</div>
           <div class="text-xl md:text-2xl font-extrabold mt-1 ${overSlots > 0 ? 'text-rose-600' : 'text-slate-900'}">${overSlots}</div>
-          <div class="text-[11px] text-slate-500 mt-1">${highSlots} high-load (&ge;${warnT}%)</div>
+          <div class="text-[11px] text-slate-500 mt-1 leading-snug">${highSlots} high-load (&ge;${warnT}%)</div>
         </div>
-        <div class="bg-white rounded-2xl border border-slate-200 p-3.5 md:p-4 shadow-xs">
-          <div class="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-400">Milestones Health</div>
+        <div class="bg-white rounded-2xl border border-slate-200 p-3.5 md:p-4 shadow-xs min-w-0 break-words">
+          <div class="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-400 leading-tight">Milestones Health</div>
           <div class="text-xl md:text-2xl font-extrabold mt-1 ${slippedMs > 0 ? 'text-amber-600' : 'text-emerald-600'}">${db.milestones.length - slippedMs} / ${db.milestones.length}</div>
-          <div class="text-[11px] text-slate-500 mt-1">${slippedMs} slipped vs. base</div>
+          <div class="text-[11px] text-slate-500 mt-1 leading-snug">${slippedMs} slipped vs. base</div>
         </div>
-        <div class="bg-white rounded-2xl border border-slate-200 p-3.5 md:p-4 shadow-xs">
-          <div class="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-400">${budgetedProjs.length > 0 ? 'Project Budgets' : 'Plan Evolution'}</div>
-          ${budgetedProjs.length > 0
-            ? `<div class="text-xl md:text-2xl font-extrabold mt-1 ${overBudgetCount > 0 ? 'text-rose-600' : 'text-emerald-600'}">${budgetedProjs.length - overBudgetCount} / ${budgetedProjs.length}</div>
-               <div class="text-[11px] text-slate-500 mt-1">${overBudgetCount > 0 ? `${overBudgetCount} over budget` : 'All within budget'} &bull; ${db.snapshots.length} snaps</div>`
-            : `<div class="text-xl md:text-2xl font-extrabold mt-1 text-indigo-600">${db.changeLog.length}</div>
-               <div class="text-[11px] text-slate-500 mt-1">${db.snapshots.length} saved snapshots</div>`}
+        <div class="bg-white rounded-2xl border border-slate-200 p-3.5 md:p-4 shadow-xs min-w-0 break-words">
+          ${kpi4Html}
         </div>`;
 
       // Interactive Touch-Tappable SVG Chart
@@ -120,12 +146,21 @@
         stats.forEach((s, idx) => {
           const cx = pad.left + idx * slotW + slotW / 2;
           const x = cx - barW / 2;
+          const yZero = yScale(0);
+          const yComm = yScale(s.committedDisp);
+          const hComm = Math.max(0, yZero - yComm);
           const yAlloc = yScale(s.allocDisp);
-          const hAlloc = Math.max(0, yScale(0) - yAlloc);
+          const hTent = Math.max(0, yComm - yAlloc);
           const isOver = s.pct > overT;
-          const fill = isOver ? '#f43f5e' : '#6366f1';
+          const commOver = s.capDisp > 0 && (s.committedDisp / s.capDisp) * 100 > overT;
+          const fillComm = commOver ? '#f43f5e' : (isOver && hTent < 0.5 ? '#f43f5e' : '#6366f1');
+          const fillTent = isOver ? '#fb7185' : '#a78bfa';
 
           capPoints.push(`${cx},${yScale(s.capDisp)}`);
+
+          const titleTxt = s.tentativeDisp > 0.005
+            ? `${escapeHtml(s.label)}: Committed ${formatValue(s.committedDisp)} + Pipeline ${formatValue(s.tentativeDisp)} = ${formatValue(s.allocDisp)} / Cap ${formatValue(s.capDisp)} (${s.pct}%)`
+            : `${escapeHtml(s.label)}: Allocated ${formatValue(s.allocDisp)} / Capacity ${formatValue(s.capDisp)} (${s.pct}%)`;
 
           barsHtml += `
             <g role="button" tabindex="0" aria-label="${escapeHtml(s.label)}: ${formatValue(s.allocDisp)} of ${formatValue(s.capDisp)} (${s.pct}%)"
@@ -133,9 +168,8 @@
               onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectHealthChartBar(${idx});}"
               class="cursor-pointer">
               <rect x="${pad.left + idx * slotW}" y="${pad.top}" width="${slotW}" height="${plotH + 22}" fill="transparent" />
-              <rect x="${x}" y="${yAlloc}" width="${barW}" height="${hAlloc}" rx="6" fill="${fill}" opacity="0.9">
-                <title>${escapeHtml(s.label)}: Allocated ${formatValue(s.allocDisp)} / Capacity ${formatValue(s.capDisp)} (${s.pct}%)</title>
-              </rect>
+              ${hComm > 0 ? `<rect x="${x}" y="${yComm}" width="${barW}" height="${hComm}" rx="${hTent > 0.5 ? 2 : 6}" fill="${fillComm}" opacity="0.92"><title>${titleTxt}</title></rect>` : ''}
+              ${hTent > 0.5 ? `<rect x="${x}" y="${yAlloc}" width="${barW}" height="${hTent}" rx="4" fill="${fillTent}" stroke="${isOver ? '#e11d48' : '#7c3aed'}" stroke-width="1" stroke-dasharray="3,2" opacity="0.88"><title>${titleTxt}</title></rect>` : ''}
               <text x="${cx}" y="${Math.max(14, yAlloc - 6)}" text-anchor="middle" font-size="10" font-weight="700" fill="${isOver ? '#fb7185' : pctTextNormal}">${s.pct}%</text>
               <text x="${cx}" y="${height - 14}" text-anchor="middle" font-size="10" font-weight="600" fill="${labelText}">${escapeHtml(s.label)}</text>
             </g>`;
@@ -176,12 +210,12 @@
           const barCls = peakPct > overT ? 'bg-rose-500' : avg >= warnT ? 'bg-amber-500' : 'bg-emerald-500';
           return `
             <div class="space-y-1">
-              <div class="flex items-center justify-between text-xs">
-                <span class="font-semibold text-slate-800 flex items-center gap-1.5">
-                  <span class="w-2.5 h-2.5 rounded-full" style="background:${d.color}" aria-hidden="true"></span>
-                  ${escapeHtml(d.name)}
+              <div class="flex items-center justify-between gap-2 text-xs min-w-0">
+                <span class="font-semibold text-slate-800 flex items-center gap-1.5 min-w-0 truncate">
+                  <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${d.color}" aria-hidden="true"></span>
+                  <span class="truncate">${escapeHtml(d.name)}</span>
                 </span>
-                <span class="text-[11px] font-bold tabular-nums text-slate-600">Avg ${avg}% <span class="text-slate-400">|</span> Peak <span class="${peakPct > overT ? 'text-rose-600' : ''}">${peakPct}%</span></span>
+                <span class="text-[11px] font-bold tabular-nums text-slate-600 shrink-0">Avg ${avg}% <span class="text-slate-400">|</span> Peak <span class="${peakPct > overT ? 'text-rose-600' : ''}">${peakPct}%</span></span>
               </div>
               <div class="w-full h-2 rounded-full bg-slate-100 overflow-hidden" aria-hidden="true">
                 <div class="h-full ${barCls} rounded-full" style="width:${Math.min(100, avg)}%"></div>
@@ -474,22 +508,22 @@
         const capGlyph = k.netCapDelta > 0.01 ? '▲ ' : k.netCapDelta < -0.01 ? '▼ ' : '';
 
         kpisBox.innerHTML = `
-          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 min-w-0 break-words">
             <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Net Load Delta</div>
             <div class="text-base md:text-lg font-extrabold mt-0.5 tabular-nums ${loadCls}">${loadGlyph}${formatSignedValue(k.netLoadDelta)}</div>
             <div class="text-[11px] text-slate-500">${k.netLoadPct > 0 ? '+' : ''}${k.netLoadPct}% vs. base</div>
           </div>
-          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 min-w-0 break-words">
             <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Net Cap Delta</div>
             <div class="text-base md:text-lg font-extrabold mt-0.5 tabular-nums ${capCls}">${capGlyph}${formatSignedValue(k.netCapDelta)}</div>
             <div class="text-[11px] text-slate-500">${diff.capChanges.length} override shift${diff.capChanges.length === 1 ? '' : 's'}</div>
           </div>
-          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 min-w-0 break-words">
             <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Cell Shifts</div>
             <div class="text-base md:text-lg font-extrabold mt-0.5 tabular-nums text-indigo-700">${k.totalChangedCells}</div>
             <div class="text-[11px] text-slate-500">+${k.addedCells} &uarr;${k.incCells} &darr;${k.decCells} &minus;${k.remCells}</div>
           </div>
-          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 min-w-0 break-words">
             <div class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Milestones</div>
             <div class="text-base md:text-lg font-extrabold mt-0.5 tabular-nums ${k.msSlipped > 0 || k.msRemoved > 0 ? 'text-rose-600' : 'text-emerald-600'}">${k.msSlipped} Slip${k.totalSlipDays > 0 ? ` (+${k.totalSlipDays}d)` : ''}</div>
             <div class="text-[11px] text-slate-500">${k.msEarly} early &bull; ${k.msAdded} new &bull; ${k.msRemoved} rm</div>

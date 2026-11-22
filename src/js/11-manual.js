@@ -42,20 +42,20 @@
             <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
               <div class="font-bold text-slate-900">Clean Meeting-Ready Canvas with Full Editing Power</div>
               <ul class="space-y-1 text-slate-600 leading-relaxed">
-                <li>&bull; <strong>Grouping &amp; Sorting:</strong> Switch rows between <strong>By Dept</strong> (capacity vs. load) and <strong>By Project</strong> (effort across teams, sorted naturally by project code, with automatic <strong>&#9888; Over</strong> bottleneck badges).</li>
+                <li>&bull; <strong>Grouping, Timeline &amp; Sorting:</strong> Switch rows between <strong>By Dept</strong> (capacity vs. load), <strong>By Project</strong> (effort across teams, sorted naturally by code, with <strong>&#9888; Over</strong> badges), and <strong>Timeline</strong> (Executive Gantt bars with effort intensity &amp; milestone diamonds).</li>
+                <li>&bull; <strong>Committed vs. Tentative Pipeline:</strong> Mark uncommitted proposals as <strong>Tentative / Pipeline</strong> in Project Setup (hatched/dashed cards + stacked bars in Health). Toggle <strong>Pipeline: ON / Committed Only</strong> in Filters to see capacity with or without pipeline load.</li>
                 <li>&bull; <strong>Time Scale &amp; Full-Column Horizon:</strong> Switch between <strong>Months</strong> and <strong>Weeks</strong> and choose <strong>1 to 24</strong> periods (1–4 periods fill the viewport equally; wider horizons snap strictly to full columns with zero half-columns). Step with <strong>&lsaquo; / Today / &rsaquo;</strong>, sticky column header arrows, or <code class="px-1 rounded bg-white font-mono">&larr;/&rarr;</code> and <code class="px-1 rounded bg-white font-mono">1–4</code>.</li>
-                <li>&bull; <strong>Row Labels &amp; Note Size:</strong> Inside <strong>Filters &amp; Display</strong>, toggle <strong>Row Labels</strong> between <strong>Vertical</strong> (compact 62 px spine maximizing card space) and <strong>Detailed</strong> (216 px with base FTE, budgets, and row reordering), and adjust <strong>Notes</strong> size (<strong>Norm / Large / XL</strong>).</li>
+                <li>&bull; <strong>Row Labels &amp; Note Size:</strong> Inside <strong>Filters &amp; Display</strong>, toggle <strong>Row Labels</strong> between <strong>Vertical</strong> (compact 62 px spine maximizing card space) and <strong>Detailed</strong> (216 px with base FTE, budgets, cost burn, and row reordering), and adjust <strong>Notes</strong> size (<strong>Norm / Large / XL</strong>).</li>
                 <li>&bull; <strong>Sticky Column Headers:</strong> While scrolling down, only the Week/Month column headers (with date ranges and <strong>&lsaquo; / Today / &rsaquo;</strong> controls) stay pinned at the top of the screen.</li>
               </ul>
             </div>
             <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
-              <div class="font-bold text-slate-900">Fast Editing, Drag &amp; Drop, and Bulk Copy</div>
+              <div class="font-bold text-slate-900">Fast Editing, Inline Numbers, Bottleneck Fix &amp; Bulk Copy</div>
               <ul class="space-y-1 text-slate-600 leading-relaxed">
-                <li>&bull; <strong>Quick Actions on Hover:</strong> Hover any allocation card for instant <strong>&minus; / +</strong> stepping, <strong>&rarr;</strong> to copy into the next period, and <strong>&#9678;</strong> to spotlight that project. Hover any cell for the subtle <strong>+ Add</strong> button.</li>
-                <li>&bull; <strong>Multi-Period Range Fill:</strong> Click any card or <strong>+ Allocate</strong> to open the Allocation Modal. Set either a <strong>Repeat count</strong> (1–24) or pick a <strong>Through End Week/Month</strong> to fill an entire span in one click.</li>
-                <li>&bull; <strong>Copy Entire Period:</strong> Hover any column header and click <strong>Copy &rarr;</strong> to duplicate all visible allocations from that week/month into the next period.</li>
-                <li>&bull; <strong>Drag &amp; Drop:</strong> Drag allocation cards or milestones between cells (toggle <strong>Drag: Move / Copy</strong> or hold <code class="px-1 rounded bg-white font-mono">Alt</code> to copy). In <strong>Detailed</strong> row label mode, drag row handles (&#8942;&#8942;) or click &#9650;/&#9660; to reorder departments.</li>
-                <li>&bull; <strong>Variable Capacity &amp; Comments:</strong> Click the <code class="px-1 rounded bg-white font-mono">alloc / cap</code> readout in any cell to set period-specific capacity overrides (tagged <span class="px-1 rounded bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold">Var</span>). Click empty cell space or the speech-bubble icon to edit inline cell comments.</li>
+                <li>&bull; <strong>Inline Value Edit &amp; Hover Actions:</strong> Click any card&rsquo;s numeric value to type a new number right in place (<code class="px-1 rounded bg-white font-mono">Enter</code> saves, <code class="px-1 rounded bg-white font-mono">Esc</code> cancels). Hover any card for instant <strong>&minus; / +</strong> stepping, <strong>&rarr;</strong> to extend, and <strong>&#9678;</strong> to spotlight.</li>
+                <li>&bull; <strong>One-Click Bottleneck Resolver:</strong> Click <strong>Fix</strong> on any overallocated (&gt;100%) cell to preview &amp; apply a trim, +1 period deferral, or temporary contractor capacity buffer (all 1-click Undoable).</li>
+                <li>&bull; <strong>Column Quick Actions:</strong> Hover any column header for <strong>Copy &rarr;</strong> (duplicate into next period), <strong>Hol%</strong> (holiday/shutdown capacity factor), and <strong>&times;</strong> (clear period allocations).</li>
+                <li>&bull; <strong>Variable Capacity Overrides:</strong> Click the <code class="px-1 rounded bg-white font-mono">alloc / cap</code> readout in any cell to edit overrides (tagged <span class="px-1 rounded bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-bold">Var ▲/▼</span>). View, filter, edit, or reset all grouped override spans in <strong>Setup &amp; Data &rarr; Departments</strong>.</li>
               </ul>
             </div>
             <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5">
@@ -115,16 +115,16 @@
               <p class="text-slate-600 leading-relaxed">Set variable capacity across a <strong>Start &rarr; End</strong> date span inside the Capacity Modal, or use <strong>Holiday / Shutdown %</strong> in <strong>Data &amp; Setup &rarr; Departments</strong> to scale multiple departments at once (e.g. 50% half-week or 0% shutdown).</p>
             </div>
             <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-              <div class="font-bold text-slate-900">Project Effort Budgets &amp; Archiving</div>
-              <p class="text-slate-600 leading-relaxed">Set an optional <strong>Effort Budget (Person-Days)</strong> per project to see live burn % in <strong>By Project</strong> view, Setup, and Health KPIs. <strong>Archive</strong> completed projects to hide them from active planning without losing history or snapshots.</p>
+              <div class="font-bold text-slate-900">Effort &amp; Cost Budgets, Duplicate Project &amp; Archiving</div>
+              <p class="text-slate-600 leading-relaxed">Set optional <strong>Day Rates</strong> per department and <strong>Effort / Cost Budgets</strong> per project (currency in <strong>Units &amp; Thresholds</strong>) to track financial burn automatically. Use <strong>Copy</strong> in Setup to duplicate a project with its allocations &amp; milestones, or <strong>Archive</strong> completed projects.</p>
             </div>
             <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-              <div class="font-bold text-slate-900">Saved Views / Presets</div>
-              <p class="text-slate-600 leading-relaxed">Click <strong>Views</strong> in the Roadmap toolbar to bookmark your current filters, horizon, axis, color mode, and Meeting View settings under a name for 1-click recall.</p>
+              <div class="font-bold text-slate-900">Executive Briefing &amp; Saved Views</div>
+              <p class="text-slate-600 leading-relaxed">Use <strong>Actions &#9662; &rarr; Copy Executive Briefing</strong> to copy a ready-to-paste status summary (utilisation, bottlenecks, slipped milestones, budgets, and key notes) for Email/Slack/Teams, and bookmark filter/horizon presets via <strong>Views</strong>.</p>
             </div>
             <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
-              <div class="font-bold text-slate-900">Paste from Excel / CSV Importer</div>
-              <p class="text-slate-600 leading-relaxed">Click <strong>Import CSV / Excel</strong> in <strong>Data &amp; Setup</strong> to paste tabular <code class="px-1 rounded bg-white font-mono">Dept, Project, Period, Value</code> rows straight from spreadsheets with live validation and bulk Undo.</p>
+              <div class="font-bold text-slate-900">Multi-Mode Excel / CSV Round-Trip</div>
+              <p class="text-slate-600 leading-relaxed">Click <strong>Import CSV / Excel</strong> in <strong>Data &amp; Setup</strong> to paste <strong>Allocations</strong>, <strong>Variable Capacities</strong>, or <strong>Milestones</strong> with live preview &amp; Undo. <strong>Matrix CSV</strong> exports Capacity rows, Commitments, Cost estimates, and Notes.</p>
             </div>
           </div>`,
       },
@@ -210,6 +210,8 @@
                 <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">Ctrl+Y / Cmd+Shift+Z</td><td class="px-3 py-2">Redo last undone edit</td><td class="px-3 py-2 text-slate-500">Global</td></tr>
                 <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">&larr; / &rarr;</td><td class="px-3 py-2">Step timeline back / forward by 1 week or month</td><td class="px-3 py-2 text-slate-500">Roadmap Tab</td></tr>
                 <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">T</td><td class="px-3 py-2">Jump timeline to current week / month (Today)</td><td class="px-3 py-2 text-slate-500">Roadmap Tab</td></tr>
+                <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">/</td><td class="px-3 py-2">Open Filters &amp; focus Roadmap Search box</td><td class="px-3 py-2 text-slate-500">Roadmap Tab</td></tr>
+                <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">A</td><td class="px-3 py-2">Open + Allocate Manpower dialog</td><td class="px-3 py-2 text-slate-500">Roadmap Tab</td></tr>
                 <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">1 / 2 / 3 / 4</td><td class="px-3 py-2">Show 1, 2, 3, or 4 equal-width weeks/months</td><td class="px-3 py-2 text-slate-500">Roadmap Tab</td></tr>
                 <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">F</td><td class="px-3 py-2">Toggle distraction-free Present (Fullscreen) mode</td><td class="px-3 py-2 text-slate-500">Roadmap Tab</td></tr>
                 <tr><td class="px-3 py-2 font-mono font-bold text-indigo-700">Esc</td><td class="px-3 py-2">Close menus/modal &rarr; Clear Spotlight &rarr; Exit Present mode</td><td class="px-3 py-2 text-slate-500">Global</td></tr>

@@ -14,7 +14,7 @@
       showArchivedProjects: false,
       showCellComments: true,
       cellColorMode: 'fill',          // 'accent' | 'fill' | 'fte' | 'fte3'
-      axis: 'department',             // 'department' | 'project'
+      axis: 'department',             // 'department' | 'project' | 'timeline'
       timeUnit: 'month',              // 'month' | 'week'
       manpowerUnit: 'fte',            // 'fte' | 'days' | 'hours'
       horizon: 4,
@@ -23,11 +23,13 @@
       filterDept: 'all',
       filterProj: 'all',
       hideEmptyRows: false,
+      includeTentative: true,         // true = include Pipeline / Tentative projects in totals & grid
       spotlightProjId: '',
       matrixSearch: '',
       filterOverOnly: false,
       filterAtRiskOnly: false,
       filterHasNotesOnly: false,
+      overrideDeptFilter: 'all',      // Setup tab Variable Overrides filter
       // Mobile Hybrid State (Pattern 1 + Pattern 2)
       mobileLayoutMode: 'cards',      // 'cards' (Period-Focus Deck) | 'grid' (2D Table)
       mobileSelectedPeriod: '',       // Currently focused periodKey in mobile card deck
@@ -121,6 +123,7 @@
           hoursPerDay: 8,
           warnThreshold: 85,
           overThreshold: 100,
+          currency: '€',
           retention: { ...DEFAULT_RETENTION },
           fte3Scheme: { ...DEFAULT_FTE3_SCHEME },
         },
@@ -147,19 +150,19 @@
       const m5 = addMonthsToMonthKey(baseMonth, 5);
 
       db.departments = [
-        { id: 'd_eng', name: 'Engineering', code: 'ENG', color: '#4f46e5', defaultCapacity: 8.0, manager: 'Elena Rostova' },
-        { id: 'd_des', name: 'Product Design', code: 'DES', color: '#ec4899', defaultCapacity: 3.0, manager: 'Marco Bellini' },
-        { id: 'd_dat', name: 'Data & AI', code: 'DAT', color: '#0ea5e9', defaultCapacity: 4.0, manager: 'Priya Nair' },
-        { id: 'd_ops', name: 'Operations & QA', code: 'OPS', color: '#10b981', defaultCapacity: 3.5, manager: 'Liam Vance' },
+        { id: 'd_eng', name: 'Engineering', code: 'ENG', color: '#4f46e5', defaultCapacity: 8.0, manager: 'Elena Rostova', dayRate: 650 },
+        { id: 'd_des', name: 'Product Design', code: 'DES', color: '#ec4899', defaultCapacity: 3.0, manager: 'Marco Bellini', dayRate: 580 },
+        { id: 'd_dat', name: 'Data & AI', code: 'DAT', color: '#0ea5e9', defaultCapacity: 4.0, manager: 'Priya Nair', dayRate: 700 },
+        { id: 'd_ops', name: 'Operations & QA', code: 'OPS', color: '#10b981', defaultCapacity: 3.5, manager: 'Liam Vance', dayRate: 520 },
       ];
 
       db.projects = getSortedProjects({
         projects: [
-          { id: 'p_nova', name: 'Project Nova (Core Platform)', code: 'NVA', color: '#4f46e5', status: 'Active', priority: 'High', owner: 'S. Chen', budgetDays: 700, archived: false },
-          { id: 'p_atlas', name: 'Atlas Mobile v3', code: 'ATL', color: '#0ea5e9', status: 'Active', priority: 'High', owner: 'M. Rossi', budgetDays: 450, archived: false },
-          { id: 'p_pulse', name: 'AI Copilot Analytics', code: 'AIC', color: '#8b5cf6', status: 'Active', priority: 'Medium', owner: 'P. Nair', budgetDays: 280, archived: false },
-          { id: 'p_cloud', name: 'Cloud EU Migration', code: 'CLD', color: '#10b981', status: 'At Risk', priority: 'Critical', owner: 'E. Rostova', budgetDays: 360, archived: false },
-          { id: 'p_brand', name: 'Enterprise Portal Refresh', code: 'EPR', color: '#f59e0b', status: 'Planned', priority: 'Low', owner: 'M. Bellini', budgetDays: 120, archived: false },
+          { id: 'p_nova', name: 'Project Nova (Core Platform)', code: 'NVA', color: '#4f46e5', status: 'Active', priority: 'High', owner: 'S. Chen', budgetDays: 700, budgetCost: 450000, tentative: false, archived: false },
+          { id: 'p_atlas', name: 'Atlas Mobile v3', code: 'ATL', color: '#0ea5e9', status: 'Active', priority: 'High', owner: 'M. Rossi', budgetDays: 450, budgetCost: 275000, tentative: false, archived: false },
+          { id: 'p_pulse', name: 'AI Copilot Analytics', code: 'AIC', color: '#8b5cf6', status: 'Active', priority: 'Medium', owner: 'P. Nair', budgetDays: 280, budgetCost: 200000, tentative: false, archived: false },
+          { id: 'p_cloud', name: 'Cloud EU Migration', code: 'CLD', color: '#10b981', status: 'At Risk', priority: 'Critical', owner: 'E. Rostova', budgetDays: 360, budgetCost: 210000, tentative: false, archived: false },
+          { id: 'p_brand', name: 'Enterprise Portal Refresh', code: 'EPR', color: '#f59e0b', status: 'Planned', priority: 'Low', owner: 'M. Bellini', budgetDays: 120, budgetCost: 75000, tentative: true, archived: false },
         ],
       });
 
@@ -397,6 +400,7 @@
         hoursPerDay: hpd,
         warnThreshold: Number(rawSet.warnThreshold ?? rawSet.warningThreshold ?? rawSet.warnPct) || 85,
         overThreshold: Number(rawSet.overThreshold ?? rawSet.overloadThreshold ?? rawSet.overPct) || 100,
+        currency: String(rawSet.currency || '€').trim() || '€',
         retention: {
           maxChangeLog: Math.max(10, Math.min(500, parseInt(rawRet.maxChangeLog ?? DEFAULT_RETENTION.maxChangeLog, 10) || 100)),
           maxSnapshots: Math.max(1, Math.min(50, parseInt(rawRet.maxSnapshots ?? DEFAULT_RETENTION.maxSnapshots, 10) || 10)),
@@ -424,12 +428,13 @@
         const defaultCapacity = Number(d.defaultCapacity ?? d.capacity ?? d.baseCapacity ?? d.defaultFte ?? d.headcount ?? d.fte ?? 0) || 0;
         const manager = String(d.manager || d.lead || d.owner || '').trim();
         const color = d.color || PALETTE[idx % PALETTE.length];
+        const dayRate = Math.max(0, Number(d.dayRate ?? d.dailyRate ?? 0) || 0);
 
         const inlineOverrides = d.capacityOverrides || d.variableCapacity || d.capacities || d.capacityByPeriod;
         if (inlineOverrides && typeof inlineOverrides === 'object') {
           embeddedDeptOverrides.push({ deptId: id, map: inlineOverrides });
         }
-        return { id, name, code, color, defaultCapacity, manager };
+        return { id, name, code, color, defaultCapacity, manager, dayRate };
       });
 
       const rawProjs = Array.isArray(src.projects)
@@ -446,8 +451,10 @@
           const owner = String(p.owner || p.lead || p.manager || '').trim();
           const color = p.color || PALETTE[(idx + 2) % PALETTE.length];
           const budgetDays = Math.max(0, Number(p.budgetDays ?? p.targetDays ?? 0) || 0);
+          const budgetCost = Math.max(0, Number(p.budgetCost ?? p.costBudget ?? 0) || 0);
+          const tentative = Boolean(p.tentative);
           const archived = Boolean(p.archived);
-          return { id, name, code, color, status, priority, owner, budgetDays, archived };
+          return { id, name, code, color, status, priority, owner, budgetDays, budgetCost, tentative, archived };
         }),
       });
 
@@ -861,6 +868,96 @@
       return Math.round(totalDays * 10) / 10;
     }
 
+    function getCurrencySymbol(db = getActiveDB()) {
+      return (db && db.settings && db.settings.currency) ? String(db.settings.currency) : '€';
+    }
+
+    function formatCurrency(amount, db = getActiveDB()) {
+      const sym = getCurrencySymbol(db);
+      const val = Number(amount) || 0;
+      const abs = Math.abs(val);
+      const sign = val < 0 ? '-' : '';
+      const prefix = sym.length > 1 ? `${sym} ` : sym;
+      if (abs >= 1000000) return `${sign}${prefix}${(Math.round((abs / 1000000) * 100) / 100)}M`;
+      if (abs >= 10000) return `${sign}${prefix}${(Math.round((abs / 1000) * 10) / 10)}k`;
+      if (abs >= 1000) return `${sign}${prefix}${(Math.round((abs / 1000) * 100) / 100)}k`;
+      return `${sign}${prefix}${Math.round(abs).toLocaleString('en-US')}`;
+    }
+
+    function hasAnyDayRates(db = getActiveDB()) {
+      return (db?.departments || []).some(d => (Number(d.dayRate) || 0) > 0);
+    }
+
+    function getProjectTotalPlannedCost(projId, db = getActiveDB()) {
+      const dpw = Number(db?.settings?.daysPerWeek) || 5;
+      const rateByDept = new Map((db?.departments || []).map(d => [d.id, Number(d.dayRate) || 0]));
+      let totalCost = 0;
+      Object.entries(db?.allocations || {}).forEach(([key, fte]) => {
+        const parts = key.split('::');
+        if (parts[1] === projId) {
+          const rate = rateByDept.get(parts[0]) || 0;
+          if (rate > 0) totalCost += (Number(fte) || 0) * dpw * rate;
+        }
+      });
+      return Math.round(totalCost);
+    }
+
+    function isProjectIncludedInPlan(proj, includeTentative = ui.includeTentative) {
+      if (!proj) return false;
+      if (!includeTentative && proj.tentative) return false;
+      return true;
+    }
+
+    function getGroupedCapacityOverrides(db = getActiveDB(), deptFilter = 'all') {
+      const overrides = db?.capacityOverrides || {};
+      const deptMap = new Map((db?.departments || []).map(d => [d.id, d]));
+      const byDept = new Map();
+
+      Object.entries(overrides).forEach(([key, val]) => {
+        const parts = key.split('::');
+        const deptId = parts[0];
+        const wk = parts[1];
+        if (!deptId || !wk || !/^\d{4}-W\d{2}$/.test(wk)) return;
+        if (deptFilter !== 'all' && deptId !== deptFilter) return;
+        const dept = deptMap.get(deptId);
+        if (!dept) return;
+        const numVal = Math.round((Number(val) || 0) * 1000) / 1000;
+        if (!byDept.has(deptId)) byDept.set(deptId, []);
+        byDept.get(deptId).push({ weekKey: wk, fte: numVal });
+      });
+
+      const spans = [];
+      (db?.departments || []).forEach(dept => {
+        const list = byDept.get(dept.id);
+        if (!list || list.length === 0) return;
+        list.sort((a, b) => a.weekKey.localeCompare(b.weekKey));
+        let cur = null;
+        list.forEach(item => {
+          const isContiguous = cur && addWeeksToWeekKey(cur.endWk, 1) === item.weekKey && Math.abs(cur.fte - item.fte) < 0.001;
+          if (isContiguous) {
+            cur.endWk = item.weekKey;
+            cur.weekKeys.push(item.weekKey);
+          } else {
+            if (cur) spans.push(cur);
+            const baseFte = Number(dept.defaultCapacity) || 0;
+            cur = {
+              deptId: dept.id,
+              dept,
+              startWk: item.weekKey,
+              endWk: item.weekKey,
+              weekKeys: [item.weekKey],
+              fte: item.fte,
+              baseFte,
+              deltaFte: Math.round((item.fte - baseFte) * 100) / 100,
+            };
+          }
+        });
+        if (cur) spans.push(cur);
+      });
+
+      return spans;
+    }
+
     function persistUIPrefs() {
       const toSave = { ...ui, whatIfMode: false, presentMode: false };
       safeSetStorage(STORAGE_KEYS.UI_PREFS, JSON.stringify(toSave));
@@ -947,16 +1044,24 @@
     function updateUndoRedoButtons() {
       const undoBtn = document.getElementById('btnUndo');
       const redoBtn = document.getElementById('btnRedo');
-      if (undoBtn) {
-        undoBtn.disabled = _undoStack.length === 0;
-        const last = _undoStack[_undoStack.length - 1];
-        undoBtn.title = last ? `Undo: ${last.label} (Ctrl+Z)` : 'Undo (Ctrl+Z)';
-      }
-      if (redoBtn) {
-        redoBtn.disabled = _redoStack.length === 0;
-        const next = _redoStack[_redoStack.length - 1];
-        redoBtn.title = next ? `Redo: ${next.label} (Ctrl+Y)` : 'Redo (Ctrl+Y)';
-      }
+      const mUndoBtn = document.getElementById('mBtnUndo');
+      const mRedoBtn = document.getElementById('mBtnRedo');
+      const last = _undoStack[_undoStack.length - 1];
+      const next = _redoStack[_redoStack.length - 1];
+      [undoBtn, mUndoBtn].forEach(b => {
+        if (!b) return;
+        b.disabled = _undoStack.length === 0;
+        b.title = last ? `Undo: ${last.label} (Ctrl+Z)` : 'Undo (Ctrl+Z)';
+      });
+      [redoBtn, mRedoBtn].forEach(b => {
+        if (!b) return;
+        b.disabled = _redoStack.length === 0;
+        b.title = next ? `Redo: ${next.label} (Ctrl+Y)` : 'Redo (Ctrl+Y)';
+      });
+      const mUndoLbl = document.getElementById('mBtnUndoLabel');
+      const mRedoLbl = document.getElementById('mBtnRedoLabel');
+      if (mUndoLbl) mUndoLbl.textContent = last ? `Undo: ${last.label}` : 'Undo';
+      if (mRedoLbl) mRedoLbl.textContent = next ? `Redo: ${next.label}` : 'Redo';
     }
 
     function undoLastChange() {

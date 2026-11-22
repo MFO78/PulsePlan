@@ -13,8 +13,9 @@
           : `${base} font-semibold text-slate-600`;
       };
 
-      setMobileSeg('m-axis-department', ui.axis === 'department', 'px-2 h-8 rounded-lg text-xs transition');
-      setMobileSeg('m-axis-project', ui.axis === 'project', 'px-2 h-8 rounded-lg text-xs transition');
+      setMobileSeg('m-axis-department', ui.axis === 'department', 'px-2 h-8 rounded-lg text-[11px] transition');
+      setMobileSeg('m-axis-project', ui.axis === 'project', 'px-2 h-8 rounded-lg text-[11px] transition');
+      setMobileSeg('m-axis-timeline', ui.axis === 'timeline', 'px-2 h-8 rounded-lg text-[11px] transition');
       setMobileSeg('m-time-month', ui.timeUnit === 'month');
       setMobileSeg('m-time-week', ui.timeUnit === 'week');
       setMobileSeg('m-unit-fte', ui.manpowerUnit === 'fte');
@@ -53,6 +54,13 @@
       let badgeCount = 0;
       if (ui.filterDept !== 'all') badgeCount++;
       if (ui.filterProj !== 'all') badgeCount++;
+      if ((ui.matrixSearch || '').trim()) badgeCount++;
+      if (ui.spotlightProjId) badgeCount++;
+      if (ui.filterOverOnly) badgeCount++;
+      if (ui.filterAtRiskOnly) badgeCount++;
+      if (ui.filterHasNotesOnly) badgeCount++;
+      if (ui.hideEmptyRows) badgeCount++;
+      if (!ui.includeTentative) badgeCount++;
       if (ui.timeUnit === 'week') badgeCount++;
       if (ui.manpowerUnit !== 'fte') badgeCount++;
       if (activeColorMode === 'fte3' || activeColorMode === 'fte') badgeCount++;
@@ -90,6 +98,44 @@
         const activeProjs = getSortedProjects(db).filter(p => !p.archived || ui.filterProj === p.id);
         mProjSel.innerHTML = `<option value="all">All Projects (${activeProjs.length})</option>` +
           activeProjs.map(p => `<option value="${p.id}" ${ui.filterProj === p.id ? 'selected' : ''}>${escapeHtml(formatProjectOptionLabel(p))}</option>`).join('');
+      }
+
+      // Sync Mobile Search, Spotlight & Quick Filter Chips
+      const mSearchEl = document.getElementById('mMatrixSearchInput');
+      if (mSearchEl && document.activeElement !== mSearchEl) {
+        mSearchEl.value = ui.matrixSearch || '';
+      }
+      const mSpotSel = document.getElementById('mSpotlightSelect');
+      if (mSpotSel) {
+        const spotProjs = getSortedProjects(db).filter(p => !p.archived || ui.spotlightProjId === p.id);
+        mSpotSel.innerHTML = `<option value="">Spotlight: All</option>` +
+          spotProjs.map(p => `<option value="${p.id}" ${ui.spotlightProjId === p.id ? 'selected' : ''}>Spotlight: ${escapeHtml(formatProjectOptionLabel(p))}</option>`).join('');
+      }
+      const syncMobileChip = (id, active, activeCls) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.setAttribute('aria-pressed', String(Boolean(active)));
+        el.className = active
+          ? `px-2.5 py-2 rounded-xl border text-xs font-bold transition ${activeCls}`
+          : 'px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-slate-700 text-xs font-bold transition';
+      };
+      syncMobileChip('mChipFilterOver', ui.filterOverOnly, 'border-rose-300 bg-rose-50 text-rose-700');
+      syncMobileChip('mChipFilterAtRisk', ui.filterAtRiskOnly, 'border-amber-300 bg-amber-50 text-amber-800');
+      syncMobileChip('mChipFilterNotes', ui.filterHasNotesOnly, 'border-indigo-300 bg-indigo-50 text-indigo-700');
+      const mHideEl = document.getElementById('mHideEmptyBtn');
+      if (mHideEl) {
+        mHideEl.textContent = ui.hideEmptyRows ? 'Active Only: ON' : 'Hide Empty';
+        syncMobileChip('mHideEmptyBtn', ui.hideEmptyRows, 'border-indigo-300 bg-indigo-50 text-indigo-700');
+      }
+      const mTentEl = document.getElementById('mTentativeToggleBtn');
+      if (mTentEl) {
+        mTentEl.textContent = ui.includeTentative ? 'Pipeline: ON' : 'Pipeline: OFF';
+        syncMobileChip('mTentativeToggleBtn', ui.includeTentative, 'border-indigo-300 bg-indigo-50 text-indigo-700');
+      }
+      const mClearBtn = document.getElementById('mClearFiltersBtn');
+      if (mClearBtn) {
+        const hasAny = Boolean((ui.matrixSearch || '').trim() || ui.filterOverOnly || ui.filterAtRiskOnly || ui.filterHasNotesOnly || ui.filterDept !== 'all' || ui.filterProj !== 'all' || ui.spotlightProjId || ui.hideEmptyRows || !ui.includeTentative);
+        mClearBtn.classList.toggle('hidden', !hasAny);
       }
 
       // Mobile Sheet Comments & Demo buttons
@@ -214,6 +260,7 @@
 
       setToggleBtn('axis-department', ui.axis === 'department');
       setToggleBtn('axis-project', ui.axis === 'project');
+      setToggleBtn('axis-timeline', ui.axis === 'timeline');
       setToggleBtn('time-month', ui.timeUnit === 'month');
       setToggleBtn('time-week', ui.timeUnit === 'week');
       setToggleBtn('unit-fte', ui.manpowerUnit === 'fte');
@@ -309,6 +356,16 @@
         }
       }
 
+      const tentBtn = document.getElementById('tentativeToggleBtn');
+      if (tentBtn) {
+        const inc = Boolean(ui.includeTentative);
+        tentBtn.setAttribute('aria-pressed', String(inc));
+        tentBtn.className = inc
+          ? 'px-2.5 py-1 rounded-lg border border-indigo-300 bg-indigo-50 text-indigo-700 text-[11px] font-bold transition'
+          : 'px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-[11px] font-bold transition';
+        tentBtn.textContent = inc ? 'Pipeline: ON' : 'Committed Only';
+      }
+
       const hideEmptyBtn = document.getElementById('hideEmptyRowsBtn');
       if (hideEmptyBtn) {
         const active = Boolean(ui.hideEmptyRows);
@@ -372,6 +429,7 @@
       if (ui.filterAtRiskOnly) activeSettingsCount++;
       if (ui.filterHasNotesOnly) activeSettingsCount++;
       if (ui.hideEmptyRows) activeSettingsCount++;
+      if (!ui.includeTentative) activeSettingsCount++;
       if (ui.manpowerUnit !== 'fte') activeSettingsCount++;
       if (drawerEl) drawerEl.classList.toggle('hidden', !drawerOpen);
       if (drawerBtn) {

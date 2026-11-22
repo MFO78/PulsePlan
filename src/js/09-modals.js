@@ -65,11 +65,77 @@
       if (typeof cb === 'function') cb();
     }
 
-    function openSyncConflictModal(extMeta, diskLastModified) {
+    function openSyncConflictModal(extMeta, diskLastModified, diskDB = null) {
       const who = escapeHtml(extMeta?.lastModifiedBy || 'a teammate');
       const rev = escapeHtml(String(extMeta?.revision || '?'));
       const when = diskLastModified ? new Date(diskLastModified).toLocaleTimeString() : 'just now';
       const fname = escapeHtml(linkedFileHandle?.name || 'shared database');
+
+      let diffPreviewHtml = '';
+      if (diskDB && liveDB && typeof computeSnapshotDiff === 'function') {
+        try {
+          const deptMap = new Map();
+          [...(diskDB.departments || []), ...(liveDB.departments || [])].forEach(d => deptMap.set(d.id, d));
+          const projMap = new Map();
+          [...(diskDB.projects || []), ...(liveDB.projects || [])].forEach(p => projMap.set(p.id, p));
+          const mergedDB = { ...liveDB, departments: [...deptMap.values()], projects: [...projMap.values()] };
+          const allWkKeys = new Set();
+          [diskDB.allocations, liveDB.allocations].forEach(m => {
+            Object.keys(m || {}).forEach(k => {
+              const wk = k.split('::')[2];
+              if (wk && /^\d{4}-W\d{2}$/.test(wk)) allWkKeys.add(wk);
+            });
+          });
+          [diskDB.capacityOverrides, liveDB.capacityOverrides].forEach(m => {
+            Object.keys(m || {}).forEach(k => {
+              const wk = k.split('::')[1];
+              if (wk && /^\d{4}-W\d{2}$/.test(wk)) allWkKeys.add(wk);
+            });
+          });
+          const diffPeriods = allWkKeys.size > 0
+            ? [...allWkKeys].sort().slice(0, 52)
+            : getVisiblePeriods();
+          const diffTimeUnit = allWkKeys.size > 0 ? 'week' : ui.timeUnit;
+          const stateDisk = { label: `Disk (Rev ${rev})`, allocations: diskDB.allocations || {}, capacityOverrides: diskDB.capacityOverrides || {}, milestones: diskDB.milestones || [], comments: diskDB.comments || {} };
+          const stateMine = { label: 'Your Local Plan', allocations: liveDB.allocations || {}, capacityOverrides: liveDB.capacityOverrides || {}, milestones: liveDB.milestones || [], comments: liveDB.comments || {} };
+          const diff = computeSnapshotDiff(mergedDB, stateDisk, stateMine, diffPeriods, diffTimeUnit, ui.manpowerUnit);
+          const changedMs = diff.milestones.filter(m => m.hasChange);
+          const topCells = diff.cellChanges.slice(0, 6);
+          const totalDiffItems = diff.cellChanges.length + diff.capChanges.length + changedMs.length;
+
+          diffPreviewHtml = `
+            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="font-bold text-slate-800">Visual Diff (Disk Rev ${rev} &rarr; Your Local Edits)</div>
+                <div class="flex flex-wrap items-center gap-1.5 text-[10px] font-bold">
+                  <span class="px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">${diff.cellChanges.length} cell${diff.cellChanges.length === 1 ? '' : 's'}</span>
+                  <span class="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200">${diff.capChanges.length} cap</span>
+                  <span class="px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200">${changedMs.length} milestone${changedMs.length === 1 ? '' : 's'}</span>
+                </div>
+              </div>
+              ${totalDiffItems === 0
+                ? '<div class="text-[11px] text-slate-500">Metadata or settings differ; no allocation, capacity, or milestone deltas detected.</div>'
+                : `<div class="space-y-1 max-h-36 overflow-y-auto text-[11px]">
+                     ${topCells.map(c => `
+                       <div class="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-white border border-slate-200/80">
+                         <span class="truncate font-semibold text-slate-800">${escapeHtml(c.dept.code)} &rarr; [${escapeHtml(c.proj.code)}] <span class="font-mono text-slate-500">${escapeHtml(c.periodKey)}</span></span>
+                         <span class="font-mono font-bold shrink-0 tabular-nums">${formatValue(c.valA, diff.unit, false)} &rarr; <span class="${c.delta > 0 ? 'text-rose-600' : 'text-emerald-600'}">${formatValue(c.valB, diff.unit)}</span></span>
+                       </div>`).join('')}
+                     ${diff.cellChanges.length > 6 ? `<div class="text-[10px] text-slate-400 pl-1">+ ${diff.cellChanges.length - 6} more allocation difference(s)</div>` : ''}
+                     ${diff.capChanges.slice(0, 3).map(cp => `
+                       <div class="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-sky-50/70 border border-sky-200 text-sky-900">
+                         <span class="truncate font-semibold">Cap: ${escapeHtml(cp.dept.code)} (${escapeHtml(cp.periodKey)})</span>
+                         <span class="font-mono font-bold shrink-0 tabular-nums">${formatValue(cp.capA, diff.unit, false)} &rarr; ${formatValue(cp.capB, diff.unit)}</span>
+                       </div>`).join('')}
+                     ${changedMs.slice(0, 3).map(m => `
+                       <div class="flex items-center justify-between gap-2 px-2 py-1 rounded-lg bg-violet-50/70 border border-violet-200 text-violet-900">
+                         <span class="truncate font-semibold">&#9670; ${escapeHtml(m.title)}</span>
+                         <span class="font-mono font-bold shrink-0">${escapeHtml(m.dateA || '—')} &rarr; ${escapeHtml(m.dateB || 'removed')}</span>
+                       </div>`).join('')}
+                   </div>`}
+            </div>`;
+        } catch (diffErr) {}
+      }
 
       showModal(`
         <div class="p-5 space-y-4 text-xs">
@@ -83,28 +149,30 @@
           </div>
 
           <div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 leading-relaxed space-y-1">
-            <div><strong>${who}</strong> updated <code class="px-1 rounded bg-white/70 font-mono">${fname}</code> at <strong>${escapeHtml(when)}</strong> (Rev ${rev}) while you had unsaved local changes.</div>
-            <div class="text-[11px]">Choose how to resolve this conflict before saving again:</div>
+            <div><strong>${who}</strong> updated <code class="px-1 rounded bg-white/70 font-mono break-all">${fname}</code> at <strong>${escapeHtml(when)}</strong> (Rev ${rev}) while you had unsaved local changes.</div>
+            <div class="text-[11px]">Review the changes below and choose how to resolve this conflict:</div>
           </div>
+
+          ${diffPreviewHtml}
 
           <div class="grid grid-cols-1 gap-2">
             <button type="button" onclick="closeModal(); reloadFromLinkedFile();"
-              class="w-full px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs text-left flex items-center justify-between transition">
+              class="w-full px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs text-left flex items-center justify-between gap-2 transition">
               <span>Reload Teammate&rsquo;s Version (Recommended)</span>
-              <span class="text-[10px] opacity-80">Discard my unsaved edit</span>
+              <span class="text-[10px] opacity-80 shrink-0">Discard my unsaved edit</span>
             </button>
             <button type="button" onclick="forceOverwriteLinkedFile()"
-              class="w-full px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-xs text-left flex items-center justify-between transition">
+              class="w-full px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold text-xs text-left flex items-center justify-between gap-2 transition">
               <span>Keep Mine &amp; Overwrite Shared File</span>
-              <span class="text-[10px]">Replace Rev ${rev}</span>
+              <span class="text-[10px] shrink-0">Replace Rev ${rev}</span>
             </button>
             <button type="button" onclick="downloadJsonBackup()"
-              class="w-full px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs text-left flex items-center justify-between transition">
+              class="w-full px-4 py-2.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs text-left flex items-center justify-between gap-2 transition">
               <span>Download Backup of My Local Plan (.json)</span>
-              <span class="text-[10px] text-slate-400">Safe copy first</span>
+              <span class="text-[10px] text-slate-400 shrink-0">Safe copy first</span>
             </button>
           </div>
-        </div>`, 'max-w-lg');
+        </div>`, 'max-w-xl');
     }
 
     /* ---------- Mod 4: Quick 3-Level FTE Threshold Tuner Modal ---------- */
@@ -356,10 +424,12 @@
       const overT = db.settings.overThreshold || 100;
 
       let summaryBadgeHtml = '';
+      let isOverallocatedSlot = false;
       if (isDeptAxis) {
         const cap = getDeptCapacityForPeriod(rowId, periodKey, ui.timeUnit, db).avgFte;
         const alloc = getDeptTotalAllocatedFte(rowId, periodKey, ui.timeUnit, db);
         const pct = cap > 0 ? Math.round((alloc / cap) * 100) : (alloc > 0 ? 999 : 0);
+        isOverallocatedSlot = pct > overT;
         const badgeCls = pct > overT ? 'bg-rose-100 text-rose-700' : pct >= warnT ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
         summaryBadgeHtml = `<span class="px-2 py-0.5 rounded-lg text-[11px] font-bold ${badgeCls}">${formatValue(fteToDisplayValue(alloc, periodKey, ui.timeUnit))} / ${formatValue(fteToDisplayValue(cap, periodKey, ui.timeUnit))} (${pct > 990 ? '&infin;' : pct + '%'})</span>`;
       } else {
@@ -460,6 +530,7 @@
             <button type="button" onclick="openAllocationModal('${isDeptAxis ? rowId : ''}', '${isDeptAxis ? '' : rowId}', '${periodKey}')"
               class="px-3 py-2 sm:py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-semibold transition">+ Allocate Manpower</button>
             ${isDeptAxis ? `<button type="button" onclick="openCapacityModal('${rowId}', '${periodKey}')" class="px-3 py-2 sm:py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 font-semibold transition">Variable Capacity</button>` : ''}
+            ${isOverallocatedSlot ? `<button type="button" onclick="openBottleneckResolverModal('${rowId}', '${periodKey}')" class="px-3 py-2 sm:py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition">&#9888; Fix Overallocation</button>` : ''}
             <button type="button" onclick="openMilestoneModal('', '${isDeptAxis ? '' : rowId}', '${getPeriodMidDateISO(periodKey, ui.timeUnit)}', '${isDeptAxis ? rowId : ''}')"
               class="px-3 py-2 sm:py-1.5 rounded-xl bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 font-semibold transition">&#9670; Add Milestone</button>
           </div>
@@ -858,6 +929,34 @@
         curPk = ui.timeUnit === 'month' ? addMonthsToMonthKey(curPk, 1) : addWeeksToWeekKey(curPk, 1);
       }
 
+      const deptSpans = getGroupedCapacityOverrides(db, deptId);
+      const existingOverridesHtml = deptSpans.length > 0
+        ? `<div class="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+             <div class="flex items-center justify-between">
+               <span class="font-bold text-slate-700">Active Overrides for ${escapeHtml(dept.name)} (${deptSpans.length})</span>
+               <span class="text-[10px] text-slate-500">Base: ${dept.defaultCapacity} FTE</span>
+             </div>
+             <div class="space-y-1.5 max-h-32 overflow-y-auto pr-0.5">
+               ${deptSpans.map(sp => {
+                 const spanLbl = sp.startWk === sp.endWk ? sp.startWk : `${sp.startWk} → ${sp.endWk}`;
+                 const dSign = sp.deltaFte > 0 ? `+${sp.deltaFte}` : String(sp.deltaFte);
+                 return `
+                   <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white border border-slate-200/80 text-[11px]">
+                     <div class="min-w-0">
+                       <span class="font-mono font-bold text-slate-800">${escapeHtml(spanLbl)}</span>
+                       <span class="text-slate-400 ml-1">(${sp.weekKeys.length}w)</span>
+                     </div>
+                     <div class="flex items-center gap-2 shrink-0">
+                       <span class="font-extrabold text-sky-700 tabular-nums">${sp.fte} FTE <span class="text-[10px] font-semibold text-slate-500">(${dSign})</span></span>
+                       <button type="button" onclick="resetCapacityOverrideSpan('${deptId}', '${sp.startWk}', '${sp.endWk}'); openCapacityModal('${deptId}', '${periodKey}');"
+                         class="px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 font-bold text-[10px] transition">Reset</button>
+                     </div>
+                   </div>`;
+               }).join('')}
+             </div>
+           </div>`
+        : '';
+
       showModal(`
         <div class="p-5 space-y-4 text-xs">
           <div class="w-10 h-1.5 rounded-full bg-slate-300 mx-auto sm:hidden" aria-hidden="true"></div>
@@ -889,6 +988,8 @@
               </select>
             </div>
           </div>
+
+          ${existingOverridesHtml}
 
           <div class="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 text-[11px]">
             <span>Need a company-wide holiday or shutdown dip?</span>
@@ -993,6 +1094,10 @@
               <input id="mDeptColor" type="color" value="${color}" class="w-full h-10 rounded-xl border border-slate-200 cursor-pointer" />
             </div>
           </div>
+          <div>
+            <label for="mDeptDayRate" class="block font-semibold text-slate-700 mb-1">Blended Day Rate (${escapeHtml(getCurrencySymbol(db))}/day, optional)</label>
+            <input id="mDeptDayRate" type="number" inputmode="decimal" min="0" step="25" value="${Number(d?.dayRate) > 0 ? d.dayRate : ''}" placeholder="Leave blank if cost tracking is not needed" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
+          </div>
           <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
             <button type="button" onclick="closeModal()" class="px-4 py-2.5 sm:py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold">Cancel</button>
             <button type="button" onclick="saveDeptModal()" class="px-4 py-2.5 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">Save Department</button>
@@ -1008,17 +1113,18 @@
       const defaultCapacity = Math.max(0, parseFloat(document.getElementById('mDeptCap').value) || 0);
       const manager = document.getElementById('mDeptMgr').value.trim();
       const color = document.getElementById('mDeptColor').value || '#4f46e5';
+      const dayRate = Math.max(0, parseFloat(document.getElementById('mDeptDayRate')?.value) || 0);
 
       if (!name) { showToast('Department name is required.', 'warning'); return; }
 
       pushUndoState(`${id ? 'Update' : 'Add'} department [${code}]`);
       if (id) {
         const d = db.departments.find(x => x.id === id);
-        if (d) Object.assign(d, { name, code, defaultCapacity, manager, color });
-        recordChange('Department', `Updated department [${code}] ${name} (${defaultCapacity} FTE)`);
+        if (d) Object.assign(d, { name, code, defaultCapacity, manager, color, dayRate });
+        recordChange('Department', `Updated department [${code}] ${name} (${defaultCapacity} FTE${dayRate > 0 ? `, ${getCurrencySymbol(db)}${dayRate}/d` : ''})`);
       } else {
-        db.departments.push({ id: uid('d'), name, code, defaultCapacity, manager, color });
-        recordChange('Department', `Added department [${code}] ${name} (${defaultCapacity} FTE)`);
+        db.departments.push({ id: uid('d'), name, code, defaultCapacity, manager, color, dayRate });
+        recordChange('Department', `Added department [${code}] ${name} (${defaultCapacity} FTE${dayRate > 0 ? `, ${getCurrencySymbol(db)}${dayRate}/d` : ''})`);
       }
       closeModal();
       renderAll();
@@ -1091,11 +1197,21 @@
               <input id="mProjColor" type="color" value="${color}" class="w-full h-10 rounded-xl border border-slate-200 cursor-pointer" />
             </div>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label for="mProjBudget" class="block font-semibold text-slate-700 mb-1">Effort Budget (Person-Days, optional)</label>
               <input id="mProjBudget" type="number" inputmode="decimal" min="0" step="5" value="${Number(p?.budgetDays) > 0 ? p.budgetDays : ''}" placeholder="e.g. 120" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
             </div>
+            <div>
+              <label for="mProjBudgetCost" class="block font-semibold text-slate-700 mb-1">Cost Budget (${escapeHtml(getCurrencySymbol(db))}, optional)</label>
+              <input id="mProjBudgetCost" type="number" inputmode="decimal" min="0" step="1000" value="${Number(p?.budgetCost) > 0 ? p.budgetCost : ''}" placeholder="e.g. 150000" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
+            </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <label class="inline-flex items-center gap-2 px-3 py-2.5 sm:py-2 rounded-xl border border-violet-200 bg-violet-50/70 cursor-pointer select-none">
+              <input id="mProjTentative" type="checkbox" ${p?.tentative ? 'checked' : ''} class="rounded text-indigo-600" />
+              <span class="font-semibold text-violet-900">Tentative / Pipeline (uncommitted)</span>
+            </label>
             <label class="inline-flex items-center gap-2 px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer select-none">
               <input id="mProjArchived" type="checkbox" ${p?.archived ? 'checked' : ''} class="rounded text-indigo-600" />
               <span class="font-semibold text-slate-700">Archive (hide from active Roadmap)</span>
@@ -1118,6 +1234,8 @@
       const owner = document.getElementById('mProjOwner').value.trim();
       const color = document.getElementById('mProjColor').value || '#4f46e5';
       const budgetDays = Math.max(0, parseFloat(document.getElementById('mProjBudget')?.value) || 0);
+      const budgetCost = Math.max(0, parseFloat(document.getElementById('mProjBudgetCost')?.value) || 0);
+      const tentative = Boolean(document.getElementById('mProjTentative')?.checked);
       const archived = Boolean(document.getElementById('mProjArchived')?.checked);
 
       if (!name) { showToast('Project name is required.', 'warning'); return; }
@@ -1125,15 +1243,15 @@
       pushUndoState(`${id ? 'Update' : 'Add'} project [${code}]`);
       if (id) {
         const p = db.projects.find(x => x.id === id);
-        if (p) Object.assign(p, { name, code, status, priority, owner, color, budgetDays, archived });
+        if (p) Object.assign(p, { name, code, status, priority, owner, color, budgetDays, budgetCost, tentative, archived });
         db.projects = getSortedProjects(db);
         if (archived && ui.filterProj === id) ui.filterProj = 'all';
         if (archived && ui.spotlightProjId === id) ui.spotlightProjId = '';
-        recordChange('Project', `Updated project [${code}] ${name} (${status}${budgetDays > 0 ? `, budget ${budgetDays}d` : ''}${archived ? ', archived' : ''})`);
+        recordChange('Project', `Updated project [${code}] ${name} (${status}${tentative ? ', pipeline' : ''}${budgetDays > 0 ? `, budget ${budgetDays}d` : ''}${archived ? ', archived' : ''})`);
       } else {
-        db.projects.push({ id: uid('p'), name, code, status, priority, owner, color, budgetDays, archived });
+        db.projects.push({ id: uid('p'), name, code, status, priority, owner, color, budgetDays, budgetCost, tentative, archived });
         db.projects = getSortedProjects(db);
-        recordChange('Project', `Added project [${code}] ${name}${budgetDays > 0 ? ` (budget ${budgetDays}d)` : ''}`);
+        recordChange('Project', `Added project [${code}] ${name}${tentative ? ' (pipeline)' : ''}${budgetDays > 0 ? ` (budget ${budgetDays}d)` : ''}`);
       }
       closeModal();
       renderAll();

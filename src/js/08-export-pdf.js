@@ -70,18 +70,57 @@
     async function exportMatrixCSV() {
       const db = getActiveDB();
       const periods = getVisiblePeriods();
-      const header = ['Department', 'Dept Code', 'Project', 'Project Code', ...periods.map(pk => `${formatPeriodHeader(pk, ui.timeUnit).title} (${unitShortLabel()})`)];
+      const includeCost = hasAnyDayRates(db);
+      const header = [
+        'RowType', 'Department', 'Dept Code', 'Project', 'Project Code', 'Commitment',
+        ...periods.map(pk => `${formatPeriodHeader(pk, ui.timeUnit).title} (${unitShortLabel()})`),
+        ...(includeCost ? [`Est. Cost (${getCurrencySymbol(db)})`] : []),
+        'Notes',
+      ];
       const rows = [header.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')];
 
       const sortedProjs = getSortedProjects(db);
       db.departments.forEach(d => {
+        // Capacity reference row for each department (enables full spreadsheet round-trip!)
+        const capVals = [];
+        const varNotes = [];
+        periods.forEach(pk => {
+          const cObj = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db);
+          capVals.push(formatValue(fteToDisplayValue(cObj.avgFte, pk, ui.timeUnit), ui.manpowerUnit, false));
+          if (cObj.hasOverride) varNotes.push(`${formatPeriodHeader(pk, ui.timeUnit).shortTitle}: Var ${Math.round(cObj.avgFte * 100) / 100} FTE`);
+        });
+        rows.push([
+          'Capacity', d.name, d.code, 'Available Capacity', 'CAP', '—',
+          ...capVals,
+          ...(includeCost ? [''] : []),
+          varNotes.join(' | '),
+        ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+
+        // Project allocation rows
         sortedProjs.forEach(p => {
-          const vals = periods.map(pk => {
+          if (!isProjectIncludedInPlan(p)) return;
+          const vals = [];
+          const notes = [];
+          let rowCost = 0;
+          const dpw = Number(db.settings.daysPerWeek) || 5;
+          const rate = Number(d.dayRate) || 0;
+          periods.forEach(pk => {
             const a = getAllocationForPeriod(d.id, p.id, pk, ui.timeUnit, db.allocations);
-            return a.hasData ? formatValue(fteToDisplayValue(a.avgFte, pk, ui.timeUnit), ui.manpowerUnit, false) : '0';
+            vals.push(a.hasData ? formatValue(fteToDisplayValue(a.avgFte, pk, ui.timeUnit), ui.manpowerUnit, false) : '0');
+            if (includeCost && a.hasData && rate > 0) {
+              const wks = ui.timeUnit === 'month' ? getWeeksInMonth(pk).length : 1;
+              rowCost += a.avgFte * dpw * wks * rate;
+            }
+            const cmt = getCellProjectComments(d.id, p.id, pk, ui.timeUnit, db);
+            if (cmt.direct) notes.push(`${formatPeriodHeader(pk, ui.timeUnit).shortTitle}: ${cmt.direct.replace(/\s+/g, ' ')}`);
           });
-          if (vals.some(v => Number(v) > 0)) {
-            rows.push([d.name, d.code, p.name, p.code, ...vals].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
+          if (vals.some(v => Number(v) > 0) || notes.length > 0) {
+            rows.push([
+              'Allocation', d.name, d.code, p.name, p.code, p.tentative ? 'Pipeline' : 'Committed',
+              ...vals,
+              ...(includeCost ? [String(Math.round(rowCost))] : []),
+              notes.join(' | '),
+            ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
           }
         });
       });
@@ -90,8 +129,8 @@
       const fname = `pulseplan_matrix_${ui.timeUnit}_${new Date().toISOString().slice(0, 10)}.csv`;
       const outcome = await shareOrDownloadFile(new Blob([csv], { type: 'text/csv;charset=utf-8;' }), fname, 'text/csv', 'PulsePlan Matrix CSV');
       if (outcome !== 'cancelled') {
-        recordDumpEvent('CSV', fname, csv.length, `Matrix export (${periods.length} ${ui.timeUnit}s, ${unitShortLabel()})`);
-        showToast(outcome === 'shared' ? 'Matrix CSV shared' : 'Matrix CSV exported', 'success');
+        recordDumpEvent('CSV', fname, csv.length, `Matrix CSV w/ Capacity & Notes (${periods.length} ${ui.timeUnit}s, ${unitShortLabel()})`);
+        showToast(outcome === 'shared' ? 'Matrix CSV shared' : 'Matrix CSV exported (with Capacity & Notes)', 'success');
       }
     }
 

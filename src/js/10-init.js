@@ -291,6 +291,12 @@
       persistUIPrefs();
       renderAll();
     }
+    function toggleIncludeTentative() {
+      ui.includeTentative = !ui.includeTentative;
+      persistUIPrefs();
+      renderAll();
+      showToast(ui.includeTentative ? 'Showing Committed + Tentative Pipeline projects' : 'Committed Only — Tentative Pipeline excluded from totals', 'info');
+    }
     function toggleMatrixSettingsDrawer() {
       ui.matrixSettingsOpen = !ui.matrixSettingsOpen;
       persistUIPrefs();
@@ -329,6 +335,9 @@
       ui.filterHasNotesOnly = false;
       ui.filterDept = 'all';
       ui.filterProj = 'all';
+      ui.spotlightProjId = '';
+      ui.hideEmptyRows = false;
+      ui.includeTentative = true;
       renderAll();
     }
     function toggleFullscreenPresentation() {
@@ -566,6 +575,20 @@
         } else if (lower === 'f') {
           e.preventDefault();
           togglePresentMode();
+        } else if (e.key === '/') {
+          e.preventDefault();
+          if (!ui.matrixSettingsOpen) {
+            ui.matrixSettingsOpen = true;
+            persistUIPrefs();
+            renderAll();
+          }
+          setTimeout(() => {
+            const inp = document.getElementById('matrixSearchInput');
+            if (inp) { inp.focus(); inp.select(); }
+          }, 20);
+        } else if (lower === 'a') {
+          e.preventDefault();
+          openAllocationModal();
         }
       });
 
@@ -602,6 +625,7 @@
           if (parsedUI.compareChangedOnly === undefined) ui.compareChangedOnly = true;
           if (parsedUI.compareSubTab === undefined) ui.compareSubTab = 'deptPeriod';
           if (parsedUI.hideEmptyRows === undefined) ui.hideEmptyRows = false;
+          if (parsedUI.includeTentative === undefined) ui.includeTentative = true;
           ui.spotlightProjId = '';
           ui.matrixSearch = '';
           ui.filterOverOnly = false;
@@ -653,6 +677,13 @@
 
       // 8. Auto-reconnect to remembered sync file on desktop (stays clean & warning-free on mobile)
       await autoReconnectSyncFile();
+
+      // 9. Register offline PWA Service Worker when served over HTTPS or localhost
+      try {
+        if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && typeof location !== 'undefined' && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+          navigator.serviceWorker.register('./sw.js').catch(() => {});
+        }
+      } catch (e) {}
     }
 
     window.addEventListener('DOMContentLoaded', initApp);

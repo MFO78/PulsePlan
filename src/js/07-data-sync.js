@@ -54,11 +54,18 @@
       }
 
       const dBody = document.getElementById('dataDepartmentsBody');
+      const curSym = getCurrencySymbol(db);
       if (db.departments.length === 0) {
-        dBody.innerHTML = `<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No departments yet. Click "+ Add Department" to start.</td></tr>`;
+        dBody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">No departments yet. Click "+ Add Department" to start.</td></tr>`;
       } else {
         dBody.innerHTML = db.departments.map((d, idx) => {
-          const overrideCount = Object.keys(db.capacityOverrides || {}).filter(k => k.startsWith(`${d.id}::`)).length;
+          const deptSpans = getGroupedCapacityOverrides(db, d.id);
+          const overrideCount = deptSpans.reduce((acc, sp) => acc + sp.weekKeys.length, 0);
+          const rateVal = Number(d.dayRate) || 0;
+          const rateTxt = rateVal > 0 ? `${curSym.length > 1 ? curSym + ' ' : curSym}${rateVal.toLocaleString('en-US')}/d` : '—';
+          const ovSummary = overrideCount > 0
+            ? `${deptSpans.length} span${deptSpans.length === 1 ? '' : 's'} (${overrideCount} wk${overrideCount === 1 ? '' : 's'}) &bull; Edit`
+            : 'None &bull; + Add';
           return `
             <tr class="hover:bg-slate-50/70">
               <th scope="row" class="px-4 py-3 font-bold text-slate-900 text-left">
@@ -80,10 +87,11 @@
                   <button type="button" aria-label="Increase ${escapeHtml(d.name)} default capacity" onclick="quickStepDeptDefaultCapacity('${d.id}', 0.5)" title="Increase default capacity by 0.5 FTE" class="px-2.5 py-1.5 md:px-2 md:py-0.5 hover:bg-emerald-50 hover:text-emerald-700 text-slate-600 font-bold transition">+</button>
                 </div>
               </td>
+              <td class="px-4 py-3 font-semibold tabular-nums ${rateVal > 0 ? 'text-slate-800' : 'text-slate-400'} whitespace-nowrap">${escapeHtml(rateTxt)}</td>
               <td class="px-4 py-3">
                 <button type="button" onclick="openCapacityModal('${d.id}', '${ui.timeUnit === 'month' ? ui.startMonth : ui.startWeek}')"
-                  class="px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-700 text-[11px] font-semibold hover:bg-sky-100 transition whitespace-nowrap">
-                  ${overrideCount} wk override${overrideCount === 1 ? '' : 's'} &bull; Edit
+                  class="px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg ${overrideCount > 0 ? 'bg-sky-50 border border-sky-200 text-sky-700 hover:bg-sky-100' : 'bg-slate-50 border border-slate-200 text-slate-600 hover:bg-sky-50 hover:text-sky-700'} text-[11px] font-semibold transition whitespace-nowrap">
+                  ${ovSummary}
                 </button>
               </td>
               <td class="px-4 py-3 text-right space-x-2 whitespace-nowrap">
@@ -94,9 +102,12 @@
         }).join('');
       }
 
+      renderCapacityOverridesTable(db);
+
       const pBody = document.getElementById('dataProjectsBody');
       const sortedProjectsAll = getSortedProjects(db);
       const displayedProjects = ui.showArchivedProjects ? sortedProjectsAll : sortedProjectsAll.filter(p => !p.archived);
+      const hasRates = hasAnyDayRates(db);
       if (displayedProjects.length === 0) {
         pBody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">${db.projects.length > 0 ? 'All projects are archived. Click "Show Archived" above to view them.' : 'No projects yet. Click "+ Add Project" to start.'}</td></tr>`;
       } else {
@@ -104,7 +115,10 @@
           const plannedDays = getProjectTotalPlannedDays(p.id, db);
           const budgetDays = Number(p.budgetDays) || 0;
           const pct = budgetDays > 0 ? Math.round((plannedDays / budgetDays) * 100) : 0;
-          const budgetHtml = budgetDays > 0
+          const plannedCost = hasRates ? getProjectTotalPlannedCost(p.id, db) : 0;
+          const budgetCost = Number(p.budgetCost) || 0;
+          const costPct = budgetCost > 0 ? Math.round((plannedCost / budgetCost) * 100) : 0;
+          const effortPart = budgetDays > 0
             ? `<div class="space-y-1 min-w-[110px]">
                  <div class="flex items-center justify-between text-[11px] font-bold tabular-nums">
                    <span class="${pct > 100 ? 'text-rose-600' : pct >= 85 ? 'text-amber-700' : 'text-slate-700'}">${plannedDays} / ${budgetDays}d</span>
@@ -113,12 +127,16 @@
                  <div class="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full rounded-full ${pct > 100 ? 'bg-rose-500' : pct >= 85 ? 'bg-amber-500' : 'bg-indigo-500'}" style="width:${Math.min(100, pct)}%"></div></div>
                </div>`
             : `<span class="text-slate-400 tabular-nums">${plannedDays > 0 ? `${plannedDays}d planned` : '—'}</span>`;
+          const costPart = (hasRates && (plannedCost > 0 || budgetCost > 0))
+            ? `<div class="text-[10px] font-bold tabular-nums mt-1 ${budgetCost > 0 && costPct > 100 ? 'text-rose-600' : 'text-emerald-700'}">${formatCurrency(plannedCost, db)}${budgetCost > 0 ? ` / ${formatCurrency(budgetCost, db)} (${costPct}%)` : ' est.'}</div>`
+            : '';
           return `
             <tr class="hover:bg-slate-50/70 ${p.archived ? 'opacity-65' : ''}">
               <th scope="row" class="px-4 py-3 font-bold text-slate-900 text-left">
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center gap-1.5">
                   <span class="w-3 h-3 rounded-full shrink-0" style="background:${p.color}" aria-hidden="true"></span>
                   <span>${escapeHtml(p.name)}</span>
+                  ${p.tentative ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold uppercase">Pipeline</span>' : ''}
                   ${p.archived ? '<span class="px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 text-[10px] font-bold uppercase">Archived</span>' : ''}
                 </div>
               </th>
@@ -126,9 +144,10 @@
               <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-md bg-slate-100 font-semibold">${escapeHtml(p.status)}</span></td>
               <td class="px-4 py-3 text-slate-600">${escapeHtml(p.priority || 'Medium')}</td>
               <td class="px-4 py-3 text-slate-600">${escapeHtml(p.owner || '—')}</td>
-              <td class="px-4 py-3">${budgetHtml}</td>
+              <td class="px-4 py-3">${effortPart}${costPart}</td>
               <td class="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
                 <button type="button" onclick="openShiftProjectModal('${p.id}')" title="Shift all allocations, comments, and milestones by ±N weeks/months" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-semibold transition">&#8644; Shift</button>
+                <button type="button" onclick="openDuplicateProjectModal('${p.id}')" title="Duplicate project (with optional allocations &amp; milestones)" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-semibold transition">Copy</button>
                 <button type="button" onclick="toggleArchiveProject('${p.id}')" class="px-2 py-1 text-slate-600 hover:text-indigo-700 hover:underline font-semibold">${p.archived ? 'Restore' : 'Archive'}</button>
                 <button type="button" onclick="openProjectModal('${p.id}')" class="px-2 py-1 text-indigo-600 hover:underline font-semibold">Edit</button>
                 <button type="button" onclick="deleteProject('${p.id}')" class="px-2 py-1 text-rose-600 hover:underline font-semibold">Delete</button>
@@ -172,6 +191,8 @@
       document.getElementById('setWarnThreshold').value = db.settings.warnThreshold || 85;
       document.getElementById('setOverThreshold').value = db.settings.overThreshold || 100;
       document.getElementById('setUserName').value = ui.userName || 'Project Mgr';
+      const curSel = document.getElementById('setCurrency');
+      if (curSel) curSel.value = getCurrencySymbol(db);
 
       const fte3 = getFte3Settings(db);
       document.getElementById('setFte3Basis').value = fte3.basis;
@@ -194,6 +215,8 @@
       db.settings.hoursPerDay = Math.max(1, Math.min(24, parseFloat(document.getElementById('setHoursPerDay').value) || 8));
       db.settings.warnThreshold = Math.max(50, Math.min(150, parseInt(document.getElementById('setWarnThreshold').value, 10) || 85));
       db.settings.overThreshold = Math.max(80, Math.min(200, parseInt(document.getElementById('setOverThreshold').value, 10) || 100));
+      const curSel = document.getElementById('setCurrency');
+      if (curSel && curSel.value) db.settings.currency = curSel.value;
 
       const basis = document.getElementById('setFte3Basis').value === 'absoluteFte' ? 'absoluteFte' : 'capacityPct';
       const yellowPct = Math.max(5, Math.min(95, parseInt(document.getElementById('setFte3YellowPct').value, 10) || 25));
@@ -226,6 +249,164 @@
       triggerHaptic(8);
       recordChange('Department', `Adjusted [${d.code}] ${d.name} default capacity to ${next} FTE`);
       renderAll();
+    }
+
+    /* ---------- Setup Tab: Active Variable Capacity Overrides Panel ---------- */
+
+    function formatWeekSpanDateRange(startWk, endWk) {
+      const mon = isoWeekKeyToMonday(startWk);
+      const endSun = new Date(isoWeekKeyToMonday(endWk).getTime() + 6 * 86400000);
+      return `${MONTH_NAMES_SHORT[mon.getUTCMonth()]} ${mon.getUTCDate()} – ${MONTH_NAMES_SHORT[endSun.getUTCMonth()]} ${endSun.getUTCDate()}, ${endSun.getUTCFullYear()}`;
+    }
+
+    function setOverrideDeptFilter(val) {
+      ui.overrideDeptFilter = val || 'all';
+      renderCapacityOverridesTable(getActiveDB());
+    }
+
+    function openAddOverrideFromSetup() {
+      const db = getActiveDB();
+      if (!db.departments || db.departments.length === 0) {
+        showToast('Add a Department first before setting variable capacity overrides.', 'warning');
+        return;
+      }
+      const targetDeptId = (ui.overrideDeptFilter && ui.overrideDeptFilter !== 'all' && db.departments.some(d => d.id === ui.overrideDeptFilter))
+        ? ui.overrideDeptFilter
+        : db.departments[0].id;
+      const anchor = ui.timeUnit === 'month' ? ui.startMonth : ui.startWeek;
+      openCapacityModal(targetDeptId, anchor);
+    }
+
+    function editCapacityOverrideSpan(deptId, startWk) {
+      const targetPk = ui.timeUnit === 'month' ? getWeekOwningMonth(startWk) : startWk;
+      openCapacityModal(deptId, targetPk);
+    }
+
+    function resetCapacityOverrideSpan(deptId, startWk, endWk) {
+      const db = getActiveDB();
+      const dept = db.departments.find(d => d.id === deptId);
+      const spans = getGroupedCapacityOverrides(db, deptId);
+      const match = spans.find(sp => sp.startWk === startWk && sp.endWk === endWk);
+      if (!match) return;
+      pushUndoState(`Reset ${dept?.code || deptId} capacity override (${startWk})`);
+      match.weekKeys.forEach(wk => { delete db.capacityOverrides[`${deptId}::${wk}`]; });
+      recordChange('Capacity', `Reset [${dept?.code || deptId}] variable capacity override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''}) back to base ${match.baseFte} FTE`);
+      renderAll();
+      showToast(`Reset ${match.weekKeys.length} week${match.weekKeys.length === 1 ? '' : 's'} to base ${match.baseFte} FTE`, 'info', { undoable: true });
+    }
+
+    function confirmClearCapacityOverrides() {
+      const db = getActiveDB();
+      const filterId = ui.overrideDeptFilter || 'all';
+      const spans = getGroupedCapacityOverrides(db, filterId);
+      const totalWks = spans.reduce((acc, sp) => acc + sp.weekKeys.length, 0);
+      if (totalWks === 0) return;
+      const scopeLabel = filterId === 'all'
+        ? 'all departments'
+        : (db.departments.find(d => d.id === filterId)?.name || 'this department');
+      openConfirmModal(
+        'Clear Variable Capacity Overrides',
+        `Reset ${totalWks} overridden week${totalWks === 1 ? '' : 's'} across ${scopeLabel} back to default base FTE?`,
+        'Clear Overrides',
+        () => {
+          pushUndoState(`Clear variable capacity overrides (${scopeLabel})`);
+          spans.forEach(sp => {
+            sp.weekKeys.forEach(wk => { delete db.capacityOverrides[`${sp.deptId}::${wk}`]; });
+          });
+          recordChange('Capacity', `Cleared ${totalWks} variable capacity override week(s) for ${scopeLabel}`);
+          renderAll();
+          showToast(`Cleared ${totalWks} overridden week${totalWks === 1 ? '' : 's'}`, 'info', { undoable: true });
+        }
+      );
+    }
+
+    function renderCapacityOverridesTable(db = getActiveDB()) {
+      const box = document.getElementById('dataCapacityOverridesTable');
+      const badge = document.getElementById('capacityOverridesCountBadge');
+      const filterSel = document.getElementById('overrideDeptFilter');
+      const clearBtn = document.getElementById('btnClearCapacityOverrides');
+      if (!box) return;
+
+      if (ui.overrideDeptFilter !== 'all' && !db.departments.some(d => d.id === ui.overrideDeptFilter)) {
+        ui.overrideDeptFilter = 'all';
+      }
+
+      const allSpans = getGroupedCapacityOverrides(db, 'all');
+      const allWeeksTotal = allSpans.reduce((acc, sp) => acc + sp.weekKeys.length, 0);
+
+      if (filterSel) {
+        filterSel.innerHTML = `<option value="all">All Departments (${allSpans.length})</option>` +
+          db.departments.map(d => {
+            const cnt = allSpans.filter(sp => sp.deptId === d.id).length;
+            return `<option value="${d.id}" ${ui.overrideDeptFilter === d.id ? 'selected' : ''}>${escapeHtml(d.name)} [${escapeHtml(d.code)}]${cnt > 0 ? ` (${cnt})` : ''}</option>`;
+          }).join('');
+      }
+
+      const spans = getGroupedCapacityOverrides(db, ui.overrideDeptFilter || 'all');
+      const shownWeeks = spans.reduce((acc, sp) => acc + sp.weekKeys.length, 0);
+
+      if (badge) {
+        badge.textContent = allWeeksTotal > 0
+          ? `${spans.length} span${spans.length === 1 ? '' : 's'} • ${shownWeeks} wk${shownWeeks === 1 ? '' : 's'}`
+          : '0 overrides';
+      }
+      if (clearBtn) clearBtn.classList.toggle('hidden', spans.length === 0);
+
+      if (spans.length === 0) {
+        box.innerHTML = `
+          <div class="p-4 rounded-xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-500">
+            No active variable capacity overrides${ui.overrideDeptFilter !== 'all' ? ' for this department' : ''}. Use <strong>+ Add Override</strong>, click any cell&rsquo;s capacity readout in the Roadmap, or use <strong>Holiday / Shutdown %</strong>.
+          </div>`;
+        return;
+      }
+
+      box.innerHTML = `
+        <table class="w-full text-left text-xs">
+          <caption class="sr-only">Active variable capacity overrides grouped into contiguous weekly spans</caption>
+          <thead class="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider text-[10px]">
+            <tr>
+              <th scope="col" class="px-3.5 py-2.5 font-bold">Department</th>
+              <th scope="col" class="px-3.5 py-2.5 font-bold">Week Span</th>
+              <th scope="col" class="px-3.5 py-2.5 font-bold">Date Range</th>
+              <th scope="col" class="px-3.5 py-2.5 font-bold text-right">Base FTE</th>
+              <th scope="col" class="px-3.5 py-2.5 font-bold text-right">Override FTE</th>
+              <th scope="col" class="px-3.5 py-2.5 font-bold text-right">Delta</th>
+              <th scope="col" class="px-3.5 py-2.5 font-bold text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            ${spans.map(sp => {
+              const spanLabel = sp.startWk === sp.endWk ? sp.startWk : `${sp.startWk} → ${sp.endWk}`;
+              const dateRange = formatWeekSpanDateRange(sp.startWk, sp.endWk);
+              const deltaCls = sp.deltaFte > 0.005 ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : sp.deltaFte < -0.005 ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-100 text-slate-600 border-slate-200';
+              const deltaTxt = sp.deltaFte > 0.005 ? `+${sp.deltaFte} FTE` : sp.deltaFte < -0.005 ? `${sp.deltaFte} FTE` : '0 FTE';
+              return `
+                <tr class="hover:bg-slate-50/70">
+                  <th scope="row" class="px-3.5 py-2.5 font-bold text-slate-900 whitespace-nowrap">
+                    <span class="inline-flex items-center gap-1.5">
+                      <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${sp.dept.color}" aria-hidden="true"></span>
+                      <span>${escapeHtml(sp.dept.name)}</span>
+                      <span class="font-mono text-[10px] text-slate-400">[${escapeHtml(sp.dept.code)}]</span>
+                    </span>
+                  </th>
+                  <td class="px-3.5 py-2.5 font-mono font-bold text-slate-800 whitespace-nowrap">
+                    ${escapeHtml(spanLabel)}
+                    <span class="ml-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-sans font-bold">${sp.weekKeys.length} wk${sp.weekKeys.length === 1 ? '' : 's'}</span>
+                  </td>
+                  <td class="px-3.5 py-2.5 text-slate-600 whitespace-nowrap">${escapeHtml(dateRange)}</td>
+                  <td class="px-3.5 py-2.5 text-right tabular-nums text-slate-500 whitespace-nowrap">${sp.baseFte} FTE</td>
+                  <td class="px-3.5 py-2.5 text-right tabular-nums font-extrabold text-sky-700 whitespace-nowrap">${sp.fte} FTE</td>
+                  <td class="px-3.5 py-2.5 text-right whitespace-nowrap">
+                    <span class="px-2 py-0.5 rounded-md border text-[11px] font-bold tabular-nums ${deltaCls}">${deltaTxt}</span>
+                  </td>
+                  <td class="px-3.5 py-2.5 text-right space-x-2 whitespace-nowrap">
+                    <button type="button" onclick="editCapacityOverrideSpan('${sp.deptId}', '${sp.startWk}')" class="text-indigo-600 hover:underline font-semibold">Edit</button>
+                    <button type="button" onclick="resetCapacityOverrideSpan('${sp.deptId}', '${sp.startWk}', '${sp.endWk}')" class="text-amber-700 hover:underline font-semibold">Reset</button>
+                  </td>
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>`;
     }
 
     /* ============================================================================
@@ -516,12 +697,14 @@
           const diskFile = await linkedFileHandle.getFile();
           if (diskFile.lastModified > lastKnownFileModified + 500) {
             let extMeta = { lastModifiedBy: 'a teammate', revision: '?' };
+            let diskDB = null;
             try {
               const parsed = JSON.parse((await diskFile.text()).replace(/^\uFEFF/, ''));
               if (parsed && parsed.meta) extMeta = parsed.meta;
+              diskDB = normalizeAndMigrateDB(parsed);
             } catch (parseErr) {}
             updateSyncStatusUI('conflict');
-            openSyncConflictModal(extMeta, diskFile.lastModified);
+            openSyncConflictModal(extMeta, diskFile.lastModified, diskDB);
             return;
           }
         }
@@ -702,30 +885,30 @@
       }
 
       if (linkedFileHandle) {
-        badge.className = 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-100 text-emerald-800 whitespace-nowrap';
+        badge.className = 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-100 text-emerald-800 whitespace-nowrap shrink-0';
         badge.textContent = ui.autoReloadFromFile ? 'Auto-Sync Active' : 'Live Linked';
         statusBox.innerHTML = `
-          <div class="flex items-center justify-between"><span class="text-slate-500">Connected File:</span><span class="font-mono font-bold text-slate-900">${escapeHtml(linkedFileHandle.name)}</span></div>
-          <div class="flex items-center justify-between"><span class="text-slate-500">Revision:</span><span class="font-semibold text-slate-800">Rev ${db.meta?.revision || 1}</span></div>
-          <div class="flex items-center justify-between"><span class="text-slate-500">Last Saved:</span><span class="text-slate-700">${new Date(db.meta?.lastModifiedAt || Date.now()).toLocaleString()} by ${escapeHtml(db.meta?.lastModifiedBy || ui.userName)}</span></div>`;
+          <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5"><span class="text-slate-500 shrink-0">Connected File:</span><span class="font-mono font-bold text-slate-900 break-all text-right">${escapeHtml(linkedFileHandle.name)}</span></div>
+          <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5"><span class="text-slate-500 shrink-0">Revision:</span><span class="font-semibold text-slate-800">Rev ${db.meta?.revision || 1}</span></div>
+          <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5"><span class="text-slate-500 shrink-0">Last Saved:</span><span class="text-slate-700 break-words text-right">${new Date(db.meta?.lastModifiedAt || Date.now()).toLocaleString()} by ${escapeHtml(db.meta?.lastModifiedBy || ui.userName)}</span></div>`;
         if (btnReconnect) btnReconnect.classList.add('hidden');
         if (btnUnlink) btnUnlink.classList.remove('hidden');
       } else if (!hasFsApi) {
-        badge.className = 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-100 text-indigo-800 whitespace-nowrap';
+        badge.className = 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-100 text-indigo-800 whitespace-nowrap shrink-0';
         badge.textContent = 'Mobile / Local';
         statusBox.innerHTML = `
-          <div class="flex items-center justify-between"><span class="text-slate-500">Storage:</span><span class="font-bold text-slate-900">Saved on Device (Rev ${db.meta?.revision || 1})</span></div>
-          <div class="flex items-center justify-between"><span class="text-slate-500">Last Updated:</span><span class="text-slate-700">${new Date(db.meta?.lastModifiedAt || Date.now()).toLocaleString()}</span></div>
-          <div class="text-[11px] text-slate-600 pt-1">Tap <strong>Share / Save JSON</strong> below to push updates straight to Google Drive, Files, or Teams, or tap <strong>Import JSON</strong> to open a colleague&rsquo;s latest file.</div>`;
+          <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5"><span class="text-slate-500 shrink-0">Storage:</span><span class="font-bold text-slate-900">Saved on Device (Rev ${db.meta?.revision || 1})</span></div>
+          <div class="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5"><span class="text-slate-500 shrink-0">Last Updated:</span><span class="text-slate-700 text-right">${new Date(db.meta?.lastModifiedAt || Date.now()).toLocaleString()}</span></div>
+          <div class="text-[11px] text-slate-600 pt-1 leading-relaxed">Tap <strong>Share / Save JSON</strong> below to push updates straight to Google Drive, Files, or Teams, or tap <strong>Import JSON</strong> to open a colleague&rsquo;s latest file.</div>`;
       } else {
         badge.className = syncWarningState.type === 'missing'
-          ? 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-700 whitespace-nowrap'
-          : 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-100 text-amber-800 whitespace-nowrap';
+          ? 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-100 text-rose-700 whitespace-nowrap shrink-0'
+          : 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-100 text-amber-800 whitespace-nowrap shrink-0';
         badge.textContent = syncWarningState.type === 'missing' ? 'File Missing' : 'Local Only';
         statusBox.innerHTML = `
-          <div class="text-slate-700">
+          <div class="text-slate-700 break-words">
             ${rememberedFileHandle
-              ? `Last linked file: <code class="font-mono font-bold">${escapeHtml(rememberedFileHandle.name)}</code> — click <strong>Reconnect Remembered File</strong> or relink it.`
+              ? `Last linked file: <code class="font-mono font-bold break-all">${escapeHtml(rememberedFileHandle.name)}</code> — click <strong>Reconnect Remembered File</strong> or relink it.`
               : 'Currently saving to browser storage only. Link a shared <code class="font-mono">.json</code> file in your Google Drive Desktop or network folder to sync with your team.'}
           </div>`;
         if (btnReconnect) btnReconnect.classList.toggle('hidden', !rememberedFileHandle);
@@ -743,15 +926,15 @@
       } else {
         snapList.innerHTML = db.snapshots.map(s => `
           <div class="p-3.5 rounded-xl border ${s.pinned ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200 bg-slate-50/70'} flex flex-wrap items-start justify-between gap-2 text-xs">
-            <div class="space-y-0.5 min-w-0">
-              <div class="font-bold text-slate-900 flex items-center gap-1.5">
-                ${s.pinned ? '<span title="Pinned baseline (protected from rolling eviction)" class="text-amber-600">📌</span>' : ''}
-                <span>${escapeHtml(s.name)}</span>
+            <div class="space-y-0.5 min-w-0 flex-1">
+              <div class="font-bold text-slate-900 flex items-center gap-1.5 break-words">
+                ${s.pinned ? '<span title="Pinned baseline (protected from rolling eviction)" class="text-amber-600 shrink-0">📌</span>' : ''}
+                <span class="break-words">${escapeHtml(s.name)}</span>
               </div>
-              <div class="text-[11px] text-slate-500">${new Date(s.createdAt).toLocaleString()} &bull; ${escapeHtml(s.createdBy || 'PM')}</div>
-              ${s.notes ? `<div class="text-[11px] text-slate-600 pt-1">${escapeHtml(s.notes)}</div>` : ''}
+              <div class="text-[11px] text-slate-500 break-words">${new Date(s.createdAt).toLocaleString()} &bull; ${escapeHtml(s.createdBy || 'PM')}</div>
+              ${s.notes ? `<div class="text-[11px] text-slate-600 pt-1 break-words">${escapeHtml(s.notes)}</div>` : ''}
             </div>
-            <div class="flex items-center gap-1.5 shrink-0">
+            <div class="flex flex-wrap items-center gap-1.5 shrink-0">
               <button type="button" onclick="toggleSnapshotPin('${s.id}')" title="${s.pinned ? 'Unpin snapshot' : 'Pin baseline to protect from rolling eviction'}"
                 class="px-2.5 py-1.5 md:px-2 md:py-1 rounded-lg border text-[11px] font-semibold transition ${s.pinned ? 'bg-amber-100 border-amber-300 text-amber-900' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'}">
                 ${s.pinned ? 'Pinned' : 'Pin'}

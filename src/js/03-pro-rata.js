@@ -102,13 +102,31 @@
       return { avgFte: weeks.length ? sum / weeks.length : base, hasOverride };
     }
 
-    function getDeptTotalAllocatedFte(deptId, periodKey, timeUnit, db = getActiveDB()) {
+    function getDeptTotalAllocatedFte(deptId, periodKey, timeUnit, db = getActiveDB(), opts = {}) {
+      const includeTentative = opts && opts.includeTentative !== undefined ? Boolean(opts.includeTentative) : Boolean(ui.includeTentative);
       let total = 0;
       db.projects.forEach(p => {
         if (ui.filterProj !== 'all' && p.id !== ui.filterProj) return;
+        if (!includeTentative && p.tentative && ui.filterProj !== p.id) return;
         total += getAllocationForPeriod(deptId, p.id, periodKey, timeUnit, db.allocations).avgFte;
       });
       return total;
+    }
+
+    function getDeptCommittedVsTentativeFte(deptId, periodKey, timeUnit, db = getActiveDB()) {
+      let committed = 0;
+      let tentative = 0;
+      db.projects.forEach(p => {
+        if (ui.filterProj !== 'all' && p.id !== ui.filterProj) return;
+        const val = getAllocationForPeriod(deptId, p.id, periodKey, timeUnit, db.allocations).avgFte;
+        if (val <= 0.0001) return;
+        if (p.tentative) {
+          if (ui.includeTentative || ui.filterProj === p.id) tentative += val;
+        } else {
+          committed += val;
+        }
+      });
+      return { committed, tentative, total: committed + tentative };
     }
 
     function getProjTotalAllocatedFte(projId, periodKey, timeUnit, db = getActiveDB()) {
@@ -171,6 +189,7 @@
       if (axis === 'department') {
         db.projects.forEach(p => {
           if (ui.filterProj !== 'all' && p.id !== ui.filterProj) return;
+          if (!ui.includeTentative && p.tentative && ui.filterProj !== p.id) return;
           if (getCellProjectComments(rowId, p.id, periodKey, timeUnit, db).hasAny) count++;
         });
       } else {
