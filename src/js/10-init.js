@@ -14,6 +14,7 @@
     }
 
     function openMobileQuickAddSheet() {
+      updatePwaInstallUI();
       const dlg = document.getElementById('mobileQuickAddSheet');
       if (!dlg) return;
       if (typeof dlg.showModal === 'function') {
@@ -21,6 +22,82 @@
       } else {
         dlg.setAttribute('open', 'open');
       }
+    }
+
+    function isPwaInstalled() {
+      try {
+        if (typeof window !== 'undefined' && window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: minimal-ui)').matches)) {
+          return true;
+        }
+        if (typeof navigator !== 'undefined' && navigator.standalone === true) return true;
+      } catch (e) {}
+      return false;
+    }
+
+    function updatePwaInstallUI() {
+      const installed = isPwaInstalled();
+      const canNative = Boolean(deferredPwaPrompt) && !installed;
+
+      const hdrBtn = document.getElementById('pwaInstallHeaderBtn');
+      if (hdrBtn) {
+        hdrBtn.classList.toggle('hidden', !canNative);
+        hdrBtn.classList.toggle('inline-flex', canNative);
+      }
+
+      const menuBtn = document.getElementById('pwaInstallMenuBtn');
+      const menuLbl = document.getElementById('pwaInstallMenuLabel');
+      const menuChip = document.getElementById('pwaInstallMenuChip');
+      if (menuBtn && menuLbl && menuChip) {
+        if (installed) {
+          menuLbl.textContent = 'App Installed';
+          menuChip.textContent = 'Active';
+          menuChip.className = 'text-[10px] font-bold text-emerald-600';
+        } else if (canNative) {
+          menuLbl.textContent = 'Install App';
+          menuChip.textContent = 'Ready';
+          menuChip.className = 'text-[10px] font-bold text-indigo-600';
+        } else {
+          menuLbl.textContent = 'Install App';
+          menuChip.textContent = 'Guide';
+          menuChip.className = 'text-[10px] font-bold text-slate-400';
+        }
+      }
+
+      const mBtn = document.getElementById('mPwaInstallBtn');
+      const mChip = document.getElementById('mPwaInstallChip');
+      if (mBtn && mChip) {
+        mBtn.classList.toggle('hidden', installed);
+        mChip.textContent = canNative ? '1-Tap Install' : 'How to Install';
+      }
+    }
+
+    async function promptPwaInstall() {
+      if (isPwaInstalled()) {
+        showToast('PulsePlan is already installed as an app on this device.', 'success');
+        updatePwaInstallUI();
+        return;
+      }
+      if (deferredPwaPrompt) {
+        const promptEvt = deferredPwaPrompt;
+        deferredPwaPrompt = null;
+        try {
+          ppDebug('INFO', 'Triggering native PWA beforeinstallprompt dialog');
+          await promptEvt.prompt();
+          const choice = await promptEvt.userChoice;
+          ppDebug('INFO', 'PWA install prompt userChoice', { outcome: choice?.outcome });
+          if (choice && choice.outcome === 'accepted') {
+            showToast('Installing PulsePlan app…', 'success');
+          } else {
+            showToast('Install dismissed — you can install anytime from the Workspace Menu.', 'info');
+          }
+        } catch (err) {
+          ppDebug('WARN', 'PWA install prompt error', { message: err?.message });
+          openPwaInstallHelpModal();
+        }
+        updatePwaInstallUI();
+        return;
+      }
+      openPwaInstallHelpModal();
     }
 
     function toggleMobileLayoutMode() {
@@ -235,12 +312,13 @@
     }
     function setManpowerUnit(unit) { ui.manpowerUnit = unit; persistUIPrefs(); renderAll(); }
     function setHorizon(val) {
-      ui.horizon = Math.max(1, Math.min(24, parseInt(val, 10) || 4));
+      const raw = Math.max(1, Math.min(24, parseInt(val, 10) || 4));
+      ui.horizon = VALID_HORIZONS.includes(raw) ? raw : (raw <= 6 ? 6 : raw <= 15 ? 12 : raw <= 21 ? 18 : 24);
       persistUIPrefs();
       renderAll();
     }
     function stepHorizon(delta) {
-      const options = [1, 2, 3, 4, 6, 8, 12, 16, 24];
+      const options = VALID_HORIZONS;
       const cur = getActiveHorizon();
       let idx = options.indexOf(cur);
       if (idx === -1) {
@@ -253,8 +331,14 @@
     function shiftStartPeriod(delta) {
       if (ui.timeUnit === 'month') ui.startMonth = addMonthsToMonthKey(ui.startMonth, delta);
       else ui.startWeek = addWeeksToWeekKey(ui.startWeek, delta);
+      ui.mobileSelectedPeriod = ui.timeUnit === 'month' ? ui.startMonth : ui.startWeek;
       persistUIPrefs();
       renderAll();
+    }
+    function shiftStartByInterval(direction) {
+      const step = (Number(direction) >= 0 ? 1 : -1) * getActiveHorizon();
+      triggerHaptic(8);
+      shiftStartPeriod(step);
     }
     function jumpToToday() {
       ui.startMonth = getCurrentMonthKey();
@@ -578,12 +662,14 @@
         if (ui.activeTab !== 'matrix') return;
         if (e.key === 'ArrowLeft') {
           e.preventDefault();
-          shiftStartPeriod(-1);
+          if (e.shiftKey) shiftStartByInterval(-1);
+          else shiftStartPeriod(-1);
           return;
         }
         if (e.key === 'ArrowRight') {
           e.preventDefault();
-          shiftStartPeriod(1);
+          if (e.shiftKey) shiftStartByInterval(1);
+          else shiftStartPeriod(1);
           return;
         }
         if (['1', '2', '3', '4'].includes(e.key)) {
@@ -625,10 +711,14 @@
 
     async function initApp() {
       // 1. Load saved UI preferences (preserving defaults & migrating legacy Meeting View prefs)
+      let hasSavedUIPrefs = false;
+      let parsedWelcomeSeen;
       try {
         const savedUI = safeGetStorage(STORAGE_KEYS.UI_PREFS);
         if (savedUI) {
+          hasSavedUIPrefs = true;
           const parsedUI = JSON.parse(savedUI);
+          parsedWelcomeSeen = parsedUI.welcomeSeen;
           const mergedPdfOpts = {
             colorMode: 'match',
             colsPerPage: 6,
@@ -641,6 +731,7 @@
           if (parsedUI.compactRowLabels === undefined) ui.compactRowLabels = true;
           if (parsedUI.cellColorMode === undefined) ui.cellColorMode = 'fill';
           if (parsedUI.horizon === undefined) ui.horizon = 4;
+          else ui.horizon = getActiveHorizon();
           ui.presentMode = false;
           if (parsedUI.mobileLayoutMode === undefined) ui.mobileLayoutMode = 'cards';
           if (!Array.isArray(ui.mobileCollapsedIds)) ui.mobileCollapsedIds = [];
@@ -668,6 +759,14 @@
         liveDB = savedLive ? (normalizeAndMigrateDB(JSON.parse(savedLive)) || createEmptyDB()) : createEmptyDB();
       } catch (e) {
         liveDB = createEmptyDB();
+      }
+
+      // Determine first-use Welcome Splash state (show automatically on first visit or unconfigured empty Live DB)
+      if (parsedWelcomeSeen === undefined) {
+        const hasExistingLiveData = Boolean(liveDB && ((liveDB.departments || []).length > 0 || (liveDB.projects || []).length > 0));
+        ui.welcomeSeen = hasSavedUIPrefs && hasExistingLiveData;
+      } else {
+        ui.welcomeSeen = Boolean(parsedWelcomeSeen);
       }
 
       // 3. Load or initialize isolated Demo DB
@@ -706,10 +805,18 @@
       ppDebug('INFO', 'PulsePlan initApp starting', getDebugEnvironmentSummary());
       applyDarkMode();
       applyPresentMode();
+      updatePwaInstallUI();
       try {
         renderAll();
       } catch (e) {
         ppDebug('ERROR', 'Initial renderAll error', { name: e?.name, message: e?.message });
+      }
+
+      // Show first-use Welcome & Guided Setup Splash Screen on initial visit
+      if (!ui.welcomeSeen && typeof openWelcomeModal === 'function') {
+        setTimeout(() => {
+          if (!ui.welcomeSeen && !isModalOpen()) openWelcomeModal(true);
+        }, 160);
       }
 
       // 8. Retrieve previously linked shared file handle (timeout-guarded IDB) & auto-reconnect on desktop
@@ -728,6 +835,22 @@
           });
         }
       } catch (e) {}
+    }
+
+    // Capture genuine PWA install prompt early (can fire before DOMContentLoaded)
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredPwaPrompt = e;
+        ppDebug('INFO', 'PWA beforeinstallprompt captured — native 1-tap install ready');
+        updatePwaInstallUI();
+      });
+      window.addEventListener('appinstalled', () => {
+        deferredPwaPrompt = null;
+        ppDebug('INFO', 'PWA appinstalled event received');
+        updatePwaInstallUI();
+        showToast('PulsePlan installed as an offline app!', 'success');
+      });
     }
 
     window.addEventListener('DOMContentLoaded', initApp);

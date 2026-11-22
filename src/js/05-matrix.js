@@ -356,8 +356,10 @@
               <div class="text-sm font-extrabold truncate">${escapeHtml(hdrStart)} &rarr; ${escapeHtml(hdrEnd)} (${periods.length} ${ui.timeUnit}${periods.length === 1 ? '' : 's'})</div>
             </div>
             <div class="inline-flex items-center rounded-xl bg-white/10 overflow-hidden shrink-0">
-              <button type="button" aria-label="Earlier periods" onclick="shiftStartPeriod(-1)" class="w-9 h-9 flex items-center justify-center hover:bg-white/15 font-bold text-base">&lsaquo;</button>
-              <button type="button" aria-label="Later periods" onclick="shiftStartPeriod(1)" class="w-9 h-9 flex items-center justify-center hover:bg-white/15 font-bold text-base border-l border-white/10">&rsaquo;</button>
+              <button type="button" aria-label="Jump back full interval" title="Jump back ${periods.length} ${ui.timeUnit}s" onclick="shiftStartByInterval(-1)" class="w-8 h-9 flex items-center justify-center hover:bg-white/15 font-bold text-sm">&laquo;</button>
+              <button type="button" aria-label="Earlier periods" onclick="shiftStartPeriod(-1)" class="w-8 h-9 flex items-center justify-center hover:bg-white/15 font-bold text-base border-l border-white/10">&lsaquo;</button>
+              <button type="button" aria-label="Later periods" onclick="shiftStartPeriod(1)" class="w-8 h-9 flex items-center justify-center hover:bg-white/15 font-bold text-base border-l border-white/10">&rsaquo;</button>
+              <button type="button" aria-label="Jump forward full interval" title="Jump forward ${periods.length} ${ui.timeUnit}s" onclick="shiftStartByInterval(1)" class="w-8 h-9 flex items-center justify-center hover:bg-white/15 font-bold text-sm border-l border-white/10">&raquo;</button>
             </div>
           </div>
           <div class="space-y-3">
@@ -423,8 +425,10 @@
           <div class="flex items-center gap-2 shrink-0">
             <span class="text-base font-extrabold tabular-nums ${selPctCls}">${selPct}%</span>
             <div class="inline-flex items-center rounded-xl bg-white/10 overflow-hidden">
-              <button type="button" aria-label="Previous period" onclick="shiftMobileSelectedPeriod(-1)" class="w-9 h-9 flex items-center justify-center hover:bg-white/15 font-bold text-base">&lsaquo;</button>
-              <button type="button" aria-label="Next period" onclick="shiftMobileSelectedPeriod(1)" class="w-9 h-9 flex items-center justify-center hover:bg-white/15 font-bold text-base border-l border-white/10">&rsaquo;</button>
+              <button type="button" aria-label="Jump back full interval" title="Jump back ${periods.length} ${ui.timeUnit}s" onclick="shiftStartByInterval(-1)" class="w-8 h-9 flex items-center justify-center hover:bg-white/15 font-bold text-sm">&laquo;</button>
+              <button type="button" aria-label="Previous period" onclick="shiftMobileSelectedPeriod(-1)" class="w-8 h-9 flex items-center justify-center hover:bg-white/15 font-bold text-base border-l border-white/10">&lsaquo;</button>
+              <button type="button" aria-label="Next period" onclick="shiftMobileSelectedPeriod(1)" class="w-8 h-9 flex items-center justify-center hover:bg-white/15 font-bold text-base border-l border-white/10">&rsaquo;</button>
+              <button type="button" aria-label="Jump forward full interval" title="Jump forward ${periods.length} ${ui.timeUnit}s" onclick="shiftStartByInterval(1)" class="w-8 h-9 flex items-center justify-center hover:bg-white/15 font-bold text-sm border-l border-white/10">&raquo;</button>
             </div>
           </div>
         </div>`;
@@ -889,15 +893,26 @@
 
     function computeFullColumnGeometry(wrapperWidth, periodCount, compactRowLabels, isCompactGrid) {
       const count = Math.max(1, parseInt(periodCount, 10) || 1);
-      const stickyW = (compactRowLabels && !isCompactGrid) ? 62 : (isCompactGrid ? 124 : 216);
+      const isOverview = count > 6 && !isCompactGrid;
+      const stickyW = (compactRowLabels && !isCompactGrid) ? 62 : (isCompactGrid ? 124 : (isOverview ? 224 : 248));
       const safeWrapperW = Math.max(stickyW + 140, Math.floor(Number(wrapperWidth) || 0) || 1200);
       const availW = safeWrapperW - stickyW;
-      if (count <= 4 && !isCompactGrid) {
-        // 1-4 periods on desktop: fit all selected periods equally inside the viewport
-        const colW = availW / count;
-        return { stickyW, colW, visibleCols: count, totalTableW: stickyW + colW * count };
+      if (!isCompactGrid && count <= 6) {
+        // Standard View (1–6 periods): fit all selected periods equally inside desktop viewport when width allows
+        if (count <= 4 || (availW / count) >= 150) {
+          const colW = availW / count;
+          return { stickyW, colW, visibleCols: count, totalTableW: stickyW + colW * count };
+        }
       }
-      const minColW = isCompactGrid ? 148 : 185;
+      if (isOverview) {
+        // Simplified Overview (12 / 18 / 24 periods): compact column widths so full annual/2-year spans fit cleanly on desktop & 4K
+        const minOverviewColW = count >= 24 ? 46 : count >= 18 ? 58 : 74;
+        const maxFitCols = Math.max(1, Math.floor(availW / minOverviewColW));
+        const visibleCols = Math.min(count, maxFitCols);
+        const colW = availW / visibleCols;
+        return { stickyW, colW, visibleCols, totalTableW: stickyW + colW * count };
+      }
+      const minColW = isCompactGrid ? 148 : 175;
       const maxFitCols = Math.max(1, Math.floor(availW / minColW));
       const visibleCols = Math.min(count, maxFitCols);
       const colW = availW / visibleCols; // Exact integer count of full columns fills 100% of availW
@@ -1182,10 +1197,20 @@
         return true;
       });
 
-      // Render active status strip (Spotlight / Hidden Empty Rows / Active Filters)
+      // Render active status strip (Overview Mode / Spotlight / Hidden Empty Rows / Active Filters)
+      const isOverviewDesktop = periods.length > 6 && !isMobileViewport();
       const statusStrip = document.getElementById('matrixStatusStrip');
       if (statusStrip) {
         const statusParts = [];
+        if (isOverviewDesktop) {
+          const uPl = ui.timeUnit === 'month' ? 'months' : 'weeks';
+          statusParts.push(`
+            <span class="inline-flex items-center gap-1.5 font-bold text-indigo-800">
+              Simplified Overview (${periods.length} ${uPl})
+              <span class="font-normal text-indigo-700/80 hidden lg:inline">— click any cell for full details</span>
+              <button type="button" onclick="setHorizon(6)" class="ml-1 px-2 py-0.5 rounded-lg bg-white border border-indigo-200 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold transition">Standard (6)</button>
+            </span>`);
+        }
         if (spotlightId) {
           const spProj = db.projects.find(p => p.id === spotlightId);
           if (spProj) {
@@ -1246,36 +1271,41 @@
       }
 
       const isCompactGrid = isMobileViewport();
+      const isOverview = periods.length > 6 && !isCompactGrid;
       const isCompactRow = Boolean(ui.compactRowLabels) && !isCompactGrid;
+      const wrapperW = wrapper.clientWidth || wrapper.getBoundingClientRect().width || 1200;
+      const colGeo = computeFullColumnGeometry(wrapperW, periods.length, isCompactRow, isCompactGrid);
+      const ovShowVals = !isOverview || colGeo.colW >= 74;
+      const ovShowBarLabel = !isOverview || colGeo.colW >= 54;
       const isWideCols = periods.length <= 2 && !isCompactGrid;
       const isFocusedCols = periods.length <= 4 && !isCompactGrid;
       const noteSize = (ui.noteSize === 'sm' || ui.noteSize === 'lg') ? ui.noteSize : 'md';
       const s = {
-        thCol: isWideCols ? 'px-4 py-3' : (isFocusedCols ? 'px-3 py-2.5' : (isCompactGrid ? 'px-2.5 py-2' : 'px-2.5 py-2.5')),
-        thTitle: isWideCols ? 'text-base sm:text-lg font-extrabold' : (isFocusedCols ? 'text-sm font-extrabold' : 'text-xs font-bold'),
-        thSub: isFocusedCols ? 'text-[11px]' : 'text-[10px]',
-        thSticky: isCompactRow ? 'px-1.5 py-3 text-[10px] text-center' : (isCompactGrid ? 'px-2.5 py-2 text-[11px]' : 'px-3.5 py-2.5 text-xs'),
-        tdSticky: isCompactRow ? 'px-1.5 py-3' : (isCompactGrid ? 'px-2.5 py-2.5' : 'px-3.5 py-3'),
+        thCol: isOverview ? 'px-1.5 py-2' : (isWideCols ? 'px-4 py-3' : (isFocusedCols ? 'px-3 py-2.5' : (isCompactGrid ? 'px-2.5 py-2' : 'px-2.5 py-2.5'))),
+        thTitle: isOverview ? 'text-[11px] font-extrabold' : (isWideCols ? 'text-base sm:text-lg font-extrabold' : (isFocusedCols ? 'text-sm font-extrabold' : 'text-xs font-bold')),
+        thSub: isOverview ? 'text-[9px]' : (isFocusedCols ? 'text-[11px]' : 'text-[10px]'),
+        thSticky: isCompactRow ? 'px-1.5 py-3 text-[10px] text-center' : (isCompactGrid ? 'px-2.5 py-2 text-[11px]' : 'px-3 py-2.5 text-xs'),
+        tdSticky: isCompactRow ? (ui.axis === 'timeline' ? 'px-1.5 py-2' : 'px-1.5 py-3') : (isCompactGrid ? 'px-2.5 py-2.5' : 'px-3 py-2.5'),
         rowName: 'text-xs font-bold',
         rowMeta: 'text-[10px]',
         rowBadge: 'px-1.5 py-0.5 text-[10px] font-extrabold',
-        cellPad: isWideCols ? 'p-3' : (isFocusedCols ? 'p-2.5' : 'p-2'),
+        cellPad: isOverview ? 'p-1' : (isWideCols ? 'p-3' : (isFocusedCols ? 'p-2.5' : 'p-2')),
         capText: isFocusedCols ? 'text-[11px] font-semibold' : 'text-[10px] font-semibold',
-        pctText: isWideCols ? 'text-xs font-extrabold' : 'text-[11px] font-extrabold',
-        barH: 'h-1.5 mb-2',
-        pillBox: isWideCols ? 'px-3 py-2 text-sm' : (isFocusedCols ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]'),
+        pctText: isOverview ? 'text-[10px] font-extrabold' : (isWideCols ? 'text-xs font-extrabold' : 'text-[11px] font-extrabold'),
+        barH: isOverview ? 'h-1 mb-1' : 'h-1.5 mb-2',
+        pillBox: isOverview ? 'px-1 py-0.5 text-[10px]' : (isWideCols ? 'px-3 py-2 text-sm' : (isFocusedCols ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[11px]')),
         pillCode: isFocusedCols ? 'text-[11px]' : 'text-[10px]',
         pillVal: isWideCols ? 'text-sm font-extrabold' : (isFocusedCols ? 'text-xs font-extrabold' : 'text-[11px] font-bold'),
-        pillSpace: isWideCols ? 'space-y-2' : (isFocusedCols ? 'space-y-1.5' : 'space-y-1'),
-        pillBorderW: isFocusedCols ? '5px' : '4px',
+        pillSpace: isOverview ? 'space-y-0.5' : (isWideCols ? 'space-y-2' : (isFocusedCols ? 'space-y-1.5' : 'space-y-1')),
+        pillBorderW: isOverview ? '3px' : (isFocusedCols ? '5px' : '4px'),
         commentBox: noteSize === 'lg'
           ? 'mt-2 px-3 py-2 text-base font-medium leading-relaxed break-words'
           : (noteSize === 'sm'
               ? 'mt-1 px-2 py-1 text-xs leading-snug break-words comment-clamp-3'
               : 'mt-1.5 px-2.5 py-1.5 text-sm leading-relaxed break-words'),
         msBox: isFocusedCols ? 'px-2.5 py-1.5 text-xs font-bold' : 'px-2 py-1 text-[10px] font-semibold',
-        footCell: isFocusedCols ? 'px-3.5 py-2.5 text-xs' : 'px-3 py-2 text-xs',
-        footSub: 'text-[10px]',
+        footCell: isOverview ? 'px-1.5 py-2 text-[10px]' : (isFocusedCols ? 'px-3.5 py-2.5 text-xs' : 'px-3 py-2 text-xs'),
+        footSub: isOverview ? 'text-[9px]' : 'text-[10px]',
       };
 
       const renderInlineCommentHtml = (cmtObj, filledTheme = null) => {
@@ -1306,17 +1336,49 @@
       const colHeaders = periods.map((pk, idx) => {
         const h = formatPeriodHeader(pk, ui.timeUnit);
         const isCurrent = pk === curPeriodKey;
+        if (isOverview) {
+          const prevJump = idx === 0
+            ? `<button type="button" onclick="shiftStartByInterval(-1)" title="Jump back ${periods.length} ${unitNoun}s (Shift + Left)" aria-label="Jump back ${periods.length} ${unitNoun}s"
+                 class="meeting-nav-arrow w-5 h-5 rounded text-[11px] font-extrabold leading-none flex items-center justify-center transition shrink-0 cursor-pointer">&laquo;</button>`
+            : '';
+          const nextJump = idx === periods.length - 1
+            ? `<button type="button" onclick="shiftStartByInterval(1)" title="Jump forward ${periods.length} ${unitNoun}s (Shift + Right)" aria-label="Jump forward ${periods.length} ${unitNoun}s"
+                 class="meeting-nav-arrow w-5 h-5 rounded text-[11px] font-extrabold leading-none flex items-center justify-center transition shrink-0 cursor-pointer">&raquo;</button>`
+            : '';
+          const ovTitle = ui.timeUnit === 'month' ? h.shortTitle : h.title.split(' ')[0];
+          const ovSub = ui.timeUnit === 'month' ? h.sub : h.sub;
+          return `
+            <th scope="col" title="${escapeHtml(h.title)} (${escapeHtml(h.dateRange)})"
+              class="matrix-snap-col group/col ${s.thCol} text-center border-b border-l border-slate-200 ${isCurrent ? 'matrix-th-now' : 'bg-slate-50'}">
+              <div class="flex items-center justify-between gap-0.5">
+                ${prevJump || '<span></span>'}
+                <div class="min-w-0 flex-1">
+                  <div class="${s.thTitle} ${isCurrent ? 'text-indigo-700' : 'text-slate-800'} truncate leading-tight">${escapeHtml(ovTitle)}</div>
+                  <div class="${s.thSub} text-slate-400 font-medium truncate leading-tight">${isCurrent ? '<span class="text-indigo-600 font-bold">Now</span>' : escapeHtml(ovSub)}</div>
+                </div>
+                ${nextJump || '<span></span>'}
+              </div>
+            </th>`;
+        }
         const prevArrowHtml = !isCompactGrid && idx === 0
-          ? `<button type="button" onclick="shiftStartPeriod(-1)" title="Previous ${unitNoun} (Left Arrow)" aria-label="Previous ${unitNoun}"
-               class="meeting-nav-arrow w-7 h-7 rounded-lg font-extrabold text-base leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">&lsaquo;</button>`
+          ? `<div class="inline-flex items-center gap-0.5 shrink-0">
+               <button type="button" onclick="shiftStartByInterval(-1)" title="Jump back ${periods.length} ${unitNoun}s (Shift + Left Arrow)" aria-label="Jump back ${periods.length} ${unitNoun}s"
+                 class="meeting-nav-arrow w-6 h-7 rounded-lg font-extrabold text-xs leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">&laquo;</button>
+               <button type="button" onclick="shiftStartPeriod(-1)" title="Previous ${unitNoun} (Left Arrow)" aria-label="Previous ${unitNoun}"
+                 class="meeting-nav-arrow w-6 h-7 rounded-lg font-extrabold text-base leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">&lsaquo;</button>
+             </div>`
           : '';
         const todayPillHtml = !isCompactGrid && idx === periods.length - 1 && !hasCurrentPeriodVisible
           ? `<button type="button" onclick="jumpToToday()" title="Jump to current ${unitNoun} (T)"
                class="meeting-nav-arrow px-2 h-7 rounded-lg text-[10px] font-bold leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">Today</button>`
           : '';
         const nextArrowHtml = !isCompactGrid && idx === periods.length - 1
-          ? `<button type="button" onclick="shiftStartPeriod(1)" title="Next ${unitNoun} (Right Arrow)" aria-label="Next ${unitNoun}"
-               class="meeting-nav-arrow w-7 h-7 rounded-lg font-extrabold text-base leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">&rsaquo;</button>`
+          ? `<div class="inline-flex items-center gap-0.5 shrink-0">
+               <button type="button" onclick="shiftStartPeriod(1)" title="Next ${unitNoun} (Right Arrow)" aria-label="Next ${unitNoun}"
+                 class="meeting-nav-arrow w-6 h-7 rounded-lg font-extrabold text-base leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">&rsaquo;</button>
+               <button type="button" onclick="shiftStartByInterval(1)" title="Jump forward ${periods.length} ${unitNoun}s (Shift + Right Arrow)" aria-label="Jump forward ${periods.length} ${unitNoun}s"
+                 class="meeting-nav-arrow w-6 h-7 rounded-lg font-extrabold text-xs leading-none flex items-center justify-center shadow-2xs transition shrink-0 cursor-pointer">&raquo;</button>
+             </div>`
           : '';
         const copyPeriodBtnHtml = !isPresent && !isCompactGrid
           ? `<div class="opacity-0 group-hover/col:opacity-100 inline-flex items-center gap-0.5 transition shrink-0">
@@ -1359,6 +1421,100 @@
         return { fillHex: entityColor, tier3: null, showIdentityDot: false };
       };
 
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const getNextProjectMilestone = (projId) => {
+        const list = (db.milestones || [])
+          .filter(m => m.projectId === projId && m.date)
+          .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        return list.find(m => m.date >= todayIso) || list[list.length - 1] || null;
+      };
+
+      const buildProjectDetailedRowHeaderHtml = ({
+        row, totalDays, bottleneckCount, activeDeptCount, reorderControlsHtml, statusCls, rowSpotCls, clickAttr,
+      }) => {
+        if (isCompactGrid) {
+          return `<th scope="row" ${clickAttr} class="${rowSpotCls} sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="w-1.5 h-8 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
+              <div class="min-w-0">
+                <div class="${s.rowName} text-slate-900 truncate">${escapeHtml(row.code)}</div>
+                <div class="${s.rowMeta} text-slate-500 truncate mt-0.5">${escapeHtml(row.name)}</div>
+              </div>
+            </div>
+          </th>`;
+        }
+        const budgetDays = Number(row.budgetDays) || 0;
+        const allTimeDays = budgetDays > 0 ? getProjectTotalPlannedDays(row.id, db) : 0;
+        const budgetPct = budgetDays > 0 ? Math.round((allTimeDays / budgetDays) * 100) : 0;
+        const budgetBarCls = budgetPct > 100 ? 'bg-rose-500' : budgetPct >= 85 ? 'bg-amber-500' : 'bg-indigo-500';
+        const budgetTextCls = budgetPct > 100 ? 'text-rose-700 font-bold' : budgetPct >= 85 ? 'text-amber-700 font-bold' : 'text-slate-600 font-semibold';
+        const plannedCost = showCost ? getProjectTotalPlannedCost(row.id, db) : 0;
+        const budgetCost = Number(row.budgetCost) || 0;
+        const costPct = budgetCost > 0 ? Math.round((plannedCost / budgetCost) * 100) : 0;
+        const prio = String(row.priority || '').trim();
+        const prioCls = prio === 'Critical' ? 'bg-rose-100 text-rose-700' : prio === 'High' ? 'bg-amber-100 text-amber-800' : prio === 'Medium' ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-600';
+        const prioBadgeHtml = prio
+          ? `<span class="px-1 py-0.5 rounded text-[9px] font-bold shrink-0 ${prioCls}" title="Priority: ${escapeHtml(prio)}">${escapeHtml(prio)}</span>`
+          : '';
+        const tentTagHtml = row.tentative ? '<span class="px-1 py-0.5 rounded bg-violet-100 text-violet-800 text-[9px] font-bold shrink-0">Pipeline</span>' : '';
+        const bottleneckBadgeHtml = bottleneckCount > 0
+          ? `<span title="${bottleneckCount} overallocated slot(s) (&gt;${overT}%)" class="px-1 py-0.5 rounded bg-rose-100 text-rose-700 text-[9px] font-extrabold shrink-0">&#9888; ${bottleneckCount} Over</span>`
+          : '';
+        const costBadgeHtml = (showCost && (plannedCost > 0 || budgetCost > 0))
+          ? `<span title="Est. cost ${formatCurrency(plannedCost, db)}${budgetCost > 0 ? ' vs ' + formatCurrency(budgetCost, db) + ' budget (' + costPct + '%)' : ''}" class="px-1 py-0.5 rounded text-[9px] font-bold shrink-0 ${budgetCost > 0 && costPct > 100 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-50 text-emerald-700'}">${formatCurrency(plannedCost, db)}${budgetCost > 0 ? '/' + formatCurrency(budgetCost, db) : ''}</span>`
+          : '';
+        const shiftBtnHtml = !isPresent
+          ? `<button type="button" onclick="event.stopPropagation(); openShiftProjectModal('${row.id}')" title="Shift all allocations, comments &amp; milestones for [${escapeHtml(row.code)}] by ±N weeks/months"
+               class="opacity-0 group-hover/row:opacity-100 px-1.5 py-0.5 rounded-md bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-700 text-[10px] font-bold transition shrink-0">&#8644; Shift</button>`
+          : '';
+        const nextMs = getNextProjectMilestone(row.id);
+        const nextMsHtml = nextMs
+          ? `<div class="mt-1 text-[10px] text-violet-700 font-semibold truncate" title="Milestone: ${escapeHtml(nextMs.title)} (${escapeHtml(nextMs.date)})"><span class="text-violet-500 mr-0.5">&#9670;</span>${escapeHtml(nextMs.title)} <span class="text-slate-400 font-mono">&middot; ${escapeHtml(String(nextMs.date).slice(5))}</span></div>`
+          : '';
+        const budgetBarHtml = budgetDays > 0
+          ? `<div class="mt-1.5" title="Total planned across all weeks: ${allTimeDays}d vs ${budgetDays}d budget (${budgetPct}%)">
+               <div class="flex items-center justify-between gap-1 text-[9px] leading-none mb-0.5">
+                 <span class="text-slate-400 uppercase font-semibold">Budget</span>
+                 <span class="tabular-nums ${budgetTextCls}">${Math.round(allTimeDays)}/${Math.round(budgetDays)}d (${budgetPct}%)</span>
+               </div>
+               <div class="w-full h-1 rounded-full bg-slate-200/80 overflow-hidden"><div class="h-full ${budgetBarCls} rounded-full" style="width:${Math.min(100, budgetPct)}%"></div></div>
+             </div>`
+          : '';
+        const ownerLineHtml = (row.owner || tentTagHtml || bottleneckBadgeHtml || costBadgeHtml)
+          ? `<div class="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
+               ${row.owner ? `<span class="truncate max-w-[110px]" title="Owner: ${escapeHtml(row.owner)}">${escapeHtml(row.owner)}</span>` : ''}
+               ${tentTagHtml}${bottleneckBadgeHtml}${costBadgeHtml}
+             </div>`
+          : '';
+        return `
+          <th scope="row" ${clickAttr} class="${rowSpotCls} sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left ${clickAttr ? 'cursor-pointer' : ''}">
+            <div class="flex items-stretch gap-2 min-w-0">
+              ${reorderControlsHtml || ''}
+              <span class="w-1.5 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-start justify-between gap-1.5">
+                  <div class="${s.rowName} text-slate-900 truncate leading-snug" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</div>
+                  <span class="rounded-md shrink-0 ${s.rowBadge} ${statusCls}">${escapeHtml(row.status)}</span>
+                </div>
+                <div class="${s.rowMeta} text-slate-500 flex items-center justify-between gap-1 mt-0.5">
+                  <div class="flex items-center gap-1 min-w-0 truncate">
+                    <span class="font-mono font-bold text-slate-700">${escapeHtml(row.code)}</span>
+                    <span>&bull;</span>
+                    <span class="tabular-nums">${Math.round(totalDays)}d</span>
+                    <span>&bull;</span>
+                    <span class="tabular-nums">${activeDeptCount} dept${activeDeptCount === 1 ? '' : 's'}</span>
+                    ${prioBadgeHtml}
+                  </div>
+                  ${shiftBtnHtml}
+                </div>
+                ${ownerLineHtml}
+                ${budgetBarHtml}
+                ${nextMsHtml}
+              </div>
+            </div>
+          </th>`;
+      };
+
       const bodyRows = rows.map((row, rowIdx) => {
         const isFirstRow = rowIdx === 0;
         const isLastRow = rowIdx === rows.length - 1;
@@ -1378,13 +1534,26 @@
           : '';
 
         if (ui.axis === 'department') {
-          let sumA = 0, sumC = 0;
+          let sumA = 0, sumC = 0, peakPct = 0, overPeriods = 0, hasAnyOverride = false;
+          const activeProjIds = new Set();
           periods.forEach(pk => {
-            sumA += getDeptTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
-            sumC += getDeptCapacityForPeriod(row.id, pk, ui.timeUnit, db).avgFte;
+            const pA = getDeptTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
+            const capO = getDeptCapacityForPeriod(row.id, pk, ui.timeUnit, db);
+            const pC = capO.avgFte;
+            if (capO.hasOverride) hasAnyOverride = true;
+            sumA += pA;
+            sumC += pC;
+            const pPct = pC > 0 ? Math.round((pA / pC) * 100) : (pA > 0 ? 999 : 0);
+            if (pPct > peakPct) peakPct = pPct;
+            if (pPct > overT) overPeriods++;
+            visibleProjs.forEach(p => {
+              if (getAllocationForPeriod(row.id, p.id, pk, ui.timeUnit, db.allocations).hasData) activeProjIds.add(p.id);
+            });
           });
           const avgPct = sumC > 0 ? Math.round((sumA / sumC) * 100) : 0;
           const badgeCls = avgPct > overT ? 'bg-rose-100 text-rose-700' : avgPct >= warnT ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
+          const avgBarColor = avgPct > overT ? 'bg-rose-500' : avgPct >= warnT ? 'bg-amber-500' : 'bg-emerald-500';
+          const peakTextCls = peakPct > overT ? 'text-rose-600 font-bold' : peakPct >= warnT ? 'text-amber-700 font-bold' : 'text-slate-600 font-semibold';
 
           const cellsHtml = periods.map(pk => {
             const capObj = getDeptCapacityForPeriod(row.id, pk, ui.timeUnit, db);
@@ -1399,6 +1568,65 @@
             const allocDisp = formatValue(fteToDisplayValue(allocFte, pk, ui.timeUnit), ui.manpowerUnit, false);
             const capDisp = formatValue(fteToDisplayValue(capFte, pk, ui.timeUnit), ui.manpowerUnit, true);
             const cmtCount = getCellTotalCommentCount(row.id, pk, 'department', ui.timeUnit, db);
+
+            const msList = getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => {
+              if (ui.filterProj !== 'all' && m.projectId !== ui.filterProj) return false;
+              if (m.deptId) return m.deptId === row.id;
+              return getAllocationForPeriod(row.id, m.projectId, pk, ui.timeUnit, db.allocations).hasData;
+            });
+
+            if (isOverview) {
+              const ovChips = visibleProjs.map(p => {
+                const a = getAllocationForPeriod(row.id, p.id, pk, ui.timeUnit, db.allocations);
+                if (!a.hasData) return '';
+                if (searchQ && !matchesSearchForPair(row, p, pk)) return '';
+                const spotlightCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
+                const valNum = formatValue(fteToDisplayValue(a.avgFte, pk, ui.timeUnit), ui.manpowerUnit, false);
+                const valFull = formatValue(fteToDisplayValue(a.avgFte, pk, ui.timeUnit));
+                const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.avgFte, capFte, p.color);
+                const tipTxt = `[${p.code}] ${p.name} — ${valFull}${tier3 ? ' • ' + tier3.ariaLabel : ''}`;
+                if (useColorFill) {
+                  const ft = getFilledCardTheme(fillHex);
+                  return `<div onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')" title="${escapeHtml(tipTxt)}"
+                    class="${spotlightCls} px-1 py-0.5 rounded text-[9px] font-bold flex items-center justify-between gap-0.5 leading-tight truncate cursor-pointer"
+                    style="background-color:${ft.bg}; color:${ft.text}; border:${p.tentative ? '1px dashed' : '1px solid'} ${ft.border};">
+                    <span class="inline-flex items-center gap-0.5 min-w-0 truncate">
+                      ${showIdentityDot ? `<span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${p.color}"></span>` : ''}
+                      <span class="font-mono truncate">${escapeHtml(p.code)}</span>
+                    </span>
+                    ${ovShowVals ? `<span class="tabular-nums shrink-0">${valNum}</span>` : ''}
+                  </div>`;
+                }
+                return `<div onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')" title="${escapeHtml(tipTxt)}"
+                  class="accent-card ${spotlightCls} px-1 py-0.5 rounded bg-white border border-slate-200/90 text-[9px] font-bold text-slate-800 flex items-center justify-between gap-0.5 leading-tight truncate cursor-pointer"
+                  style="--accent-color:${p.color}; --accent-w:3px; border-left:3px solid ${p.color};">
+                  <span class="font-mono truncate">${escapeHtml(p.code)}</span>
+                  ${ovShowVals ? `<span class="tabular-nums text-slate-600 shrink-0">${valNum}</span>` : ''}
+                </div>`;
+              }).join('');
+              const ovMsBadge = msList.length > 0
+                ? `<span title="${escapeHtml(msList.map(m => '◆ ' + m.title + ' (' + m.date + ')').join('\n'))}"
+                    onclick="event.stopPropagation(); openMilestoneModal('${msList[0].id}')"
+                    class="text-[9px] font-bold text-violet-700 shrink-0 cursor-pointer">&#9670;${msList.length > 1 ? msList.length : ''}</span>`
+                : '';
+              const hInfo = formatPeriodHeader(pk, ui.timeUnit);
+              return `
+                <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 ${cellToneCls} transition cursor-pointer"
+                  title="${escapeHtml(row.name)} — ${escapeHtml(hInfo.title)}: ${allocDisp} / ${capDisp} (${pct > 990 ? '∞' : pct + '%'})${capObj.hasOverride ? ' [Variable cap]' : ''} • Click for full cell details"
+                  onclick="openCellDetailModal('${row.id}', '${pk}')">
+                  <div class="flex items-center justify-between gap-0.5 mb-0.5">
+                    <span class="px-1 py-0.5 rounded text-[9px] font-extrabold tabular-nums leading-none ${pctBadgeCls}">${pct > 990 ? '&infin;' : pct + '%'}</span>
+                    <span class="inline-flex items-center gap-0.5">
+                      ${capObj.hasOverride ? '<span class="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" title="Variable capacity override"></span>' : ''}
+                      ${ovMsBadge}
+                    </span>
+                  </div>
+                  <div class="w-full h-1 rounded-full bg-slate-200/80 overflow-hidden mb-1" aria-hidden="true">
+                    <div class="h-full ${barColor} rounded-full" style="width: ${Math.min(100, pct)}%"></div>
+                  </div>
+                  <div class="space-y-0.5">${ovChips}</div>
+                </td>`;
+            }
 
             const pills = visibleProjs.map(p => {
               const a = getAllocationForPeriod(row.id, p.id, pk, ui.timeUnit, db.allocations);
@@ -1542,12 +1770,6 @@
                 </div>`;
             }).join('');
 
-            const msList = getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => {
-              if (ui.filterProj !== 'all' && m.projectId !== ui.filterProj) return false;
-              if (m.deptId) return m.deptId === row.id;
-              return getAllocationForPeriod(row.id, m.projectId, pk, ui.timeUnit, db.allocations).hasData;
-            });
-
             const msHtml = msList.map(m => {
               const p = db.projects.find(x => x.id === m.projectId);
               const drift = getMilestoneDriftDays(m);
@@ -1627,8 +1849,15 @@
               </td>`;
           }).join('');
 
+          const deptRateTxt = (showCost && Number(row.dayRate) > 0) ? `${db.settings.currency || '€'}${Math.round(Number(row.dayRate))}/d` : '';
+          const deptMgrLine = (row.manager || deptRateTxt)
+            ? `<div class="mt-1 flex items-center justify-between gap-1 text-[10px] text-slate-500">
+                 <span class="truncate" title="${row.manager ? 'Manager: ' + escapeHtml(row.manager) : ''}">${escapeHtml(row.manager || '')}</span>
+                 ${deptRateTxt ? `<span class="font-mono font-semibold text-emerald-700 shrink-0">${escapeHtml(deptRateTxt)}</span>` : ''}
+               </div>`
+            : '';
           const deptRowHeaderHtml = isCompactRow
-            ? `<th scope="row" title="${escapeHtml(row.name)} (${avgPct}% avg)"
+            ? `<th scope="row" title="${escapeHtml(row.name)} (${avgPct}% avg • Peak ${peakPct > 990 ? '>100' : peakPct}%)"
                  class="meeting-row-accent sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 w-[62px] min-w-[62px] max-w-[62px] ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-middle font-normal text-center"
                  style="--row-accent:${row.color};">
                  <div class="flex flex-col items-center justify-center gap-2">
@@ -1636,21 +1865,48 @@
                    <span class="rounded-md shrink-0 tabular-nums ${s.rowBadge} ${badgeCls}">${avgPct}%</span>
                  </div>
                </th>`
-            : `<th scope="row" class="sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left">
-                 <div class="flex items-start justify-between gap-1.5">
-                   <div class="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                     ${reorderControlsHtml}
-                     <span class="w-2 h-8 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
-                     <div class="min-w-0">
-                       <div class="${s.rowName} text-slate-900 truncate">${escapeHtml(isCompactGrid ? row.code : row.name)}</div>
-                       <div class="${s.rowMeta} text-slate-500 flex items-center gap-1 mt-0.5 truncate">
-                         ${isCompactGrid ? `<span class="truncate">${escapeHtml(row.name)}</span>` : `<span class="font-mono font-bold">${escapeHtml(row.code)}</span><span>&bull;</span><span>Base ${row.defaultCapacity} FTE</span>`}
+            : (isCompactGrid
+                ? `<th scope="row" class="sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left">
+                     <div class="flex items-start justify-between gap-1">
+                       <div class="flex items-center gap-1.5 min-w-0">
+                         <span class="w-1.5 h-8 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
+                         <div class="min-w-0">
+                           <div class="${s.rowName} text-slate-900 truncate">${escapeHtml(row.code)}</div>
+                           <div class="${s.rowMeta} text-slate-500 truncate mt-0.5">${escapeHtml(row.name)}</div>
+                         </div>
+                       </div>
+                       <span class="rounded-md shrink-0 tabular-nums ${s.rowBadge} ${badgeCls}">${avgPct}%</span>
+                     </div>
+                   </th>`
+                : `<th scope="row" class="sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left">
+                     <div class="flex items-stretch gap-2 min-w-0">
+                       ${reorderControlsHtml}
+                       <span class="w-1.5 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
+                       <div class="min-w-0 flex-1">
+                         <div class="flex items-start justify-between gap-1.5">
+                           <div class="${s.rowName} text-slate-900 truncate leading-snug" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</div>
+                           <span class="rounded-md shrink-0 tabular-nums ${s.rowBadge} ${badgeCls}" title="Average utilisation across visible window">${avgPct}%</span>
+                         </div>
+                         <div class="${s.rowMeta} text-slate-500 flex flex-wrap items-center gap-1 mt-0.5">
+                           <span class="font-mono font-bold text-slate-700">${escapeHtml(row.code)}</span>
+                           <span>&bull;</span>
+                           <span class="tabular-nums">Base ${row.defaultCapacity} FTE</span>
+                           ${hasAnyOverride ? '<span class="px-1 rounded bg-sky-50 text-sky-700 border border-sky-200 text-[9px] font-bold" title="Has variable capacity override in visible window">Var</span>' : ''}
+                           ${overPeriods > 0 ? `<span class="px-1 rounded bg-rose-100 text-rose-700 text-[9px] font-extrabold" title="${overPeriods} period(s) exceed ${overT}%">&#9888; ${overPeriods}</span>` : ''}
+                         </div>
+                         <div class="mt-1.5">
+                           <div class="flex items-center justify-between gap-1 text-[9px] leading-none mb-0.5">
+                             <span class="${peakTextCls} tabular-nums">Peak ${peakPct > 990 ? '>100' : peakPct}%</span>
+                             <span class="text-slate-500 tabular-nums">${activeProjIds.size} proj${activeProjIds.size === 1 ? '' : 's'}</span>
+                           </div>
+                           <div class="w-full h-1 rounded-full bg-slate-200/80 overflow-hidden" aria-hidden="true">
+                             <div class="h-full ${avgBarColor} rounded-full" style="width:${Math.min(100, avgPct)}%"></div>
+                           </div>
+                         </div>
+                         ${deptMgrLine}
                        </div>
                      </div>
-                   </div>
-                   <span class="rounded-md shrink-0 ${s.rowBadge} ${badgeCls}">${avgPct}%</span>
-                 </div>
-               </th>`;
+                   </th>`);
 
           return `
             <tr class="group/row" data-row-id="${row.id}"
@@ -1663,9 +1919,18 @@
         } else if (ui.axis === 'timeline') {
           // Executive Timeline / Gantt Row View (one project per row, continuous effort bars + milestones)
           const rowSpotCls = spotlightId ? (spotlightId === row.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
+          const activeDeptIds = new Set();
           const perData = periods.map(pk => {
             const totFte = getProjTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
-            const activeDepts = visibleDepts.filter(d => getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations).hasData);
+            const activeDeptEntries = [];
+            visibleDepts.forEach(d => {
+              const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
+              if (a.hasData) {
+                activeDeptEntries.push({ dept: d, avgFte: a.avgFte });
+                activeDeptIds.add(d.id);
+              }
+            });
+            const activeDepts = activeDeptEntries.map(e => e.dept);
             const activeCapFte = activeDepts.reduce((acc, d) => acc + getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte, 0)
               || visibleDepts.reduce((acc, d) => acc + getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte, 0);
             const hasOverDept = activeDepts.some(d => {
@@ -1674,7 +1939,7 @@
               return dc > 0 ? Math.round((dt / dc) * 100) > overT : dt > 0;
             });
             const msInPeriod = getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => m.projectId === row.id);
-            return { pk, fte: totFte, activeDepts, activeCapFte, hasOverDept, msInPeriod };
+            return { pk, fte: totFte, activeDepts, activeDeptEntries, activeCapFte, hasOverDept, msInPeriod };
           });
           const peakFte = Math.max(0.1, ...perData.map(x => x.fte));
           let totalDays = 0;
@@ -1695,57 +1960,107 @@
             else if (prevHas && !nextHas) barEdgeCls = 'timeline-bar-end';
 
             const valStr = hasBar ? formatValue(fteToDisplayValue(x.fte, x.pk, ui.timeUnit)) : '';
+            const valCompact = hasBar ? formatValue(fteToDisplayValue(x.fte, x.pk, ui.timeUnit), ui.manpowerUnit, false) : '';
             const deptCodes = x.activeDepts.map(d => d.code).join(', ');
             const tentBarCls = row.tentative ? 'timeline-bar-tentative' : '';
             const botBarRing = x.hasOverDept ? 'bottleneck-pill-ring' : '';
 
-            let barHtml = `<div class="min-h-[2.15rem] flex items-center justify-center text-[10px] text-slate-300 opacity-0 group-hover/cell:opacity-100 transition">+</div>`;
+            let barHtml = isOverview
+              ? `<div class="min-h-[2.2rem] flex items-center justify-center text-[10px] text-slate-300 opacity-0 group-hover/cell:opacity-100 transition">+</div>`
+              : `<div class="min-h-[3.35rem] flex items-center justify-center text-xs text-slate-300 opacity-0 group-hover/cell:opacity-100 transition">+</div>`;
             if (hasBar) {
               const { fillHex, tier3, showIdentityDot } = resolveCardStyle(x.fte, x.activeCapFte, row.color);
               const capSharePct = x.activeCapFte > 0 ? Math.round((x.fte / x.activeCapFte) * 100) : 999;
               const tierTip = tier3 ? ` • ${tier3.ariaLabel}` : (colorMode === 'fte' ? ` • ${capSharePct > 990 ? '>100%' : capSharePct + '%'} cap` : '');
               const tipText = `[${row.code}] ${row.name} — ${valStr}${deptCodes ? ` (${deptCodes})` : ''}${tierTip}${x.hasOverDept ? ' • Overallocated dept' : ''}`;
 
-              if (colorMode === 'accent') {
+              if (isOverview) {
+                if (colorMode === 'accent') {
+                  barHtml = `
+                    <div class="timeline-bar timeline-bar-overview timeline-bar-accent ${barEdgeCls} ${tentBarCls} ${botBarRing} ${rowSpotCls}"
+                      title="${escapeHtml(tipText)}"
+                      style="--accent-color:${row.color};">
+                      ${ovShowBarLabel ? `<span class="truncate font-extrabold tabular-nums text-[10px]">${valCompact}</span>` : '<span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:' + row.color + '"></span>'}
+                    </div>`;
+                } else {
+                  const segTheme = getFilledCardTheme(fillHex);
+                  const intensity = colorMode === 'fill' ? (0.76 + 0.24 * (x.fte / peakFte)).toFixed(2) : '1';
+                  const tierBadgeOv = tier3
+                    ? `<span class="text-[9px] font-extrabold shrink-0" aria-hidden="true">${tier3.symbol}</span>`
+                    : '';
+                  barHtml = `
+                    <div class="timeline-bar timeline-bar-overview ${barEdgeCls} ${tentBarCls} ${botBarRing} ${rowSpotCls}"
+                      title="${escapeHtml(tipText)}"
+                      style="background-color:${segTheme.bg}; color:${segTheme.text}; border: ${row.tentative ? '1.5px dashed' : '1px solid'} ${segTheme.border}; opacity:${intensity};">
+                      <span class="inline-flex items-center justify-center gap-0.5 min-w-0 truncate">
+                        ${showIdentityDot && ovShowVals ? `<span class="w-1.5 h-1.5 rounded-full ring-1 ring-white/70 shrink-0" style="background:${row.color}" aria-hidden="true"></span>` : ''}
+                        ${tierBadgeOv}
+                        ${ovShowBarLabel ? `<span class="truncate font-extrabold tabular-nums text-[10px]">${valCompact}</span>` : ''}
+                      </span>
+                    </div>`;
+                }
+              } else if (colorMode === 'accent') {
+                const deptChipsAccent = x.activeDeptEntries.map(({ dept, avgFte }) => {
+                  const dv = formatValue(fteToDisplayValue(avgFte, x.pk, ui.timeUnit), ui.manpowerUnit, false);
+                  return `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px] font-bold leading-none shrink-0" title="${escapeHtml(dept.name)}: ${escapeHtml(formatValue(fteToDisplayValue(avgFte, x.pk, ui.timeUnit)))}"><span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${dept.color}"></span>${escapeHtml(dept.code)} <span class="font-sans font-semibold text-slate-500 tabular-nums">${dv}</span></span>`;
+                }).join('');
                 barHtml = `
-                  <div class="timeline-bar timeline-bar-accent ${barEdgeCls} ${tentBarCls} ${botBarRing} ${rowSpotCls}"
+                  <div class="timeline-bar timeline-bar-std timeline-bar-accent ${barEdgeCls} ${tentBarCls} ${botBarRing} ${rowSpotCls}"
                     title="${escapeHtml(tipText)}"
                     style="--accent-color:${row.color};">
-                    <span class="truncate font-extrabold tabular-nums">${valStr}</span>
-                    ${deptCodes ? `<span class="text-[9px] font-mono text-slate-500 truncate shrink-0">${escapeHtml(deptCodes)}</span>` : ''}
+                    <div class="flex items-center justify-between gap-1.5 w-full">
+                      <span class="truncate font-extrabold tabular-nums text-xs sm:text-sm text-slate-900">${valStr}</span>
+                      ${x.hasOverDept ? '<span class="px-1 py-0.5 rounded bg-rose-100 text-rose-700 text-[9px] font-extrabold shrink-0" title="Overallocated department">&#9888; Over</span>' : ''}
+                    </div>
+                    ${deptChipsAccent ? `<div class="flex flex-wrap items-center gap-1">${deptChipsAccent}</div>` : ''}
                   </div>`;
               } else {
                 const segTheme = getFilledCardTheme(fillHex);
                 const intensity = colorMode === 'fill' ? (0.76 + 0.24 * (x.fte / peakFte)).toFixed(2) : '1';
                 const idDotHtml = showIdentityDot
-                  ? `<span class="w-2 h-2 rounded-full ring-1 ring-white/70 shrink-0" style="background:${row.color}" aria-hidden="true"></span>`
+                  ? `<span class="w-2.5 h-2.5 rounded-full ring-1 ring-white/75 shrink-0" style="background:${row.color}" aria-hidden="true"></span>`
                   : '';
                 const tierBadgeHtml = tier3
-                  ? `<span class="inline-flex items-center justify-center px-1 rounded text-[9px] font-extrabold shrink-0" style="background-color:${segTheme.chipBg}; color:${segTheme.text};" title="${escapeHtml(tier3.ariaLabel)}" aria-hidden="true">${tier3.symbol}</span>`
+                  ? `<span class="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-extrabold shrink-0" style="background-color:${segTheme.chipBg}; color:${segTheme.text};" title="${escapeHtml(tier3.ariaLabel)}" aria-hidden="true">${tier3.symbol}</span>`
                   : '';
+                const deptChipsFilled = x.activeDeptEntries.map(({ dept, avgFte }) => {
+                  const dv = formatValue(fteToDisplayValue(avgFte, x.pk, ui.timeUnit), ui.manpowerUnit, false);
+                  return `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded font-mono text-[11px] font-bold leading-none shrink-0" style="background-color:${segTheme.chipBg}; color:${segTheme.text};" title="${escapeHtml(dept.name)}: ${escapeHtml(formatValue(fteToDisplayValue(avgFte, x.pk, ui.timeUnit)))}">${escapeHtml(dept.code)} <span class="font-sans font-semibold tabular-nums opacity-90">${dv}</span></span>`;
+                }).join('');
                 barHtml = `
-                  <div class="timeline-bar ${barEdgeCls} ${tentBarCls} ${botBarRing} ${rowSpotCls}"
+                  <div class="timeline-bar timeline-bar-std ${barEdgeCls} ${tentBarCls} ${botBarRing} ${rowSpotCls}"
                     title="${escapeHtml(tipText)}"
                     style="background-color:${segTheme.bg}; color:${segTheme.text}; border: ${row.tentative ? '1.5px dashed' : '1px solid'} ${segTheme.border}; opacity:${intensity};">
-                    <span class="inline-flex items-center gap-1 min-w-0">
-                      ${idDotHtml}
-                      ${tierBadgeHtml}
-                      <span class="truncate font-extrabold tabular-nums">${valStr}</span>
-                    </span>
-                    ${deptCodes ? `<span class="text-[9px] font-mono opacity-85 truncate shrink-0">${escapeHtml(deptCodes)}</span>` : ''}
+                    <div class="flex items-center justify-between gap-1.5 w-full">
+                      <span class="inline-flex items-center gap-1.5 min-w-0">
+                        ${idDotHtml}
+                        ${tierBadgeHtml}
+                        <span class="truncate font-extrabold tabular-nums text-xs sm:text-sm">${valStr}</span>
+                      </span>
+                      ${x.hasOverDept ? '<span class="px-1 py-0.5 rounded bg-rose-600 text-white text-[9px] font-extrabold shrink-0" title="Overallocated department">&#9888; Over</span>' : ''}
+                    </div>
+                    ${deptChipsFilled ? `<div class="flex flex-wrap items-center gap-1">${deptChipsFilled}</div>` : ''}
                   </div>`;
               }
             }
 
             const msHtml = x.msInPeriod.length > 0
-              ? `<div class="px-1.5 pt-1 space-y-0.5">${x.msInPeriod.map(m => {
-                  const drift = getMilestoneDriftDays(m);
-                  return `<div onclick="event.stopPropagation(); openMilestoneModal('${m.id}')" title="${escapeHtml(m.title)} (${m.date}${drift > 0 ? ', +' + drift + 'd slip' : ''})"
-                    class="px-1.5 py-0.5 rounded bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-900 text-[10px] font-bold flex items-center justify-between gap-1 cursor-pointer">
-                    <span class="truncate"><span class="text-violet-600 mr-0.5">&#9670;</span>${escapeHtml(m.title)}</span>
-                    ${drift > 0 ? `<span class="text-rose-600 shrink-0">+${drift}d</span>` : ''}
-                  </div>`;
-                }).join('')}</div>`
+              ? (isOverview
+                  ? `<div class="px-0.5 pt-0.5 flex flex-wrap items-center justify-center gap-0.5">${x.msInPeriod.map(m => {
+                      const drift = getMilestoneDriftDays(m);
+                      return `<div onclick="event.stopPropagation(); openMilestoneModal('${m.id}')" title="${escapeHtml(m.title)} (${m.date}${drift > 0 ? ', +' + drift + 'd slip' : ''})"
+                        class="px-1 py-0.5 rounded bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-900 text-[9px] font-bold truncate max-w-full cursor-pointer">
+                        <span class="text-violet-600">&#9670;</span>${ovShowVals ? ' ' + escapeHtml(m.title) : ''}
+                      </div>`;
+                    }).join('')}</div>`
+                  : `<div class="px-1 pt-1 space-y-0.5">${x.msInPeriod.map(m => {
+                      const drift = getMilestoneDriftDays(m);
+                      return `<div onclick="event.stopPropagation(); openMilestoneModal('${m.id}')" title="${escapeHtml(m.title)} (${m.date}${drift > 0 ? ', +' + drift + 'd slip' : ''})"
+                        class="px-1.5 py-0.5 rounded bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-900 text-[10px] font-bold flex items-center justify-between gap-1 cursor-pointer">
+                        <span class="truncate"><span class="text-violet-600 mr-0.5">&#9670;</span>${escapeHtml(m.title)}</span>
+                        ${drift > 0 ? `<span class="text-rose-600 shrink-0">+${drift}d</span>` : ''}
+                      </div>`;
+                    }).join('')}</div>`)
               : '';
 
             return `
@@ -1756,57 +2071,37 @@
               </td>`;
           }).join('');
 
-          const budgetDays = Number(row.budgetDays) || 0;
-          const allTimeDays = budgetDays > 0 ? getProjectTotalPlannedDays(row.id, db) : 0;
-          const budgetPct = budgetDays > 0 ? Math.round((allTimeDays / budgetDays) * 100) : 0;
-          const budgetBadgeHtml = budgetDays > 0
-            ? `<span class="px-1.5 py-0.5 rounded-md text-[9px] font-bold shrink-0 ${budgetPct > 100 ? 'bg-rose-100 text-rose-700' : budgetPct >= 85 ? 'bg-amber-100 text-amber-800' : 'bg-indigo-50 text-indigo-700'}">${Math.round(allTimeDays)}/${Math.round(budgetDays)}d</span>`
-            : '';
-          const plannedCost = showCost ? getProjectTotalPlannedCost(row.id, db) : 0;
-          const budgetCost = Number(row.budgetCost) || 0;
-          const costPct = budgetCost > 0 ? Math.round((plannedCost / budgetCost) * 100) : 0;
-          const costBadgeHtml = (showCost && (plannedCost > 0 || budgetCost > 0))
-            ? `<span title="Est. cost ${formatCurrency(plannedCost, db)}${budgetCost > 0 ? ' vs ' + formatCurrency(budgetCost, db) + ' budget (' + costPct + '%)' : ''}" class="px-1.5 py-0.5 rounded-md text-[9px] font-bold shrink-0 ${budgetCost > 0 && costPct > 100 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-50 text-emerald-700'}">${formatCurrency(plannedCost, db)}${budgetCost > 0 ? '/' + formatCurrency(budgetCost, db) : ''}</span>`
-            : '';
-          const tentTagHtml = row.tentative ? '<span class="px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-800 text-[9px] font-bold shrink-0">Pipeline</span>' : '';
-          const shiftBtnHtml = !isPresent && !isCompactGrid
-            ? `<button type="button" onclick="event.stopPropagation(); openShiftProjectModal('${row.id}')" title="Shift schedule for [${escapeHtml(row.code)}]"
-                 class="opacity-0 group-hover/row:opacity-100 px-1.5 py-0.5 rounded-md bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-700 text-[10px] font-bold transition shrink-0">&#8644; Shift</button>`
-            : '';
-
           const tlRowHeaderHtml = isCompactRow
             ? `<th scope="row" title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)}" onclick="toggleSpotlightProject('${row.id}')"
                  class="meeting-row-accent ${rowSpotCls} sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 w-[62px] min-w-[62px] max-w-[62px] ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-middle font-normal text-center cursor-pointer"
                  style="--row-accent:${row.color};">
-                 <div class="flex flex-col items-center justify-center gap-1.5">
-                   <div class="meeting-vertical-text text-xs font-extrabold text-slate-900 tracking-wide">${escapeHtml(row.name)}</div>
+                 <div class="flex flex-col items-center justify-center gap-1">
+                   <div class="meeting-vertical-text timeline-vertical-text text-xs font-extrabold text-slate-900 tracking-wide">${escapeHtml(row.name)}</div>
                    <span class="font-mono text-[10px] font-bold ${bottleneckCount > 0 ? 'text-rose-600' : 'text-slate-500'}">${escapeHtml(row.code)}</span>
                  </div>
                </th>`
-            : `<th scope="row" onclick="toggleSpotlightProject('${row.id}')" class="${rowSpotCls} sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-middle font-normal text-left cursor-pointer">
-                 <div class="flex items-start justify-between gap-1.5">
-                   <div class="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                     <span class="w-2 h-8 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
-                     <div class="min-w-0">
-                       <div class="${s.rowName} text-slate-900 truncate">${escapeHtml(isCompactGrid ? row.code : row.name)}</div>
-                       <div class="${s.rowMeta} text-slate-500 flex flex-wrap items-center gap-1 mt-0.5">
-                         <span class="font-mono font-bold">${escapeHtml(row.code)}</span><span>&bull;</span><span>${Math.round(totalDays)}d</span>${tentTagHtml}${budgetBadgeHtml}${costBadgeHtml}
-                       </div>
-                     </div>
-                   </div>
-                   ${!isCompactGrid ? `<div class="flex flex-col items-end gap-1 shrink-0"><span class="rounded-md ${s.rowBadge} ${statusCls}">${escapeHtml(row.status)}</span>${shiftBtnHtml}</div>` : ''}
-                 </div>
-               </th>`;
+            : buildProjectDetailedRowHeaderHtml({
+                row,
+                totalDays,
+                bottleneckCount,
+                activeDeptCount: activeDeptIds.size,
+                reorderControlsHtml: '',
+                statusCls,
+                rowSpotCls,
+                clickAttr: `onclick="toggleSpotlightProject('${row.id}')"`,
+              });
 
           return `<tr class="group/row" data-row-id="${row.id}">${tlRowHeaderHtml}${cellsHtml}</tr>`;
         } else {
           // Project Row View
           let totalDays = 0;
           let bottleneckCount = 0;
+          const activeDeptIds = new Set();
           periods.forEach(pk => {
             totalDays += fteToDisplayValue(getProjTotalAllocatedFte(row.id, pk, ui.timeUnit, db), pk, ui.timeUnit, 'days');
             visibleDepts.forEach(d => {
               if (!getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations).hasData) return;
+              activeDeptIds.add(d.id);
               const dCap = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
               const dTot = getDeptTotalAllocatedFte(d.id, pk, ui.timeUnit, db);
               const dPct = dCap > 0 ? Math.round((dTot / dCap) * 100) : (dTot > 0 ? 999 : 0);
@@ -1819,7 +2114,65 @@
           const cellsHtml = periods.map(pk => {
             const totFte = getProjTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
             const totStr = totFte > 0 ? formatValue(fteToDisplayValue(totFte, pk, ui.timeUnit)) : '—';
+            const totCompact = totFte > 0 ? formatValue(fteToDisplayValue(totFte, pk, ui.timeUnit), ui.manpowerUnit, false) : '—';
             const cmtCount = getCellTotalCommentCount(row.id, pk, 'project', ui.timeUnit, db);
+            const projMsList = getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => m.projectId === row.id);
+
+            if (isOverview) {
+              let hasPeriodOver = false;
+              const ovDeptChips = visibleDepts.map(d => {
+                const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
+                if (!a.hasData) return '';
+                if (searchQ && !matchesSearchForPair(d, row, pk)) return '';
+                const deptCap = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
+                const deptTot = getDeptTotalAllocatedFte(d.id, pk, ui.timeUnit, db);
+                const deptPct = deptCap > 0 ? Math.round((deptTot / deptCap) * 100) : 0;
+                const isDeptOver = deptPct > overT;
+                if (isDeptOver) hasPeriodOver = true;
+                const valNum = formatValue(fteToDisplayValue(a.avgFte, pk, ui.timeUnit), ui.manpowerUnit, false);
+                const valFull = formatValue(fteToDisplayValue(a.avgFte, pk, ui.timeUnit));
+                const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.avgFte, deptCap, d.color);
+                const tipTxt = `[${d.code}] ${d.name}: ${valFull} (Dept total: ${deptPct}%)${tier3 ? ' • ' + tier3.ariaLabel : ''}`;
+                const ringCls = isDeptOver ? 'bottleneck-pill-ring' : '';
+                if (useColorFill) {
+                  const ft = getFilledCardTheme(fillHex);
+                  return `<div onclick="event.stopPropagation(); openAllocationModal('${d.id}', '${row.id}', '${pk}')" title="${escapeHtml(tipTxt)}"
+                    class="${rowSpotCls} ${ringCls} px-1 py-0.5 rounded text-[9px] font-bold flex items-center justify-between gap-0.5 leading-tight truncate cursor-pointer"
+                    style="background-color:${ft.bg}; color:${ft.text}; border:1px solid ${ft.border};">
+                    <span class="inline-flex items-center gap-0.5 min-w-0 truncate">
+                      ${showIdentityDot ? `<span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${d.color}"></span>` : ''}
+                      <span class="font-mono truncate">${escapeHtml(d.code)}</span>
+                    </span>
+                    ${ovShowVals ? `<span class="tabular-nums shrink-0">${valNum}</span>` : ''}
+                  </div>`;
+                }
+                return `<div onclick="event.stopPropagation(); openAllocationModal('${d.id}', '${row.id}', '${pk}')" title="${escapeHtml(tipTxt)}"
+                  class="accent-card ${rowSpotCls} ${ringCls} px-1 py-0.5 rounded bg-white border border-slate-200/90 text-[9px] font-bold text-slate-800 flex items-center justify-between gap-0.5 leading-tight truncate cursor-pointer"
+                  style="--accent-color:${d.color}; --accent-w:3px; border-left:3px solid ${d.color};">
+                  <span class="font-mono truncate">${escapeHtml(d.code)}</span>
+                  ${ovShowVals ? `<span class="tabular-nums text-slate-600 shrink-0">${valNum}</span>` : ''}
+                </div>`;
+              }).join('');
+              const ovMsBadge = projMsList.length > 0
+                ? `<span title="${escapeHtml(projMsList.map(m => '◆ ' + m.title + ' (' + m.date + ')').join('\n'))}"
+                    onclick="event.stopPropagation(); openMilestoneModal('${projMsList[0].id}')"
+                    class="text-[9px] font-bold text-violet-700 shrink-0 cursor-pointer">&#9670;${projMsList.length > 1 ? projMsList.length : ''}</span>`
+                : '';
+              const hInfo = formatPeriodHeader(pk, ui.timeUnit);
+              return `
+                <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 matrix-cell-normal transition cursor-pointer"
+                  title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)} — ${escapeHtml(hInfo.title)}: ${totStr} • Click for full cell details"
+                  onclick="openCellDetailModal('${row.id}', '${pk}')">
+                  <div class="flex items-center justify-between gap-0.5 mb-1">
+                    <span class="text-[10px] font-extrabold tabular-nums ${totFte > 0 ? 'text-slate-800' : 'text-slate-300'}">${totCompact}</span>
+                    <span class="inline-flex items-center gap-0.5">
+                      ${hasPeriodOver ? '<span class="text-[9px] font-extrabold text-rose-600" title="Overallocated department">&#9888;</span>' : ''}
+                      ${ovMsBadge}
+                    </span>
+                  </div>
+                  <div class="space-y-0.5">${ovDeptChips}</div>
+                </td>`;
+            }
 
             const pills = visibleDepts.map(d => {
               const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
@@ -1940,8 +2293,7 @@
                 </div>`;
             }).join('');
 
-            const msHtml = getMilestonesInPeriod(pk, ui.timeUnit, db.milestones)
-              .filter(m => m.projectId === row.id)
+            const msHtml = projMsList
               .map(m => `
                 <div draggable="${!isPresent}"
                   data-drag-type="milestone" data-drag-ms="${m.id}" data-drag-period="${pk}"
@@ -1986,26 +2338,6 @@
               </td>`;
           }).join('');
 
-          const bottleneckBadgeHtml = bottleneckCount > 0
-            ? `<span title="${bottleneckCount} assigned department slot${bottleneckCount === 1 ? '' : 's'} overallocated (&gt;${overT}%)" class="px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-700 text-[9px] font-extrabold shrink-0">&#9888; ${bottleneckCount} Over</span>`
-            : '';
-          const budgetDays = Number(row.budgetDays) || 0;
-          const allTimeDays = budgetDays > 0 ? getProjectTotalPlannedDays(row.id, db) : 0;
-          const budgetPct = budgetDays > 0 ? Math.round((allTimeDays / budgetDays) * 100) : 0;
-          const budgetBadgeHtml = budgetDays > 0
-            ? `<span title="Total planned across all weeks: ${allTimeDays}d vs ${budgetDays}d budget (${budgetPct}%)" class="px-1.5 py-0.5 rounded-md text-[9px] font-bold shrink-0 ${budgetPct > 100 ? 'bg-rose-100 text-rose-700' : budgetPct >= 85 ? 'bg-amber-100 text-amber-800' : 'bg-indigo-50 text-indigo-700'}">${Math.round(allTimeDays)}/${Math.round(budgetDays)}d (${budgetPct}%)</span>`
-            : '';
-          const plannedCost = showCost ? getProjectTotalPlannedCost(row.id, db) : 0;
-          const budgetCost = Number(row.budgetCost) || 0;
-          const costPct = budgetCost > 0 ? Math.round((plannedCost / budgetCost) * 100) : 0;
-          const costBadgeHtml = (showCost && (plannedCost > 0 || budgetCost > 0))
-            ? `<span title="Est. total cost: ${formatCurrency(plannedCost, db)}${budgetCost > 0 ? ' vs ' + formatCurrency(budgetCost, db) + ' budget (' + costPct + '%)' : ''}" class="px-1.5 py-0.5 rounded-md text-[9px] font-bold shrink-0 ${budgetCost > 0 && costPct > 100 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-50 text-emerald-700'}">${formatCurrency(plannedCost, db)}${budgetCost > 0 ? '/' + formatCurrency(budgetCost, db) : ''}</span>`
-            : '';
-          const tentProjTagHtml = row.tentative ? '<span class="px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-800 text-[9px] font-bold shrink-0">Pipeline</span>' : '';
-          const shiftProjBtnHtml = !isPresent && !isCompactGrid
-            ? `<button type="button" onclick="event.stopPropagation(); openShiftProjectModal('${row.id}')" title="Shift all allocations, comments &amp; milestones for [${escapeHtml(row.code)}] by ±N weeks/months"
-                 class="opacity-0 group-hover/row:opacity-100 px-1.5 py-0.5 rounded-md bg-slate-100 hover:bg-indigo-100 text-slate-600 hover:text-indigo-700 text-[10px] font-bold transition shrink-0">&#8644; Shift</button>`
-            : '';
           const projRowHeaderHtml = isCompactRow
             ? `<th scope="row" title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)}${bottleneckCount ? ' — ' + bottleneckCount + ' overallocated dept slot(s)' : ''}"
                  onclick="toggleSpotlightProject('${row.id}')"
@@ -2016,21 +2348,16 @@
                    <span class="font-mono text-[10px] font-bold ${bottleneckCount > 0 ? 'text-rose-600' : 'text-slate-500'}">${bottleneckCount > 0 ? '&#9888; ' : ''}${escapeHtml(row.code)}</span>
                  </div>
                </th>`
-            : `<th scope="row" class="sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left">
-                 <div class="flex items-start justify-between gap-1.5">
-                   <div class="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                     ${reorderControlsHtml}
-                     <span class="w-2 h-8 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
-                     <div class="min-w-0">
-                       <div class="${s.rowName} text-slate-900 truncate">${escapeHtml(isCompactGrid ? row.code : row.name)}</div>
-                       <div class="${s.rowMeta} text-slate-500 flex flex-wrap items-center gap-1 mt-0.5">
-                         ${isCompactGrid ? `<span class="truncate">${escapeHtml(row.name)}</span>` : `<span class="font-mono font-bold">${escapeHtml(row.code)}</span><span>&bull;</span><span>${Math.round(totalDays)}d</span>${tentProjTagHtml}${budgetBadgeHtml}${costBadgeHtml}${bottleneckBadgeHtml}`}
-                       </div>
-                     </div>
-                   </div>
-                   ${!isCompactGrid ? `<div class="flex flex-col items-end gap-1 shrink-0"><span class="rounded-md ${s.rowBadge} ${statusCls}">${escapeHtml(row.status)}</span>${shiftProjBtnHtml}</div>` : ''}
-                 </div>
-               </th>`;
+            : buildProjectDetailedRowHeaderHtml({
+                row,
+                totalDays,
+                bottleneckCount,
+                activeDeptCount: activeDeptIds.size,
+                reorderControlsHtml,
+                statusCls,
+                rowSpotCls,
+                clickAttr: '',
+              });
 
           return `
             <tr class="group/row" data-row-id="${row.id}"
@@ -2051,6 +2378,13 @@
         });
         const pct = totC > 0 ? Math.round((totA / totC) * 100) : 0;
         const pctCls = pct > overT ? 'text-rose-400' : pct >= warnT ? 'text-amber-300' : 'text-emerald-300';
+        if (isOverview) {
+          return `
+            <td class="${s.footCell} border-l border-slate-700/70 text-center" title="Total: ${formatValue(fteToDisplayValue(totA, pk, ui.timeUnit))} / Cap: ${formatValue(fteToDisplayValue(totC, pk, ui.timeUnit))} (${pct}%)">
+              <div class="font-extrabold tabular-nums ${pctCls}">${pct}%</div>
+              <div class="${s.footSub} text-slate-300 tabular-nums mt-0.5 truncate">${formatValue(fteToDisplayValue(totA, pk, ui.timeUnit), ui.manpowerUnit, false)}</div>
+            </td>`;
+        }
         return `
           <td class="${s.footCell} border-l border-slate-700/70">
             <div class="flex items-center justify-between font-bold">
@@ -2073,8 +2407,6 @@
           </tfoot>`;
 
       const captionText = `Roadmap matrix grouped by ${ui.axis}, showing ${periods.length} ${ui.timeUnit}s in ${unitShortLabel()}.`;
-      const wrapperW = wrapper.clientWidth || wrapper.getBoundingClientRect().width || 1200;
-      const colGeo = computeFullColumnGeometry(wrapperW, periods.length, isCompactRow, isCompactGrid);
       const colGroupHtml = `<colgroup>
              <col data-sticky-col="1" style="width: ${colGeo.stickyW}px;" />
              ${periods.map(() => `<col data-period-col="1" style="width: ${colGeo.colW}px;" />`).join('')}

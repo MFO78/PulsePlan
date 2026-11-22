@@ -63,13 +63,17 @@
       autoReloadFromFile: true,
       pollIntervalMs: 15000,
       linkedFilePaths: {},            // Per-device saved folder/full paths keyed by filename (browser hides local disk paths for security)
+      welcomeSeen: false,             // First-use welcome/setup splash screen flag
     };
+
+    const VALID_HORIZONS = [1, 2, 3, 4, 6, 12, 18, 24];
 
     let liveDB = null;
     let demoDB = null;
     let whatIfDB = null;
     let activeDragPayload = null;
     let lastFocusedBeforeModal = null;
+    let deferredPwaPrompt = null;
 
     // Shared File Sync runtime state
     let linkedFileHandle = null;
@@ -84,7 +88,16 @@
     let syncWarningState = { type: null, fileName: '', dismissed: false };
 
     function getActiveHorizon() {
-      return Math.max(1, Math.min(24, Number(ui.horizon) || 4));
+      const n = Math.max(1, Math.min(24, parseInt(ui.horizon, 10) || 4));
+      if (VALID_HORIZONS.includes(n)) return n;
+      if (n <= 6) return n === 5 ? 6 : n;
+      if (n <= 15) return 12;
+      if (n <= 21) return 18;
+      return 24;
+    }
+
+    function isOverviewHorizon(count = getActiveHorizon()) {
+      return Number(count) > 6;
     }
 
     function getActiveCellColorMode() {

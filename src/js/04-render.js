@@ -81,11 +81,11 @@
       if (mHorSel) {
         const uS = ui.timeUnit === 'month' ? 'Mo' : 'Wk';
         const uP = ui.timeUnit === 'month' ? 'Mos' : 'Wks';
-        [...mHorSel.options].forEach(opt => {
-          const n = parseInt(opt.value, 10);
-          if (n) opt.textContent = `${n} ${n === 1 ? uS : uP}`;
-        });
-        mHorSel.value = String(getActiveHorizon());
+        const activeHor = getActiveHorizon();
+        mHorSel.innerHTML = VALID_HORIZONS
+          .map(n => `<option value="${n}" ${n === activeHor ? 'selected' : ''}>${n} ${n === 1 ? uS : uP}${n > 6 ? ' (Overview)' : ''}</option>`)
+          .join('');
+        mHorSel.value = String(activeHor);
       }
 
       const mDeptSel = document.getElementById('mFilterDeptSelect');
@@ -294,11 +294,21 @@
       if (horSel) {
         const uS = ui.timeUnit === 'month' ? 'Mo' : 'Wk';
         const uP = ui.timeUnit === 'month' ? 'Mos' : 'Wks';
-        const horOpts = [1, 2, 3, 4, 6, 8, 12, 16, 24];
-        horSel.innerHTML = horOpts
-          .map(n => `<option value="${n}" ${n === activeHorizon ? 'selected' : ''}>${n} ${n === 1 ? uS : uP}</option>`)
+        horSel.innerHTML = VALID_HORIZONS
+          .map(n => `<option value="${n}" ${n === activeHorizon ? 'selected' : ''}>${n} ${n === 1 ? uS : uP}${n > 6 ? ' (Overview)' : ''}</option>`)
           .join('');
         horSel.value = String(activeHorizon);
+      }
+      const stepBackBtn = document.getElementById('btnStepIntervalBack');
+      const stepFwdBtn = document.getElementById('btnStepIntervalFwd');
+      const unitWord = ui.timeUnit === 'month' ? (activeHorizon === 1 ? 'month' : 'months') : (activeHorizon === 1 ? 'week' : 'weeks');
+      if (stepBackBtn) {
+        stepBackBtn.title = `Jump back ${activeHorizon} ${unitWord} (Shift + Left Arrow)`;
+        stepBackBtn.setAttribute('aria-label', `Jump back ${activeHorizon} ${unitWord}`);
+      }
+      if (stepFwdBtn) {
+        stepFwdBtn.title = `Jump forward ${activeHorizon} ${unitWord} (Shift + Right Arrow)`;
+        stepFwdBtn.setAttribute('aria-label', `Jump forward ${activeHorizon} ${unitWord}`);
       }
 
       // Cell Card Color Mode Selector (Accent / Fill / By FTE / 3-Level)

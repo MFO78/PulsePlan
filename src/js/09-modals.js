@@ -1505,3 +1505,256 @@
       showToast('Demo sample data reset', 'success');
     }
 
+    /* ---------- First-Use Welcome & Setup Splash Screen + PWA Install Guide ---------- */
+
+    function openWelcomeModal(isAutoFirstRun = false) {
+      const hasLiveData = Boolean(liveDB && ((liveDB.departments || []).length > 0 || (liveDB.projects || []).length > 0));
+      const liveSummary = hasLiveData
+        ? `${liveDB.departments.length} dept${liveDB.departments.length === 1 ? '' : 's'} &bull; ${liveDB.projects.length} proj${liveDB.projects.length === 1 ? '' : 's'} ready`
+        : 'Start adding teams &amp; projects';
+      const installed = typeof isPwaInstalled === 'function' ? isPwaInstalled() : false;
+      const canNativeInstall = Boolean(deferredPwaPrompt) && !installed;
+      const checkedAttr = (isAutoFirstRun || ui.welcomeSeen) ? 'checked' : '';
+      const hasFs = typeof window !== 'undefined' && typeof window.showOpenFilePicker === 'function';
+
+      showModal(`
+        <div class="p-5 sm:p-6 space-y-4 text-xs">
+          <div class="w-10 h-1.5 rounded-full bg-slate-300 mx-auto sm:hidden" aria-hidden="true"></div>
+
+          <!-- Greeting Hero Header -->
+          <div class="flex items-start justify-between gap-3 pb-3 border-b border-slate-100">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center shadow-md shrink-0" aria-hidden="true">
+                <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 13h3l2.5-7 4 14 3-9 2 2H21" />
+                </svg>
+              </div>
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 id="modalTitle" class="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight">Welcome to PulsePlan</h3>
+                  <span class="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold">100% Offline &amp; Private</span>
+                </div>
+                <p class="text-[11px] sm:text-xs text-slate-500 mt-0.5">Company Roadmap, Capacity &amp; Utilisation Planner — all data stays on your device or your shared JSON file.</p>
+              </div>
+            </div>
+            <button type="button" aria-label="Close welcome dialog" onclick="dismissWelcomeModal()"
+              class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none shrink-0">&times;</button>
+          </div>
+
+          <!-- Step 1: Identify Yourself -->
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div class="min-w-0">
+              <label for="welcomeUserNameInput" class="block font-bold text-slate-800">1. Your Display Name</label>
+              <p class="text-[11px] text-slate-500">Used to stamp snapshots, backups, and the team change log.</p>
+            </div>
+            <input id="welcomeUserNameInput" type="text" maxlength="40" value="${escapeHtml(ui.userName || 'Project Mgr')}" placeholder="e.g. Marco Rossi"
+              class="w-full sm:w-52 px-3 py-2 rounded-xl border border-slate-200 bg-white font-semibold text-slate-800 shrink-0" />
+          </div>
+
+          <!-- Step 2: Quick-Start Paths -->
+          <div class="space-y-2">
+            <div class="font-bold text-slate-800">2. Choose How You Want to Start</div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <button type="button" onclick="welcomeQuickAction('setup')"
+                class="text-left p-3 rounded-xl border border-slate-200 bg-white hover:border-indigo-400 hover:bg-indigo-50/50 transition space-y-1.5 cursor-pointer">
+                <div class="flex items-center justify-between gap-1">
+                  <span class="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 font-extrabold flex items-center justify-center text-sm" aria-hidden="true">+</span>
+                  <span class="text-[10px] font-bold text-indigo-600">Setup &rarr;</span>
+                </div>
+                <div class="font-bold text-slate-900">Build Your Roadmap</div>
+                <p class="text-[11px] text-slate-500 leading-snug">Add departments, FTE capacities, and projects in Setup &amp; Data.</p>
+                <div class="text-[10px] font-semibold text-slate-400 pt-0.5">${liveSummary}</div>
+              </button>
+
+              <button type="button" onclick="welcomeQuickAction('demo')"
+                class="text-left p-3 rounded-xl border border-amber-200 bg-amber-50/50 hover:border-amber-400 hover:bg-amber-50 transition space-y-1.5 cursor-pointer">
+                <div class="flex items-center justify-between gap-1">
+                  <span class="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 font-extrabold flex items-center justify-center text-sm" aria-hidden="true">&#9733;</span>
+                  <span class="text-[10px] font-bold text-amber-700">${ui.demoMode ? 'Active' : 'Try Demo'} &rarr;</span>
+                </div>
+                <div class="font-bold text-slate-900">Explore Demo Sandbox</div>
+                <p class="text-[11px] text-slate-600 leading-snug">Test allocations, Timeline Gantt, and bottlenecks with isolated sample data.</p>
+                <div class="text-[10px] font-semibold text-amber-700 pt-0.5">Never touches Live DB</div>
+              </button>
+
+              <div class="p-3 rounded-xl border border-emerald-200 bg-emerald-50/40 space-y-1.5 flex flex-col justify-between">
+                <div class="space-y-1.5">
+                  <div class="flex items-center justify-between gap-1">
+                    <span class="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 font-extrabold flex items-center justify-center text-sm" aria-hidden="true">&#8644;</span>
+                    <span class="text-[10px] font-bold text-emerald-700">Team Sync</span>
+                  </div>
+                  <div class="font-bold text-slate-900">Load Shared Database</div>
+                  <p class="text-[11px] text-slate-600 leading-snug">Open a <code class="font-mono">.json</code> file from OneDrive, Google Drive, or SharePoint.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-1.5 pt-1">
+                  ${hasFs
+                    ? `<button type="button" onclick="welcomeQuickAction('openFile')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold transition cursor-pointer">Open &amp; Link</button>`
+                    : ''}
+                  <button type="button" onclick="welcomeQuickAction('importJson')" class="px-2.5 py-1 rounded-lg bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-800 text-[10px] font-bold transition cursor-pointer">Import JSON</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 3: Key Capabilities & Tips -->
+          <div class="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
+            <div class="font-bold text-slate-800">3. Quick Tips to Get the Most Out of PulsePlan</div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-slate-600">
+              <div class="flex items-start gap-2">
+                <span class="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-mono font-bold text-[10px] shrink-0">1-24</span>
+                <span><strong>Standard (1&ndash;6) &amp; Overview (12/18/24):</strong> Edit full cards up to 6 periods, or zoom out to 12&ndash;24 for multi-quarter scans. Use <strong>&laquo; / &raquo;</strong> (<code class="font-mono">Shift+&larr;/&rarr;</code>) to jump by interval.</span>
+              </div>
+              <div class="flex items-start gap-2">
+                <span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-mono font-bold text-[10px] shrink-0">VIEW</span>
+                <span><strong>3 Views + Row Labels:</strong> Switch between <strong>By Dept</strong>, <strong>By Project</strong>, and <strong>Timeline / Gantt</strong>, and toggle <strong>Vertical</strong> (compact) vs <strong>Detailed</strong> (rich metrics) row labels.</span>
+              </div>
+              <div class="flex items-start gap-2">
+                <span class="px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 font-mono font-bold text-[10px] shrink-0">SIM</span>
+                <span><strong>What-If &amp; Snapshots:</strong> Clone Live DB into a safe What-If sandbox before committing, or save baseline snapshots to track scope drift in Health &amp; Evolution.</span>
+              </div>
+              <div class="flex items-start gap-2">
+                <span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-mono font-bold text-[10px] shrink-0">APP</span>
+                <span><strong>Install Offline App:</strong> Install PulsePlan on Android, Windows, macOS, or iOS for a full-screen offline experience. Reopen this guide anytime from the <strong>Workspace Menu</strong>.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Footer Controls -->
+          <div class="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100">
+            <label class="inline-flex items-center gap-2 cursor-pointer text-[11px] text-slate-600 font-medium">
+              <input id="welcomeDontShowAgain" type="checkbox" ${checkedAttr} class="rounded text-indigo-600" />
+              <span>Don&rsquo;t show automatically on startup</span>
+            </label>
+            <div class="flex flex-wrap items-center gap-2 ml-auto">
+              ${!installed ? `<button type="button" onclick="welcomeQuickAction('install')"
+                class="px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold transition cursor-pointer">${canNativeInstall ? 'Install App' : 'Install Guide'}</button>` : ''}
+              <button type="button" onclick="welcomeQuickAction('manual')"
+                class="px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold transition cursor-pointer">User Manual</button>
+              <button type="button" onclick="dismissWelcomeModal()"
+                class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-xs transition cursor-pointer">Get Started</button>
+            </div>
+          </div>
+        </div>`, 'max-w-2xl');
+    }
+
+    function dismissWelcomeModal() {
+      const nameInp = document.getElementById('welcomeUserNameInput');
+      if (nameInp) {
+        const nextName = nameInp.value.trim();
+        if (nextName && nextName !== ui.userName) {
+          setActiveUserName(nextName, false);
+        }
+      }
+      const chk = document.getElementById('welcomeDontShowAgain');
+      ui.welcomeSeen = chk ? Boolean(chk.checked) : true;
+      persistUIPrefs();
+      closeModal();
+      renderAll();
+    }
+
+    function welcomeQuickAction(action) {
+      const nameInp = document.getElementById('welcomeUserNameInput');
+      if (nameInp) {
+        const nextName = nameInp.value.trim();
+        if (nextName && nextName !== ui.userName) {
+          setActiveUserName(nextName, false);
+        }
+      }
+      const chk = document.getElementById('welcomeDontShowAgain');
+      ui.welcomeSeen = chk ? Boolean(chk.checked) : true;
+      persistUIPrefs();
+      closeModal();
+
+      if (action === 'setup') {
+        if (ui.demoMode) ui.demoMode = false;
+        switchTab('data');
+      } else if (action === 'demo') {
+        if (!ui.demoMode) toggleDemoMode();
+        else switchTab('matrix');
+      } else if (action === 'openFile') {
+        if (ui.demoMode) ui.demoMode = false;
+        switchTab('sync');
+        setTimeout(() => openSharedDatabaseFile(), 80);
+      } else if (action === 'importJson') {
+        if (ui.demoMode) ui.demoMode = false;
+        switchTab('sync');
+        setTimeout(() => triggerJsonImportPicker(), 80);
+      } else if (action === 'manual') {
+        renderAll();
+        setTimeout(() => openManualModal(), 40);
+      } else if (action === 'install') {
+        renderAll();
+        setTimeout(() => promptPwaInstall(), 40);
+      } else {
+        renderAll();
+      }
+    }
+
+    function openPwaInstallHelpModal() {
+      const installed = typeof isPwaInstalled === 'function' ? isPwaInstalled() : false;
+      const ua = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+      const isIOS = /iPad|iPhone|iPod/i.test(ua) || (typeof navigator !== 'undefined' && navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      const isAndroid = /Android/i.test(ua);
+      const isLocalFile = typeof location !== 'undefined' && location.protocol === 'file:';
+
+      let bodyHtml = '';
+      if (installed) {
+        bodyHtml = `
+          <div class="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 space-y-1">
+            <div class="font-bold">PulsePlan is already installed on this device!</div>
+            <p class="text-[11px] leading-relaxed">You are running PulsePlan in standalone app mode with offline support enabled.</p>
+          </div>`;
+      } else if (isLocalFile) {
+        bodyHtml = `
+          <div class="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 space-y-1.5">
+            <div class="font-bold">Open over HTTPS to install as an app</div>
+            <p class="text-[11px] leading-relaxed">You are opening a local <code class="font-mono">file://</code> copy. Browsers only allow Progressive Web App installation when loaded over <strong>HTTPS</strong> (e.g. your GitHub Pages URL).</p>
+          </div>`;
+      } else if (isIOS) {
+        bodyHtml = `
+          <div class="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-2">
+            <div class="font-bold">Install on iPhone / iPad (Safari)</div>
+            <ol class="list-decimal pl-4 space-y-1 text-[11px] leading-relaxed">
+              <li>Tap the <strong>Share</strong> icon in Safari&rsquo;s toolbar (square with upward arrow).</li>
+              <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+              <li>Tap <strong>Add</strong> in the top-right corner to launch PulsePlan full-screen offline.</li>
+            </ol>
+          </div>`;
+      } else if (isAndroid) {
+        bodyHtml = `
+          <div class="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-2">
+            <div class="font-bold">Install on Android (Chrome / Edge)</div>
+            <ol class="list-decimal pl-4 space-y-1 text-[11px] leading-relaxed">
+              <li>Tap the browser menu <strong>(&#8942;)</strong> in the top-right corner.</li>
+              <li>Tap <strong>Install app</strong> (or <strong>Add to Home screen &rarr; Install</strong>).</li>
+              <li>Confirm <strong>Install</strong> &mdash; PulsePlan will appear in your app drawer as a genuine standalone app.</li>
+            </ol>
+            <p class="text-[10px] text-indigo-800/80">Tip: If you recently dismissed Chrome&rsquo;s install prompt or updated the app, reload once and tap <strong>Install</strong> in the header when it appears.</p>
+          </div>`;
+      } else {
+        bodyHtml = `
+          <div class="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-2">
+            <div class="font-bold">Install on Desktop (Chrome / Edge)</div>
+            <ol class="list-decimal pl-4 space-y-1 text-[11px] leading-relaxed">
+              <li>Look for the <strong>Install PulsePlan</strong> icon on the right side of the browser address bar, or open the browser menu <strong>(&#8942;) &rarr; Cast, save, and share &rarr; Install page as app</strong>.</li>
+              <li>Click <strong>Install</strong> to pin PulsePlan to your taskbar/dock with full offline support.</li>
+            </ol>
+            <p class="text-[10px] text-indigo-800/80">Note: Firefox and Safari on desktop do not expose the native 1-click install prompt; use Chrome or Edge for full PWA + Shared File Sync support.</p>
+          </div>`;
+      }
+
+      showModal(`
+        <div class="p-5 space-y-4 text-xs">
+          <div class="w-10 h-1.5 rounded-full bg-slate-300 mx-auto sm:hidden" aria-hidden="true"></div>
+          <div class="flex items-center justify-between gap-2">
+            <h3 id="modalTitle" class="text-base font-bold text-slate-900">Install PulsePlan App (PWA)</h3>
+            <button type="button" aria-label="Close dialog" onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none">&times;</button>
+          </div>
+          ${bodyHtml}
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+            <button type="button" onclick="closeModal()" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">Got It</button>
+          </div>
+        </div>`, 'max-w-md');
+    }
+
+
