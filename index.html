@@ -442,7 +442,6 @@ img, video { max-width: 100%; height: auto; }
 .group\/row:hover .group-hover\/row\:bg-slate-50 { background-color: #f8fafc; }
 .group\/row:hover .group-hover\/row\:opacity-100 { opacity: 1; }
 .hover\:bg-amber-100:hover { background-color: #fef3c7; }
-.hover\:bg-amber-200:hover { background-color: #fde68a; }
 .hover\:bg-amber-50:hover { background-color: #fffbeb; }
 .hover\:bg-amber-600:hover { background-color: #d97706; }
 .hover\:bg-amber-700:hover { background-color: #b45309; }
@@ -473,7 +472,6 @@ img, video { max-width: 100%; height: auto; }
 .hover\:border-indigo-300:hover { border-color: #a5b4fc; }
 .hover\:border-indigo-400:hover { border-color: #818cf8; }
 .hover\:border-violet-300:hover { border-color: #c4b5fd; }
-.hover\:brightness-95:hover { filter: brightness(0.95); }
 .hover\:text-emerald-700:hover { color: #047857; }
 .hover\:text-indigo-600:hover { color: #4f46e5; }
 .hover\:text-indigo-700:hover { color: #4338ca; }
@@ -820,32 +818,54 @@ img, video { max-width: 100%; height: auto; }
       background-color: var(--matrix-now-bg);
     }
     .spotlight-dimmed {
-      opacity: 0.22 !important;
-      filter: saturate(0.35);
+      opacity: 0.42 !important;
+      filter: saturate(0.45);
       transition: opacity 160ms ease, filter 160ms ease;
     }
+    .spotlight-dimmed:hover {
+      opacity: 0.80 !important;
+      filter: saturate(0.8);
+    }
     .spotlight-active {
-      box-shadow: 0 0 0 2.5px var(--spotlight-ring), 0 4px 12px -2px rgba(79, 70, 229, 0.25) !important;
+      box-shadow: 0 0 0 2px #ffffff, 0 0 0 3.5px #0f172a, 0 6px 14px -4px rgba(15, 23, 42, 0.18) !important;
+      position: relative;
+      z-index: 2;
+    }
+    html.dark .spotlight-active {
+      box-shadow: 0 0 0 2px #0f172a, 0 0 0 3.5px #f8fafc, 0 6px 14px -4px rgba(0, 0, 0, 0.55) !important;
+    }
+    .matrix-card {
+      transition: transform 120ms ease, box-shadow 120ms ease, opacity 160ms ease, filter 160ms ease;
+    }
+    .matrix-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px -2px rgba(15, 23, 42, 0.14);
+    }
+    html.dark .matrix-card:hover {
+      box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.45);
     }
     .matrix-cell-normal {
       background-color: #ffffff;
     }
     .matrix-cell-normal:hover {
-      background-color: rgba(248, 250, 252, 0.85);
+      background-color: #f8fafc;
+      box-shadow: inset 0 0 0 1.5px rgba(99, 102, 241, 0.28);
     }
     .matrix-cell-warn {
-      background-color: rgba(254, 243, 199, 0.45);
-      box-shadow: inset 0 2px 0 0 rgba(245, 158, 11, 0.45);
+      background-color: #ffffff;
+      box-shadow: inset 0 3px 0 0 #f59e0b;
     }
     .matrix-cell-warn:hover {
-      background-color: rgba(254, 243, 199, 0.68);
+      background-color: #f8fafc;
+      box-shadow: inset 0 3px 0 0 #f59e0b, inset 0 0 0 1.5px rgba(245, 158, 11, 0.35);
     }
     .matrix-cell-over {
-      background-color: rgba(255, 228, 230, 0.52);
-      box-shadow: inset 0 2.5px 0 0 rgba(244, 63, 94, 0.65);
+      background-color: #ffffff;
+      box-shadow: inset 0 3px 0 0 #f43f5e;
     }
     .matrix-cell-over:hover {
-      background-color: rgba(255, 228, 230, 0.75);
+      background-color: #f8fafc;
+      box-shadow: inset 0 3px 0 0 #f43f5e, inset 0 0 0 1.5px rgba(244, 63, 94, 0.35);
     }
     .matrix-pct-ok {
       background-color: #ecfdf5;
@@ -867,20 +887,23 @@ img, video { max-width: 100%; height: auto; }
     }
     html.dark .matrix-cell-normal:hover {
       background-color: var(--surface-hover) !important;
+      box-shadow: inset 0 0 0 1.5px rgba(129, 140, 248, 0.34);
     }
     html.dark .matrix-cell-warn {
       background-color: rgba(245, 158, 11, 0.07) !important;
-      box-shadow: inset 0 2px 0 0 rgba(245, 158, 11, 0.42);
+      box-shadow: inset 0 3px 0 0 rgba(245, 158, 11, 0.50);
     }
     html.dark .matrix-cell-warn:hover {
-      background-color: rgba(245, 158, 11, 0.12) !important;
+      background-color: rgba(245, 158, 11, 0.11) !important;
+      box-shadow: inset 0 3px 0 0 rgba(245, 158, 11, 0.65), inset 0 0 0 1.5px rgba(245, 158, 11, 0.35);
     }
     html.dark .matrix-cell-over {
       background-color: rgba(244, 63, 94, 0.09) !important;
-      box-shadow: inset 0 2.5px 0 0 rgba(244, 63, 94, 0.55);
+      box-shadow: inset 0 3px 0 0 rgba(244, 63, 94, 0.62);
     }
     html.dark .matrix-cell-over:hover {
-      background-color: rgba(244, 63, 94, 0.14) !important;
+      background-color: rgba(244, 63, 94, 0.13) !important;
+      box-shadow: inset 0 3px 0 0 rgba(244, 63, 94, 0.78), inset 0 0 0 1.5px rgba(244, 63, 94, 0.38);
     }
     html.dark .matrix-pct-ok {
       background-color: rgba(16, 185, 129, 0.16) !important;
@@ -896,6 +919,18 @@ img, video { max-width: 100%; height: auto; }
       background-color: rgba(244, 63, 94, 0.22) !important;
       color: #fda4af !important;
       border-color: rgba(244, 63, 94, 0.48) !important;
+    }
+    .heatmap-cell {
+      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+    }
+    .heatmap-cell:hover {
+      transform: translateY(-0.5px);
+      box-shadow: 0 0 0 2px #ffffff, 0 0 0 3.5px rgba(15, 23, 42, 0.35);
+      position: relative;
+      z-index: 2;
+    }
+    html.dark .heatmap-cell:hover {
+      box-shadow: 0 0 0 2px #0f172a, 0 0 0 3.5px rgba(248, 250, 252, 0.45);
     }
     .bottleneck-pill-ring {
       box-shadow: 0 0 0 1.5px #f43f5e !important;
@@ -5795,7 +5830,7 @@ img, video { max-width: 100%; height: auto; }
                   return `
                     <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
                       title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — Comment Only${escapeHtml(fullTooltipNote)}"
-                      class="group/pill ${spotlightCls} ${s.pillBox} rounded-xl cursor-pointer transition hover:brightness-95 shadow-2xs"
+                      class="matrix-card group/pill ${spotlightCls} ${s.pillBox} rounded-xl cursor-pointer shadow-2xs"
                       style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1.5px dashed ${filledTheme.border};">
                       <div class="flex items-center justify-between gap-1.5">
                         <div class="flex items-center gap-1.5 min-w-0">
@@ -5814,7 +5849,7 @@ img, video { max-width: 100%; height: auto; }
                 return `
                   <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
                     title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — Comment Only${escapeHtml(fullTooltipNote)}"
-                    class="accent-card group/pill ${spotlightCls} ${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer transition"
+                    class="matrix-card accent-card group/pill ${spotlightCls} ${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer"
                     style="--accent-color:${p.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${p.color};">
                     <div class="flex items-center justify-between gap-1.5">
                       <div class="flex items-center gap-1.5 min-w-0">
@@ -5846,7 +5881,7 @@ img, video { max-width: 100%; height: auto; }
                     onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')"
                     aria-label="${escapeHtml(p.name)}, ${valStr}, ${capShareTxt}${tierTooltip}"
                     title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${valStr} (${capShareTxt})${tierTooltip} • Click to edit, drag to move/copy${escapeHtml(fullTooltipNote)}"
-                    class="group/pill ${spotlightCls} ${s.pillBox} rounded-xl shadow-xs cursor-grab active:cursor-grabbing transition hover:brightness-95"
+                    class="matrix-card group/pill ${spotlightCls} ${s.pillBox} rounded-xl shadow-xs cursor-grab active:cursor-grabbing"
                     style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1px solid ${filledTheme.border};">
                     <div class="flex items-center justify-between gap-1.5">
                       <div class="flex items-center gap-1.5 min-w-0">
@@ -5877,7 +5912,7 @@ img, video { max-width: 100%; height: auto; }
                   ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                   onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')"
                   title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${valStr} (${capShareTxt}) • Click to edit, drag to move/copy${escapeHtml(fullTooltipNote)}"
-                  class="accent-card group/pill ${spotlightCls} ${s.pillBox} rounded-lg bg-white border border-slate-200/90 hover:border-indigo-300 shadow-2xs cursor-grab active:cursor-grabbing transition"
+                  class="matrix-card accent-card group/pill ${spotlightCls} ${s.pillBox} rounded-lg bg-white border border-slate-200/90 hover:border-indigo-300 shadow-2xs cursor-grab active:cursor-grabbing"
                   style="--accent-color:${p.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${p.color};">
                   <div class="flex items-center justify-between gap-1">
                     <div class="flex items-center gap-1.5 min-w-0">
@@ -6045,7 +6080,7 @@ img, video { max-width: 100%; height: auto; }
                 if (useColorFill) {
                   return `
                     <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
-                      class="${rowSpotCls} ${s.pillBox} rounded-xl cursor-pointer transition hover:brightness-95 shadow-2xs"
+                      class="matrix-card ${rowSpotCls} ${s.pillBox} rounded-xl cursor-pointer shadow-2xs"
                       style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1.5px dashed ${filledTheme.border};">
                       <div class="flex items-center justify-between gap-1.5">
                         <div class="flex items-center gap-1.5 min-w-0">
@@ -6059,7 +6094,7 @@ img, video { max-width: 100%; height: auto; }
                 }
                 return `
                   <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
-                    class="accent-card ${rowSpotCls} ${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer transition"
+                    class="matrix-card accent-card ${rowSpotCls} ${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer"
                     style="--accent-color:${d.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${d.color};">
                     <div class="flex items-center justify-between gap-1.5">
                       <span class="truncate font-semibold text-slate-700">${escapeHtml(d.name)}</span>
@@ -6096,7 +6131,7 @@ img, video { max-width: 100%; height: auto; }
                     ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                     onclick="event.stopPropagation(); openAllocationModal('${d.id}', '${row.id}', '${pk}')"
                     title="[${escapeHtml(d.code)}] ${escapeHtml(d.name)}: ${valStr} (${capShareTxt} • Dept total: ${deptPct}%)${isDeptOver ? ' — BOTTLENECK: Dept Overallocated' : ''}${tierTooltip}${escapeHtml(fullTooltipNote)}"
-                    class="group/pill ${rowSpotCls} ${bottleneckRingCls} ${s.pillBox} rounded-xl shadow-xs cursor-grab active:cursor-grabbing transition hover:brightness-95"
+                    class="matrix-card group/pill ${rowSpotCls} ${bottleneckRingCls} ${s.pillBox} rounded-xl shadow-xs cursor-grab active:cursor-grabbing"
                     style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1px solid ${filledTheme.border};">
                     <div class="flex items-center justify-between gap-1.5">
                       <div class="flex items-center gap-1.5 min-w-0">
@@ -6126,7 +6161,7 @@ img, video { max-width: 100%; height: auto; }
                   ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
                   onclick="event.stopPropagation(); openAllocationModal('${d.id}', '${row.id}', '${pk}')"
                   title="[${escapeHtml(d.code)}] ${escapeHtml(d.name)}: ${valStr} (${capShareTxt} • Dept total: ${deptPct}%)${isDeptOver ? ' — BOTTLENECK: Dept Overallocated' : ''}${escapeHtml(fullTooltipNote)}"
-                  class="accent-card group/pill ${rowSpotCls} ${bottleneckRingCls} ${s.pillBox} rounded-lg bg-white border border-slate-200/90 hover:border-indigo-300 shadow-2xs cursor-grab active:cursor-grabbing transition"
+                  class="matrix-card accent-card group/pill ${rowSpotCls} ${bottleneckRingCls} ${s.pillBox} rounded-lg bg-white border border-slate-200/90 hover:border-indigo-300 shadow-2xs cursor-grab active:cursor-grabbing"
                   style="--accent-color:${d.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${d.color};">
                   <div class="flex items-center justify-between gap-1">
                     <div class="flex items-center gap-1.5 min-w-0">
@@ -6181,7 +6216,7 @@ img, video { max-width: 100%; height: auto; }
               : '';
 
             return `
-              <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 bg-white hover:bg-slate-50/70 transition cursor-pointer"
+              <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 matrix-cell-normal transition cursor-pointer"
                 ondragover="handleCellDragOver(event)" ondragleave="handleCellDragLeave(event)"
                 ondrop="handleCellDrop(event, '${row.id}', '${pk}')"
                 onclick="openCellDetailModal('${row.id}', '${pk}')">
@@ -6777,15 +6812,15 @@ img, video { max-width: 100%; height: auto; }
               const pct = c > 0 ? Math.round((a / c) * 100) : (a > 0 ? 999 : 0);
               const aStr = formatValue(fteToDisplayValue(a, pk, ui.timeUnit));
               const cStr = formatValue(fteToDisplayValue(c, pk, ui.timeUnit));
-              let cellCls = 'bg-slate-50 text-slate-400 border-slate-200 hover:border-indigo-300';
-              if (pct > overT) cellCls = 'bg-rose-500 text-white border-rose-600 hover:brightness-95 font-extrabold';
-              else if (pct >= warnT) cellCls = 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200 font-bold';
-              else if (pct > 0) cellCls = 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100 font-bold';
+              let cellCls = 'bg-slate-50 text-slate-400 border-slate-200';
+              if (pct > overT) cellCls = 'bg-rose-500 text-white border-rose-600 font-extrabold';
+              else if (pct >= warnT) cellCls = 'bg-amber-100 text-amber-900 border-amber-300 font-bold';
+              else if (pct > 0) cellCls = 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold';
               return `
                 <td class="p-1 text-center border-b border-slate-100">
                   <button type="button" onclick="jumpToMatrixCell('${d.id}', '${pk}')"
                     title="${escapeHtml(d.name)} — ${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).title)}: ${aStr} / ${cStr} (${pct > 990 ? '>100%' : pct + '%'}) • Click to open in Roadmap"
-                    class="w-full min-w-[56px] px-2 py-1.5 rounded-lg border text-[11px] tabular-nums transition cursor-pointer ${cellCls}">
+                    class="heatmap-cell w-full min-w-[56px] px-2 py-1.5 rounded-lg border text-[11px] tabular-nums cursor-pointer ${cellCls}">
                     ${pct > 990 ? '&infin;' : pct + '%'}
                   </button>
                 </td>`;
