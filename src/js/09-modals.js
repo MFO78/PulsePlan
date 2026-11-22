@@ -1614,7 +1614,7 @@
               </div>
               <div class="flex items-start gap-2">
                 <span class="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 font-mono font-bold text-[10px] shrink-0">APP</span>
-                <span><strong>Install Offline App:</strong> Install PulsePlan on Android, Windows, macOS, or iOS for a full-screen offline experience. Reopen this guide anytime from the <strong>Workspace Menu</strong>.</span>
+                <span><strong>Install Offline App:</strong> Click your <strong>user name / initials (top-right) &rarr; Appearance &amp; Help &rarr; Install App</strong> (or the top-bar <strong>Install</strong> button when shown). You can also reopen this guide there anytime.</span>
               </div>
             </div>
           </div>
@@ -1724,17 +1724,20 @@
         bodyHtml = `
           <div class="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-2">
             <div class="font-bold">Install on Android (Chrome / Edge)</div>
+            <p class="text-[11px] leading-relaxed">For 1-tap install whenever Chrome/Edge enables it, click your <strong>user name / initials (top-right) &rarr; Appearance &amp; Help &rarr; Install App</strong> (or tap <strong>Install</strong> in the header).</p>
+            <div class="text-[11px] font-bold pt-0.5">If the 1-tap prompt isn&rsquo;t ready yet (e.g. first load or previously dismissed):</div>
             <ol class="list-decimal pl-4 space-y-1 text-[11px] leading-relaxed">
               <li>Tap the browser menu <strong>(&#8942;)</strong> in the top-right corner.</li>
               <li>Tap <strong>Install app</strong> (or <strong>Add to Home screen &rarr; Install</strong>).</li>
               <li>Confirm <strong>Install</strong> &mdash; PulsePlan will appear in your app drawer as a genuine standalone app.</li>
             </ol>
-            <p class="text-[10px] text-indigo-800/80">Tip: If you recently dismissed Chrome&rsquo;s install prompt or updated the app, reload once and tap <strong>Install</strong> in the header when it appears.</p>
           </div>`;
       } else {
         bodyHtml = `
           <div class="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-950 space-y-2">
             <div class="font-bold">Install on Desktop (Chrome / Edge)</div>
+            <p class="text-[11px] leading-relaxed">Whenever Chrome/Edge enables 1-click install, click your <strong>user name / initials (top-right) &rarr; Appearance &amp; Help &rarr; Install App</strong> (or the <strong>Install</strong> button in the header).</p>
+            <div class="text-[11px] font-bold pt-0.5">If the 1-click prompt isn&rsquo;t available right now (first visit before reload, already installed, or dismissed):</div>
             <ol class="list-decimal pl-4 space-y-1 text-[11px] leading-relaxed">
               <li>Look for the <strong>Install PulsePlan</strong> icon on the right side of the browser address bar, or open the browser menu <strong>(&#8942;) &rarr; Cast, save, and share &rarr; Install page as app</strong>.</li>
               <li>Click <strong>Install</strong> to pin PulsePlan to your taskbar/dock with full offline support.</li>
