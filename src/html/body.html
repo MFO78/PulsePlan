@@ -6,7 +6,7 @@
 
   <!-- ==================== TOP NAVIGATION HEADER (UNIFIED SINGLE-ROW BAR) ==================== -->
   <header class="relative z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/90">
-    <div class="layout-container max-w-[1600px] mx-auto px-2.5 sm:px-5 py-2 flex items-center justify-between gap-1.5 sm:gap-3">
+    <div class="layout-container w-full max-w-none mx-auto px-2.5 sm:px-5 lg:px-6 2xl:px-8 py-2 flex items-center justify-between gap-1.5 sm:gap-3">
       <!-- Brand Identity -->
       <div class="flex items-center gap-2 sm:gap-2.5 min-w-0">
         <div class="w-8 h-8 md:w-9 md:h-9 rounded-xl shadow-sm shrink-0 overflow-hidden" aria-hidden="true">
@@ -53,6 +53,15 @@
             <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
           </svg>
           <span id="mobileLayoutToggleLabel">Grid</span>
+        </button>
+
+        <!-- Genuine 1-Tap PWA Install Pill (revealed automatically when browser fires beforeinstallprompt) -->
+        <button id="pwaInstallHeaderBtn" type="button" onclick="promptPwaInstall()" title="Install PulsePlan as an offline app on this device"
+          class="hidden items-center gap-1 px-2.5 h-9 md:h-auto md:py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold transition whitespace-nowrap cursor-pointer">
+          <svg class="w-3.5 h-3.5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+          </svg>
+          <span>Install</span>
         </button>
 
         <!-- Sync Indicator Pill (Compact, clicks to Sync tab) -->
@@ -124,6 +133,26 @@
                 </span>
                 <span id="darkModeStateChip" class="text-[10px] font-bold text-slate-400">OFF</span>
               </button>
+              <button id="pwaInstallMenuBtn" type="button" onclick="closeHeaderWorkspaceMenu(); promptPwaInstall();"
+                class="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-indigo-50 hover:border-indigo-300 text-slate-700 hover:text-indigo-700 font-semibold transition cursor-pointer">
+                <span class="flex items-center gap-2">
+                  <svg class="w-3.5 h-3.5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                  <span id="pwaInstallMenuLabel">Install App</span>
+                </span>
+                <span id="pwaInstallMenuChip" class="text-[10px] font-bold text-indigo-600">PWA</span>
+              </button>
+              <button id="welcomeGuideBtn" type="button" onclick="closeHeaderWorkspaceMenu(); openWelcomeModal();"
+                class="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-indigo-50 hover:border-indigo-300 text-slate-700 hover:text-indigo-700 font-semibold transition cursor-pointer">
+                <span class="flex items-center gap-2">
+                  <svg class="w-3.5 h-3.5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                  </svg>
+                  <span>Welcome &amp; Setup Guide</span>
+                </span>
+                <span class="text-[10px] text-slate-400">Tour</span>
+              </button>
               <button id="manualBtn" type="button" onclick="closeHeaderWorkspaceMenu(); openManualModal();"
                 class="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-indigo-50 hover:border-indigo-300 text-slate-700 hover:text-indigo-700 font-semibold transition cursor-pointer">
                 <span class="flex items-center gap-2">
@@ -141,8 +170,8 @@
     </div>
 
     <!-- Demo Mode Banner -->
-    <div id="demoBanner" role="status" class="hidden bg-amber-50 border-t border-amber-200 text-amber-900 px-3 sm:px-4 py-1.5">
-      <div class="layout-container max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
+    <div id="demoBanner" role="status" class="hidden bg-amber-50 border-t border-amber-200 text-amber-900 px-3 sm:px-5 lg:px-6 2xl:px-8 py-1.5">
+      <div class="layout-container w-full max-w-none mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
         <div class="flex items-center gap-2">
           <span class="px-1.5 py-0.5 rounded bg-amber-200/80 text-amber-900 font-bold text-[10px] uppercase">Demo</span>
           <span class="hidden sm:inline">You are exploring sample company data. Changes here do <strong>not</strong> affect your Live database.</span>
@@ -156,8 +185,8 @@
     </div>
 
     <!-- What-If Scenario Sandbox Banner -->
-    <div id="whatIfBanner" role="status" class="hidden bg-violet-50 border-t border-violet-200 text-violet-900 px-3 sm:px-4 py-1.5">
-      <div class="layout-container max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
+    <div id="whatIfBanner" role="status" class="hidden bg-violet-50 border-t border-violet-200 text-violet-900 px-3 sm:px-5 lg:px-6 2xl:px-8 py-1.5">
+      <div class="layout-container w-full max-w-none mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
         <div class="flex flex-wrap items-center gap-2">
           <span class="px-1.5 py-0.5 rounded bg-violet-600 text-white font-bold text-[10px] uppercase">What-If Sandbox</span>
           <span id="whatIfDeltaSummary" class="font-medium">Testing changes on a temporary clone of your Live DB — shared file untouched.</span>
@@ -170,8 +199,8 @@
     </div>
 
     <!-- Shared File External Update Banner -->
-    <div id="externalUpdateBanner" role="alert" class="hidden bg-indigo-600 text-white px-4 py-2">
-      <div class="layout-container max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
+    <div id="externalUpdateBanner" role="alert" class="hidden bg-indigo-600 text-white px-4 lg:px-6 2xl:px-8 py-2">
+      <div class="layout-container w-full max-w-none mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
         <div class="flex items-center gap-2">
           <svg class="w-4 h-4 shrink-0 animate-pulse" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
           <span id="externalUpdateMsg" class="font-medium">New updates detected in the shared database file.</span>
@@ -184,8 +213,8 @@
     </div>
 
     <!-- Sync File Missing / Reconnect Warning Banner (desktop FS-API aware) -->
-    <div id="syncWarningBanner" role="alert" class="hidden border-t px-4 py-2">
-      <div class="layout-container max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
+    <div id="syncWarningBanner" role="alert" class="hidden border-t px-4 lg:px-6 2xl:px-8 py-2">
+      <div class="layout-container w-full max-w-none mx-auto flex flex-wrap items-center justify-between gap-2 text-xs">
         <div class="flex items-center gap-2">
           <svg class="w-4 h-4 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
@@ -198,7 +227,7 @@
   </header>
 
   <!-- ==================== MAIN WORKSPACE CONTAINER ==================== -->
-  <main id="mainWorkspace" tabindex="-1" class="layout-container max-w-[1600px] mx-auto px-3 sm:px-5 pt-3 md:pt-5 pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:pb-6 space-y-4 md:space-y-5 focus:outline-none">
+  <main id="mainWorkspace" tabindex="-1" class="layout-container w-full max-w-none mx-auto px-3 sm:px-5 lg:px-6 2xl:px-8 pt-3 md:pt-5 pb-[calc(5.25rem+env(safe-area-inset-bottom))] md:pb-6 space-y-4 md:space-y-5 focus:outline-none">
     <!-- ==================== END OF PART 1/6 (STITCH PART 2/6 IMMEDIATELY BELOW) ==================== -->
     <!-- ==================== TAB 1: ROADMAP MATRIX ==================== -->
     <section id="tab-matrix" role="tabpanel" aria-labelledby="nav-matrix" class="space-y-3 md:space-y-4">
@@ -258,15 +287,17 @@
               <button id="time-week" type="button" aria-pressed="false" onclick="setTimeUnit('week')" class="px-2.5 py-1 rounded-lg text-xs font-semibold transition">Weeks</button>
             </div>
 
-            <!-- Date Navigation -->
+            <!-- Date Navigation (Step by 1 period or Jump by Full Interval) -->
             <div role="group" aria-label="Navigate timeline" class="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 overflow-hidden text-xs">
-              <button type="button" onclick="shiftStartPeriod(-1)" title="Previous period (Left Arrow)" aria-label="Previous period" class="px-2.5 py-1.5 hover:bg-slate-100 text-slate-600 font-bold transition">&lsaquo;</button>
+              <button id="btnStepIntervalBack" type="button" onclick="shiftStartByInterval(-1)" title="Jump back by full visible interval (Shift + Left Arrow)" aria-label="Jump back by full interval" class="px-2 py-1.5 hover:bg-slate-100 text-slate-600 font-bold border-r border-slate-200 transition">&laquo;</button>
+              <button type="button" onclick="shiftStartPeriod(-1)" title="Previous period (Left Arrow)" aria-label="Previous period" class="px-2 py-1.5 hover:bg-slate-100 text-slate-600 font-bold transition">&lsaquo;</button>
               <button type="button" onclick="jumpToToday()" title="Jump to current period (T)" class="px-2.5 py-1.5 hover:bg-slate-100 text-slate-700 font-semibold border-x border-slate-200 transition">Today</button>
-              <button type="button" onclick="shiftStartPeriod(1)" title="Next period (Right Arrow)" aria-label="Next period" class="px-2.5 py-1.5 hover:bg-slate-100 text-slate-600 font-bold transition">&rsaquo;</button>
+              <button type="button" onclick="shiftStartPeriod(1)" title="Next period (Right Arrow)" aria-label="Next period" class="px-2 py-1.5 hover:bg-slate-100 text-slate-600 font-bold transition">&rsaquo;</button>
+              <button id="btnStepIntervalFwd" type="button" onclick="shiftStartByInterval(1)" title="Jump forward by full visible interval (Shift + Right Arrow)" aria-label="Jump forward by full interval" class="px-2 py-1.5 hover:bg-slate-100 text-slate-600 font-bold border-l border-slate-200 transition">&raquo;</button>
             </div>
 
-            <!-- Unified Horizon Stepper (1-24 Wks / Mos) -->
-            <div class="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 overflow-hidden text-xs" title="Number of weeks or months shown (press 1-4 for quick switch)">
+            <!-- Unified Horizon Stepper (1-6 Standard View + 12/18/24 Simplified Overview) -->
+            <div class="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 overflow-hidden text-xs" title="1–6: Standard View • 12/18/24: Simplified Overview (press 1-4 for quick switch)">
               <button type="button" onclick="stepHorizon(-1)" title="Show fewer periods" aria-label="Show fewer periods" class="px-2 py-1.5 hover:bg-slate-100 text-slate-600 font-bold transition">&minus;</button>
               <label for="horizonSelect" class="sr-only">Number of periods</label>
               <select id="horizonSelect" onchange="setHorizon(this.value)"
@@ -276,10 +307,9 @@
                 <option value="3">3 Mos</option>
                 <option value="4" selected>4 Mos</option>
                 <option value="6">6 Mos</option>
-                <option value="8">8 Mos</option>
-                <option value="12">12 Mos</option>
-                <option value="16">16 Mos</option>
-                <option value="24">24 Mos</option>
+                <option value="12">12 Mos (Overview)</option>
+                <option value="18">18 Mos (Overview)</option>
+                <option value="24">24 Mos (Overview)</option>
               </select>
               <button type="button" onclick="stepHorizon(1)" title="Show more periods" aria-label="Show more periods" class="px-2 py-1.5 hover:bg-slate-100 text-slate-600 font-bold transition">+</button>
             </div>
@@ -1194,12 +1224,14 @@
           <label for="mHorizonSelect" class="block text-[11px] font-bold uppercase tracking-wider text-slate-400">Visible Horizon</label>
           <select id="mHorizonSelect" onchange="setHorizon(this.value)"
             class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-800">
+            <option value="1">1 Mo</option>
             <option value="2">2 Mos</option>
+            <option value="3">3 Mos</option>
             <option value="4">4 Mos</option>
             <option value="6">6 Mos</option>
-            <option value="8">8 Mos</option>
-            <option value="12">12 Mos</option>
-            <option value="16">16 Mos</option>
+            <option value="12">12 Mos (Overview)</option>
+            <option value="18">18 Mos (Overview)</option>
+            <option value="24">24 Mos (Overview)</option>
           </select>
         </div>
       </div>
@@ -1318,6 +1350,11 @@
           class="w-full min-h-[48px] px-4 rounded-xl bg-white border border-slate-200 text-slate-700 font-bold text-sm flex items-center justify-between gap-2 transition">
           <span class="truncate">Share / Backup JSON File</span>
           <span class="text-xs text-slate-500 shrink-0">Drive / Files</span>
+        </button>
+        <button id="mPwaInstallBtn" type="button" onclick="document.getElementById('mobileQuickAddSheet').close(); promptPwaInstall();"
+          class="w-full min-h-[48px] px-4 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 font-bold text-sm flex items-center justify-between gap-2 transition">
+          <span class="truncate">Install PulsePlan App</span>
+          <span id="mPwaInstallChip" class="text-xs text-indigo-700 shrink-0">Offline PWA</span>
         </button>
       </div>
     </div>
