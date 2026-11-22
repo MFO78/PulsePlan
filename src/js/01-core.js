@@ -136,9 +136,15 @@
       if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
         hex = '#4f46e5';
       }
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
+      let r = parseInt(hex.slice(1, 3), 16);
+      let g = parseInt(hex.slice(3, 5), 16);
+      let b = parseInt(hex.slice(5, 7), 16);
+      if (typeof ui !== 'undefined' && ui && ui.darkMode) {
+        r = Math.round(r * 0.82 + 15 * 0.18);
+        g = Math.round(g * 0.82 + 23 * 0.18);
+        b = Math.round(b * 0.82 + 42 * 0.18);
+        hex = '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+      }
       const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
       const isLight = luminance > 0.62;
       return {

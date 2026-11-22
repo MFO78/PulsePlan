@@ -1057,9 +1057,11 @@
             const allocFte = getDeptTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
             const pct = capFte > 0 ? Math.round((allocFte / capFte) * 100) : (allocFte > 0 ? 999 : 0);
 
-            const cellBg = pct > overT ? 'bg-rose-50/70' : pct >= warnT ? 'bg-amber-50/60' : 'bg-white';
+            const cellBg = pct > overT ? 'bg-rose-50/50' : pct >= warnT ? 'bg-amber-50/40' : 'bg-white';
+            const cellHoverBg = pct > overT ? 'hover:bg-rose-50' : pct >= warnT ? 'hover:bg-amber-50' : 'hover:bg-slate-50/70';
             const barColor = pct > overT ? 'bg-rose-500' : pct >= warnT ? 'bg-amber-500' : 'bg-emerald-500';
-            const pctBadgeCls = pct > overT ? 'bg-rose-100 text-rose-700' : pct >= warnT ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100/80 text-emerald-800';
+            const pctColorCls = pct > overT ? 'text-rose-600' : pct >= warnT ? 'text-amber-700' : 'text-emerald-700';
+            const pctBadgeCls = pct > overT ? 'bg-rose-100 text-rose-700' : pct >= warnT ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
 
             const allocDisp = formatValue(fteToDisplayValue(allocFte, pk, ui.timeUnit), ui.manpowerUnit, false);
             const capDisp = formatValue(fteToDisplayValue(capFte, pk, ui.timeUnit), ui.manpowerUnit, true);
@@ -1240,7 +1242,7 @@
                        <svg class="w-3 h-3" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>
                        ${cmtCount > 0 ? `<span>${cmtCount}</span>` : ''}
                      </button>
-                     <span class="px-1.5 py-0.5 rounded-md ${s.pctText} tabular-nums ${pctBadgeCls}">
+                     <span class="${s.pctText} tabular-nums ${pctColorCls}">
                        ${pct > 990 ? '&infin;' : pct + '%'}
                      </span>
                    </div>
@@ -1258,7 +1260,7 @@
               : '';
 
             return `
-              <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 ${cellBg} transition cursor-pointer hover:bg-slate-50/70"
+              <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 ${cellBg} transition cursor-pointer ${cellHoverBg}"
                 ondragover="handleCellDragOver(event)" ondragleave="handleCellDragLeave(event)"
                 ondrop="handleCellDrop(event, '${row.id}', '${pk}')"
                 onclick="openCellDetailModal('${row.id}', '${pk}')">
