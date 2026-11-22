@@ -56,6 +56,7 @@
       dragMode: 'move',
       userName: 'Project Mgr',
       recentUsers: [],
+      removedUsers: [],
       autoSaveToFile: true,
       autoReloadFromFile: true,
       pollIntervalMs: 15000,

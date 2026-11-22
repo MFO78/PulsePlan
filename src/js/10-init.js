@@ -36,7 +36,11 @@
       persistUIPrefs();
       renderAll();
       if (isMobileViewport()) {
-        try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) {}
+        try {
+          const mainEl = document.getElementById('mainWorkspace');
+          if (mainEl && typeof mainEl.scrollTo === 'function') mainEl.scrollTo({ top: 0, behavior: 'smooth' });
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } catch (e) {}
       }
     }
 
@@ -594,6 +598,7 @@
           ui.filterAtRiskOnly = false;
           ui.filterHasNotesOnly = false;
           if (!Array.isArray(ui.recentUsers)) ui.recentUsers = [];
+          if (!Array.isArray(ui.removedUsers)) ui.removedUsers = [];
         } else {
           ui.pdfOptions = { colorMode: 'match', colsPerPage: 6, ...ui.pdfOptions };
         }

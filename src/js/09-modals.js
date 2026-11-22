@@ -201,15 +201,17 @@
 
     function getSuggestedTeamUsers() {
       const db = getActiveDB();
+      const hidden = new Set((ui.removedUsers || []).map(u => String(u || '').trim().toLowerCase()).filter(Boolean));
       const seen = new Map();
-      const addName = (n) => {
+      const addName = (n, allowHidden = false) => {
         const clean = String(n || '').trim();
         if (!clean) return;
         const key = clean.toLowerCase();
+        if (!allowHidden && hidden.has(key)) return;
         if (!seen.has(key)) seen.set(key, clean);
       };
-      addName(ui.userName);
-      (ui.recentUsers || []).forEach(addName);
+      addName(ui.userName, true);
+      (ui.recentUsers || []).forEach(u => addName(u));
       (db.departments || []).forEach(d => addName(d.manager));
       (db.projects || []).forEach(p => addName(p.owner));
       (db.changeLog || []).slice(0, 30).forEach(l => addName(l.user));
@@ -219,26 +221,71 @@
 
     function setActiveUserName(newName, shouldRender = true) {
       const clean = String(newName || '').trim() || 'Project Mgr';
+      const key = clean.toLowerCase();
       ui.userName = clean;
-      const list = Array.isArray(ui.recentUsers) ? ui.recentUsers.filter(u => u.toLowerCase() !== clean.toLowerCase()) : [];
+      if (Array.isArray(ui.removedUsers)) {
+        ui.removedUsers = ui.removedUsers.filter(u => String(u || '').trim().toLowerCase() !== key);
+      }
+      const list = Array.isArray(ui.recentUsers) ? ui.recentUsers.filter(u => u.toLowerCase() !== key) : [];
       list.unshift(clean);
       ui.recentUsers = list.slice(0, 10);
       persistUIPrefs();
       if (shouldRender) renderAll();
     }
 
+    function removeQuickUser(name) {
+      const clean = String(name || '').trim();
+      if (!clean) return;
+      const key = clean.toLowerCase();
+
+      if (!Array.isArray(ui.removedUsers)) ui.removedUsers = [];
+      if (!ui.removedUsers.some(u => String(u || '').trim().toLowerCase() === key)) {
+        ui.removedUsers.push(clean);
+      }
+      ui.recentUsers = (Array.isArray(ui.recentUsers) ? ui.recentUsers : []).filter(
+        u => String(u || '').trim().toLowerCase() !== key
+      );
+
+      // If removing the currently active user, fall back to the next remaining suggested user (or Project Mgr)
+      if ((ui.userName || '').trim().toLowerCase() === key) {
+        const prevName = ui.userName;
+        ui.userName = '';
+        const remaining = getSuggestedTeamUsers();
+        ui.userName = remaining[0] || (key === 'project mgr' ? prevName : 'Project Mgr');
+      }
+
+      persistUIPrefs();
+      renderAll();
+      openUserSwitcherModal();
+      showToast(`Removed "${clean}" from users`, 'info');
+    }
+
+    function restoreRemovedUsers() {
+      ui.removedUsers = [];
+      persistUIPrefs();
+      openUserSwitcherModal();
+      showToast('Restored removed users', 'info');
+    }
+
     function openUserSwitcherModal() {
       const current = (ui.userName || 'Project Mgr').trim();
       const suggestions = getSuggestedTeamUsers();
+      const removedCount = Array.isArray(ui.removedUsers) ? ui.removedUsers.length : 0;
 
       const chipsHtml = suggestions.map(name => {
         const isCur = name.toLowerCase() === current.toLowerCase();
+        const canRemove = suggestions.length > 1 || name.toLowerCase() !== 'project mgr';
         return `
-          <button type="button" data-user-name="${escapeHtml(name)}" onclick="selectQuickUser(this.dataset.userName)"
-            class="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition ${isCur ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700'}">
-            <span class="w-5 h-5 rounded-md ${isCur ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-700'} text-[9px] font-extrabold flex items-center justify-center shrink-0">${escapeHtml(getUserInitials(name))}</span>
-            <span>${escapeHtml(name)}</span>
-          </button>`;
+          <div class="inline-flex items-center rounded-xl border text-xs font-semibold transition overflow-hidden ${isCur ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-slate-50 text-slate-700'}">
+            <button type="button" data-user-name="${escapeHtml(name)}" onclick="selectQuickUser(this.dataset.userName)"
+              class="inline-flex items-center gap-1.5 pl-2.5 ${canRemove ? 'pr-1.5' : 'pr-3'} py-1.5 hover:bg-slate-100 transition cursor-pointer">
+              <span class="w-5 h-5 rounded-md ${isCur ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-700'} text-[9px] font-extrabold flex items-center justify-center shrink-0">${escapeHtml(getUserInitials(name))}</span>
+              <span>${escapeHtml(name)}</span>
+            </button>
+            ${canRemove ? `<button type="button" data-user-name="${escapeHtml(name)}" onclick="removeQuickUser(this.dataset.userName)"
+              title="Remove ${escapeHtml(name)}" aria-label="Remove user ${escapeHtml(name)}"
+              class="px-2 py-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 font-bold leading-none transition cursor-pointer">&times;</button>` : ''}
+          </div>`;
       }).join('');
 
       showModal(`
@@ -262,9 +309,12 @@
                 class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/30" />
             </div>
 
-            ${suggestions.length > 0 ? `
+            ${suggestions.length > 0 || removedCount > 0 ? `
               <div class="space-y-1.5">
-                <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Quick Switch</div>
+                <div class="flex items-center justify-between gap-2">
+                  <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Quick Switch</div>
+                  ${removedCount > 0 ? `<button type="button" onclick="restoreRemovedUsers()" class="text-[11px] font-semibold text-indigo-600 hover:underline cursor-pointer">Restore ${removedCount} removed</button>` : ''}
+                </div>
                 <div class="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto pr-1">${chipsHtml}</div>
               </div>` : ''}
 

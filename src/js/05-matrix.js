@@ -663,12 +663,15 @@
 
       const theadRect = realThead.getBoundingClientRect();
       const tableRect = realTable.getBoundingClientRect();
-      const shouldShow = theadRect.top < 0 && tableRect.bottom > theadRect.height;
+      const mainEl = document.getElementById('mainWorkspace');
+      const topBound = isMobileViewport() && mainEl ? Math.max(0, mainEl.getBoundingClientRect().top) : 0;
+      const shouldShow = theadRect.top < topBound && tableRect.bottom > (topBound + theadRect.height);
 
       if (shouldShow) {
         const wasHidden = floating.classList.contains('hidden');
         if (wasHidden) floating.classList.remove('hidden');
         const wrapperRect = wrapper.getBoundingClientRect();
+        floating.style.top = `${topBound}px`;
         floating.style.left = `${wrapperRect.left}px`;
         floating.style.width = `${wrapperRect.width}px`;
         if (wasHidden) syncMatrixFloatingHeaderMetrics();
@@ -706,8 +709,12 @@
     function setupMatrixFloatingHeaderSync() {
       const wrapper = document.getElementById('matrixWrapper');
       const inner = document.getElementById('matrixFloatingHeaderInner');
+      const mainEl = document.getElementById('mainWorkspace');
 
       window.addEventListener('scroll', updateMatrixFloatingHeaderVisibility, { passive: true });
+      if (mainEl) {
+        mainEl.addEventListener('scroll', updateMatrixFloatingHeaderVisibility, { passive: true });
+      }
       window.addEventListener('resize', () => {
         syncMatrixFloatingHeaderMetrics();
         updateMatrixFloatingHeaderVisibility();

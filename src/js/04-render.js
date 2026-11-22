@@ -127,8 +127,8 @@
         if (mBtn) {
           mBtn.setAttribute('aria-selected', String(active));
           mBtn.className = active
-            ? 'flex flex-col items-center justify-center gap-0.5 py-1.5 min-h-[48px] rounded-xl text-[11px] font-extrabold text-indigo-600 bg-indigo-50/80 transition relative'
-            : 'flex flex-col items-center justify-center gap-0.5 py-1.5 min-h-[48px] rounded-xl text-[11px] font-semibold text-slate-500 hover:text-slate-800 transition relative';
+            ? 'flex flex-col items-center justify-center gap-0.5 py-1 min-h-[44px] rounded-xl text-[11px] font-extrabold text-indigo-600 bg-indigo-50/80 transition relative'
+            : 'flex flex-col items-center justify-center gap-0.5 py-1 min-h-[44px] rounded-xl text-[11px] font-semibold text-slate-500 hover:text-slate-800 transition relative';
         }
         if (sec) sec.classList.toggle('hidden', !active);
       });
