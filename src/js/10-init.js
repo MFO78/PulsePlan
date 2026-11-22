@@ -162,7 +162,9 @@
       renderAll();
       showToast(
         ui.presentMode
-          ? 'Present Mode ON — clean fullscreen view (press Esc or F to exit)'
+          ? (isMobileViewport()
+              ? 'Present Mode ON — tap Exit Present to return'
+              : 'Present Mode ON — clean fullscreen view (press Esc or F to exit)')
           : 'Present Mode OFF',
         'info'
       );
@@ -315,11 +317,12 @@
       if (ui.activeTab === 'matrix') {
         if (shouldRenderMobileCards()) renderMobileMatrixCards();
         else renderMatrix();
+        const hasAnyFilter = Boolean(ui.matrixSearch.trim() || ui.filterOverOnly || ui.filterAtRiskOnly || ui.filterHasNotesOnly || ui.filterDept !== 'all' || ui.filterProj !== 'all' || ui.spotlightProjId);
         const clearBtn = document.getElementById('btnClearMatrixFilters');
-        if (clearBtn) {
-          const hasAnyFilter = Boolean(ui.matrixSearch.trim() || ui.filterOverOnly || ui.filterAtRiskOnly || ui.filterHasNotesOnly || ui.filterDept !== 'all' || ui.filterProj !== 'all');
-          clearBtn.classList.toggle('hidden', !hasAnyFilter);
-        }
+        if (clearBtn) clearBtn.classList.toggle('hidden', !hasAnyFilter);
+        const mClearBtn = document.getElementById('mClearFiltersBtn');
+        if (mClearBtn) mClearBtn.classList.toggle('hidden', !(hasAnyFilter || ui.hideEmptyRows || !ui.includeTentative));
+        if (typeof syncMobileControlsUI === 'function') syncMobileControlsUI(getActiveDB());
       }
     }
     function toggleQuickFilter(kind) {

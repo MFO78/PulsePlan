@@ -32,7 +32,7 @@
       redFte: 2.5,
     };
 
-    const PULSEPLAN_BUILD_ID = '2026-11-22-v5';
+    const PULSEPLAN_BUILD_ID = '2026-11-22-v6';
     const _debugLogEntries = [];
     const MAX_DEBUG_LOG_ENTRIES = 120;
 
