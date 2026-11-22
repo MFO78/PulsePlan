@@ -58,11 +58,9 @@ img, video { max-width: 100%; height: auto; }
 .bg-amber-400 { background-color: #fbbf24; }
 .bg-amber-50 { background-color: #fffbeb; }
 .bg-amber-50\/40 { background-color: rgba(255, 251, 235, 0.4); }
-.bg-amber-50\/60 { background-color: rgba(255, 251, 235, 0.6); }
 .bg-amber-500 { background-color: #f59e0b; }
 .bg-amber-600 { background-color: #d97706; }
 .bg-emerald-100 { background-color: #d1fae5; }
-.bg-emerald-100\/80 { background-color: rgba(209, 250, 229, 0.8); }
 .bg-emerald-400 { background-color: #34d399; }
 .bg-emerald-50 { background-color: #ecfdf5; }
 .bg-emerald-50\/60 { background-color: rgba(236, 253, 245, 0.6); }
@@ -79,7 +77,6 @@ img, video { max-width: 100%; height: auto; }
 .bg-rose-50 { background-color: #fff1f2; }
 .bg-rose-50\/50 { background-color: rgba(255, 241, 242, 0.5); }
 .bg-rose-50\/60 { background-color: rgba(255, 241, 242, 0.6); }
-.bg-rose-50\/70 { background-color: rgba(255, 241, 242, 0.7); }
 .bg-rose-500 { background-color: #f43f5e; }
 .bg-rose-600 { background-color: #e11d48; }
 .bg-sky-50 { background-color: #f0f9ff; }
@@ -1069,19 +1066,31 @@ img, video { max-width: 100%; height: auto; }
     }
     html.dark .hover\:bg-slate-50:hover,
     html.dark .hover\:bg-slate-50\/40:hover,
+    html.dark .hover\:bg-slate-50\/50:hover,
     html.dark .hover\:bg-slate-50\/70:hover,
     html.dark .hover\:bg-slate-100:hover,
     html.dark .group\/row:hover .group-hover\/row\:bg-slate-50,
     html.dark .group\/row:hover .group-hover\/row\:bg-slate-50\/90 {
       background-color: var(--surface-hover) !important;
     }
+    html.dark .hover\:bg-slate-200:hover,
+    html.dark .hover\:bg-slate-200\/80:hover {
+      background-color: #334155 !important;
+    }
     html.dark .hover\:text-slate-900:hover {
       color: var(--text-primary) !important;
     }
     html.dark .bg-indigo-50,
     html.dark .bg-indigo-50\/60,
-    html.dark .bg-indigo-50\/70 {
+    html.dark .bg-indigo-50\/70,
+    html.dark .bg-indigo-50\/80 {
       background-color: rgba(79, 70, 229, 0.18) !important;
+    }
+    html.dark .bg-indigo-100,
+    html.dark .hover\:bg-indigo-50:hover,
+    html.dark .hover\:bg-indigo-50\/70:hover,
+    html.dark .hover\:bg-indigo-100:hover {
+      background-color: rgba(79, 70, 229, 0.28) !important;
     }
     html.dark .border-indigo-100,
     html.dark .border-indigo-200,
@@ -1099,6 +1108,9 @@ img, video { max-width: 100%; height: auto; }
     html.dark .bg-violet-50\/90 {
       background-color: rgba(139, 92, 246, 0.16) !important;
     }
+    html.dark .bg-violet-100,
+    html.dark .hover\:bg-violet-50:hover,
+    html.dark .hover\:bg-violet-100:hover,
     html.dark .hover\:bg-violet-100\/90:hover {
       background-color: rgba(139, 92, 246, 0.28) !important;
     }
@@ -1115,46 +1127,66 @@ img, video { max-width: 100%; height: auto; }
     }
     html.dark .bg-emerald-50,
     html.dark .bg-emerald-50\/60 {
-      background-color: rgba(16, 185, 129, 0.15) !important;
+      background-color: rgba(16, 185, 129, 0.14) !important;
     }
     html.dark .bg-emerald-100\/70,
-    html.dark .bg-emerald-100 {
-      background-color: rgba(16, 185, 129, 0.22) !important;
+    html.dark .bg-emerald-100\/80,
+    html.dark .bg-emerald-100,
+    html.dark .hover\:bg-emerald-50:hover {
+      background-color: rgba(16, 185, 129, 0.20) !important;
+    }
+    html.dark .hover\:bg-emerald-100:hover {
+      background-color: rgba(16, 185, 129, 0.28) !important;
     }
     html.dark .border-emerald-200 {
       border-color: rgba(16, 185, 129, 0.35) !important;
     }
+    html.dark .text-emerald-600,
     html.dark .text-emerald-700,
     html.dark .text-emerald-800,
     html.dark .text-emerald-900 {
-      color: #6ee7b7 !important;
+      color: #34d399 !important;
     }
     html.dark .bg-amber-50,
-    html.dark .bg-amber-50\/40 {
-      background-color: rgba(245, 158, 11, 0.14) !important;
+    html.dark .bg-amber-50\/40,
+    html.dark .bg-amber-50\/60 {
+      background-color: rgba(245, 158, 11, 0.08) !important;
+    }
+    html.dark .hover\:bg-amber-50:hover {
+      background-color: rgba(245, 158, 11, 0.13) !important;
     }
     html.dark .bg-amber-100\/80,
     html.dark .bg-amber-100,
-    html.dark .bg-amber-200\/80 {
-      background-color: rgba(245, 158, 11, 0.24) !important;
+    html.dark .bg-amber-200\/80,
+    html.dark .hover\:bg-amber-100:hover {
+      background-color: rgba(245, 158, 11, 0.20) !important;
+    }
+    html.dark .hover\:bg-amber-200:hover {
+      background-color: rgba(245, 158, 11, 0.30) !important;
     }
     html.dark .border-amber-200,
     html.dark .border-amber-300 {
       border-color: rgba(245, 158, 11, 0.38) !important;
     }
+    html.dark .text-amber-600,
     html.dark .text-amber-700,
     html.dark .text-amber-800,
     html.dark .text-amber-900 {
-      color: #fcd34d !important;
+      color: #fbbf24 !important;
     }
     html.dark .bg-rose-50,
     html.dark .bg-rose-50\/50,
-    html.dark .bg-rose-50\/60 {
-      background-color: rgba(244, 63, 94, 0.16) !important;
+    html.dark .bg-rose-50\/60,
+    html.dark .bg-rose-50\/70 {
+      background-color: rgba(244, 63, 94, 0.09) !important;
+    }
+    html.dark .hover\:bg-rose-50:hover {
+      background-color: rgba(244, 63, 94, 0.14) !important;
     }
     html.dark .bg-rose-100,
-    html.dark .bg-rose-100\/80 {
-      background-color: rgba(244, 63, 94, 0.25) !important;
+    html.dark .bg-rose-100\/80,
+    html.dark .hover\:bg-rose-100:hover {
+      background-color: rgba(244, 63, 94, 0.22) !important;
     }
     html.dark .border-rose-200 {
       border-color: rgba(244, 63, 94, 0.38) !important;
@@ -1163,10 +1195,21 @@ img, video { max-width: 100%; height: auto; }
     html.dark .text-rose-700,
     html.dark .text-rose-800,
     html.dark .text-rose-900 {
-      color: #fda4af !important;
+      color: #fb7185 !important;
+    }
+    html.dark #healthCapacityHeatmap .bg-rose-500 {
+      background-color: rgba(225, 29, 72, 0.38) !important;
+      border-color: rgba(244, 63, 94, 0.55) !important;
+      color: #fecdd3 !important;
+    }
+    html.dark #healthCapacityHeatmap .bg-rose-500:hover {
+      background-color: rgba(225, 29, 72, 0.50) !important;
     }
     html.dark .bg-sky-50 {
       background-color: rgba(14, 165, 233, 0.16) !important;
+    }
+    html.dark .hover\:bg-sky-100:hover {
+      background-color: rgba(14, 165, 233, 0.26) !important;
     }
     html.dark .border-sky-200 {
       border-color: rgba(14, 165, 233, 0.35) !important;
@@ -2649,9 +2692,15 @@ img, video { max-width: 100%; height: auto; }
       if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
         hex = '#4f46e5';
       }
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
+      let r = parseInt(hex.slice(1, 3), 16);
+      let g = parseInt(hex.slice(3, 5), 16);
+      let b = parseInt(hex.slice(5, 7), 16);
+      if (typeof ui !== 'undefined' && ui && ui.darkMode) {
+        r = Math.round(r * 0.82 + 15 * 0.18);
+        g = Math.round(g * 0.82 + 23 * 0.18);
+        b = Math.round(b * 0.82 + 42 * 0.18);
+        hex = '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+      }
       const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
       const isLight = luminance > 0.62;
       return {
@@ -5643,9 +5692,11 @@ img, video { max-width: 100%; height: auto; }
             const allocFte = getDeptTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
             const pct = capFte > 0 ? Math.round((allocFte / capFte) * 100) : (allocFte > 0 ? 999 : 0);
 
-            const cellBg = pct > overT ? 'bg-rose-50/70' : pct >= warnT ? 'bg-amber-50/60' : 'bg-white';
+            const cellBg = pct > overT ? 'bg-rose-50/50' : pct >= warnT ? 'bg-amber-50/40' : 'bg-white';
+            const cellHoverBg = pct > overT ? 'hover:bg-rose-50' : pct >= warnT ? 'hover:bg-amber-50' : 'hover:bg-slate-50/70';
             const barColor = pct > overT ? 'bg-rose-500' : pct >= warnT ? 'bg-amber-500' : 'bg-emerald-500';
-            const pctBadgeCls = pct > overT ? 'bg-rose-100 text-rose-700' : pct >= warnT ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100/80 text-emerald-800';
+            const pctColorCls = pct > overT ? 'text-rose-600' : pct >= warnT ? 'text-amber-700' : 'text-emerald-700';
+            const pctBadgeCls = pct > overT ? 'bg-rose-100 text-rose-700' : pct >= warnT ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
 
             const allocDisp = formatValue(fteToDisplayValue(allocFte, pk, ui.timeUnit), ui.manpowerUnit, false);
             const capDisp = formatValue(fteToDisplayValue(capFte, pk, ui.timeUnit), ui.manpowerUnit, true);
@@ -5826,7 +5877,7 @@ img, video { max-width: 100%; height: auto; }
                        <svg class="w-3 h-3" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>
                        ${cmtCount > 0 ? `<span>${cmtCount}</span>` : ''}
                      </button>
-                     <span class="px-1.5 py-0.5 rounded-md ${s.pctText} tabular-nums ${pctBadgeCls}">
+                     <span class="${s.pctText} tabular-nums ${pctColorCls}">
                        ${pct > 990 ? '&infin;' : pct + '%'}
                      </span>
                    </div>
@@ -5844,7 +5895,7 @@ img, video { max-width: 100%; height: auto; }
               : '';
 
             return `
-              <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 ${cellBg} transition cursor-pointer hover:bg-slate-50/70"
+              <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 ${cellBg} transition cursor-pointer ${cellHoverBg}"
                 ondragover="handleCellDragOver(event)" ondragleave="handleCellDragLeave(event)"
                 ondrop="handleCellDrop(event, '${row.id}', '${pk}')"
                 onclick="openCellDetailModal('${row.id}', '${pk}')">
