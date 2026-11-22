@@ -740,6 +740,51 @@ test('Desktop shared database file open (attachAndLoadFileHandle) loads legacy v
   }
 });
 
+test('Mobile web-app meta tag, hung IndexedDB resilience, policy auto-abort detection, and debug log reporting', async () => {
+  assert.ok(html.includes('<meta name="mobile-web-app-capable" content="yes" />'), 'index.html includes modern mobile-web-app-capable meta tag');
+  assert.ok(!html.includes('apple-mobile-web-app-capable'), 'index.html removes deprecated apple-mobile-web-app-capable meta tag');
+
+  const prevShowToast = sandbox.showToast;
+  const prevIDB = sandbox.indexedDB;
+  const prevOpenPicker = sandbox.window.showOpenFilePicker;
+  const prevSavePicker = sandbox.window.showSaveFilePicker;
+  const prevLoc = sandbox.location;
+  const toasts = [];
+  sandbox.showToast = (msg, type) => toasts.push({ msg, type });
+  // Simulate a corporate laptop where indexedDB.open() hangs indefinitely (never fires onsuccess/onerror)
+  sandbox.indexedDB = { open: () => ({}) };
+  sandbox.location = { protocol: 'https:', origin: 'https://mfo78.github.io', hostname: 'mfo78.github.io' };
+  // Simulate an enterprise browser policy that immediately auto-aborts showOpenFilePicker in < 200ms
+  sandbox.window.showOpenFilePicker = async () => {
+    const err = new Error('Blocked by enterprise policy');
+    err.name = 'AbortError';
+    throw err;
+  };
+  sandbox.window.showSaveFilePicker = async () => { throw new Error('unused'); };
+
+  try {
+    const t0 = Date.now();
+    const out = await vm.runInContext(`(async () => {
+      clearDebugLog();
+      await openSharedDatabaseFile();
+      const report = formatDebugReport();
+      return { report };
+    })()`, ctx);
+    const elapsed = Date.now() - t0;
+
+    assert.ok(elapsed < 1000, `openSharedDatabaseFile did not hang (${elapsed}ms)`);
+    assert.ok(toasts.some(t => t.type === 'warning' && t.msg.includes('Import JSON')), 'Instant policy AbortError warns user to use Import JSON instead of silently doing nothing');
+    assert.ok(out.report.includes('PulsePlan Diagnostics Report'), 'formatDebugReport outputs structured header');
+    assert.ok(out.report.includes('showOpenFilePicker AbortError'), 'Debug log records AbortError diagnostics');
+  } finally {
+    sandbox.showToast = prevShowToast;
+    sandbox.indexedDB = prevIDB;
+    sandbox.window.showOpenFilePicker = prevOpenPicker;
+    sandbox.window.showSaveFilePicker = prevSavePicker;
+    sandbox.location = prevLoc;
+  }
+});
+
 let passed = 0;
 let failed = 0;
 for (const t of tests) {
