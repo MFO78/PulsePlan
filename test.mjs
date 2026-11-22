@@ -280,35 +280,37 @@ test('CSV / Excel paste parser handles tabs, commas, header skipping, Days->FTE 
 
 test('Saved Views persist and reload cleanly from storage', () => {
   const res = vm.runInContext(`(() => {
-    persistSavedViews([{ id: 'v1', name: 'Steering 2W', state: { meetingMode: true, meetingHorizon: 2 } }]);
+    persistSavedViews([{ id: 'v1', name: 'Steering 2W', state: { horizon: 2, compactRowLabels: true, noteSize: 'lg' } }]);
     return getSavedViews();
   })()`, ctx);
 
   assert.equal(res.length, 1);
   assert.equal(res[0].name, 'Steering 2W');
-  assert.equal(res[0].state.meetingHorizon, 2);
+  assert.equal(res[0].state.horizon, 2);
+  assert.equal(res[0].state.compactRowLabels, true);
 });
 
-test('Full-column layout geometry prevents half columns in Standard & Meeting views', () => {
+test('Full-column layout geometry prevents half columns for Vertical & Detailed row labels', () => {
   const res = vm.runInContext(`({
-    std12on1400: computeFullColumnGeometry(1400, 12, false, false),
-    std4on1400: computeFullColumnGeometry(1400, 4, false, false),
-    meet4on1024: computeFullColumnGeometry(1024, 4, true, false),
-    meet2on1440: computeFullColumnGeometry(1440, 2, true, false),
+    det12on1400: computeFullColumnGeometry(1400, 12, false, false),
+    det4on1400: computeFullColumnGeometry(1400, 4, false, false),
+    vert4on1024: computeFullColumnGeometry(1024, 4, true, false),
+    vert2on1440: computeFullColumnGeometry(1440, 2, true, false),
   })`, ctx);
 
   // 12 periods on 1400px: visibleCols must be an exact integer filling 100% of (1400 - stickyW)
-  assert.equal(Number.isInteger(res.std12on1400.visibleCols), true);
-  assert.ok(Math.abs(res.std12on1400.stickyW + res.std12on1400.colW * res.std12on1400.visibleCols - 1400) < 0.01);
-  // 4 periods on 1400px: all 4 periods fit cleanly edge-to-edge
-  assert.equal(res.std4on1400.visibleCols, 4);
-  assert.ok(Math.abs(res.std4on1400.totalTableW - 1400) < 0.01);
-  // Meeting View 4 periods on 1024px: all 4 fit with 0 overflow
-  assert.equal(res.meet4on1024.visibleCols, 4);
-  assert.ok(Math.abs(res.meet4on1024.totalTableW - 1024) < 0.01);
-  // Meeting View 2 periods on 1440px: exact 50/50 split
-  assert.equal(res.meet2on1440.visibleCols, 2);
-  assert.ok(Math.abs(res.meet2on1440.totalTableW - 1440) < 0.01);
+  assert.equal(Number.isInteger(res.det12on1400.visibleCols), true);
+  assert.ok(Math.abs(res.det12on1400.stickyW + res.det12on1400.colW * res.det12on1400.visibleCols - 1400) < 0.01);
+  // 4 periods on 1400px (Detailed): all 4 periods fit cleanly edge-to-edge
+  assert.equal(res.det4on1400.visibleCols, 4);
+  assert.ok(Math.abs(res.det4on1400.totalTableW - 1400) < 0.01);
+  // 4 periods on 1024px (Vertical 62px): all 4 fit with 0 overflow
+  assert.equal(res.vert4on1024.visibleCols, 4);
+  assert.equal(res.vert4on1024.stickyW, 62);
+  assert.ok(Math.abs(res.vert4on1024.totalTableW - 1024) < 0.01);
+  // 2 periods on 1440px (Vertical 62px): exact 50/50 split
+  assert.equal(res.vert2on1440.visibleCols, 2);
+  assert.ok(Math.abs(res.vert2on1440.totalTableW - 1440) < 0.01);
   // Browser tab SVG favicon is embedded in index.html
   assert.equal(html.includes('<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,'), true);
 });
