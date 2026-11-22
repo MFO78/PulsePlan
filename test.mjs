@@ -354,6 +354,25 @@ test('Users can be removed from Quick Switch and restored cleanly', () => {
   assert.equal(res.afterReAdd.includes('Marco'), true);
 });
 
+test('Mobile Collapse All / Expand All toggles all visible accordion rows cleanly', () => {
+  const res = vm.runInContext(`(() => {
+    liveDB = createSampleDemoDB();
+    ui.axis = 'department';
+    ui.filterDept = 'all';
+    ui.mobileCollapsedIds = [];
+    const total = getMobileVisibleRows().length;
+    toggleMobileCollapseAll();
+    const afterCollapse = ui.mobileCollapsedIds.length;
+    toggleMobileCollapseAll();
+    const afterExpand = ui.mobileCollapsedIds.length;
+    return { total, afterCollapse, afterExpand };
+  })()`, ctx);
+
+  assert.equal(res.total, 4);
+  assert.equal(res.afterCollapse, 4);
+  assert.equal(res.afterExpand, 0);
+});
+
 let passed = 0;
 let failed = 0;
 for (const t of tests) {

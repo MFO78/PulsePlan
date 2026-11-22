@@ -111,7 +111,6 @@ img, video { max-width: 100%; height: auto; }
 .border-indigo-600 { border-color: #4f46e5; }
 .border-rose-200 { border-color: #fecdd3; }
 .border-rose-300 { border-color: #fda4af; }
-.border-rose-600 { border-color: #e11d48; }
 .border-separate { border-collapse: separate; }
 .border-sky-200 { border-color: #bae6fd; }
 .border-slate-100 { border-color: #f1f5f9; }
@@ -458,7 +457,6 @@ img, video { max-width: 100%; height: auto; }
 .hover\:bg-slate-200:hover { background-color: #e2e8f0; }
 .hover\:bg-slate-200\/80:hover { background-color: rgba(226, 232, 240, 0.8); }
 .hover\:bg-slate-50:hover { background-color: #f8fafc; }
-.hover\:bg-slate-50\/50:hover { background-color: rgba(248, 250, 252, 0.5); }
 .hover\:bg-slate-50\/70:hover { background-color: rgba(248, 250, 252, 0.7); }
 .hover\:bg-violet-100:hover { background-color: #ede9fe; }
 .hover\:bg-violet-100\/90:hover { background-color: rgba(237, 233, 254, 0.9); }
@@ -956,17 +954,113 @@ img, video { max-width: 100%; height: auto; }
       color: #fda4af !important;
       border-color: rgba(244, 63, 94, 0.48) !important;
     }
+    .heatmap-row:hover {
+      background-color: rgba(238, 242, 255, 0.72);
+    }
+    .heatmap-row:hover th {
+      color: #3730a3;
+    }
+    html.dark .heatmap-row:hover {
+      background-color: var(--surface-hover) !important;
+    }
+    html.dark .heatmap-row:hover th {
+      color: #a5b4fc !important;
+    }
     .heatmap-cell {
-      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+      transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease, border-color 120ms ease, color 120ms ease;
     }
     .heatmap-cell:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #334155, 0 4px 10px -2px rgba(15, 23, 42, 0.22);
+      transform: translateY(-1px) scale(1.03);
       position: relative;
       z-index: 2;
     }
-    html.dark .heatmap-cell:hover {
-      box-shadow: 0 0 0 2px #0f172a, 0 0 0 3.5px rgba(248, 250, 252, 0.55);
+    .heatmap-empty {
+      background-color: #f8fafc;
+      color: #94a3b8;
+      border-color: #e2e8f0;
+    }
+    .heatmap-empty:hover {
+      background-color: #e0e7ff;
+      color: #3730a3;
+      border-color: #6366f1;
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25), 0 4px 10px -2px rgba(79, 70, 229, 0.22);
+    }
+    .heatmap-ok {
+      background-color: #ecfdf5;
+      color: #065f46;
+      border-color: #a7f3d0;
+    }
+    .heatmap-ok:hover {
+      background-color: #a7f3d0;
+      color: #064e3b;
+      border-color: #059669;
+      box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.26), 0 4px 10px -2px rgba(5, 150, 105, 0.24);
+    }
+    .heatmap-warn {
+      background-color: #fef3c7;
+      color: #92400e;
+      border-color: #fcd34d;
+    }
+    .heatmap-warn:hover {
+      background-color: #fde68a;
+      color: #78350f;
+      border-color: #d97706;
+      box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.28), 0 4px 10px -2px rgba(217, 119, 6, 0.24);
+    }
+    .heatmap-over {
+      background-color: #f43f5e;
+      color: #ffffff;
+      border-color: #e11d48;
+    }
+    .heatmap-over:hover {
+      background-color: #be123c;
+      color: #ffffff;
+      border-color: #9f1239;
+      box-shadow: 0 0 0 2px rgba(225, 29, 72, 0.30), 0 4px 12px -2px rgba(225, 29, 72, 0.36);
+    }
+    html.dark .heatmap-empty {
+      background-color: var(--surface-subtle) !important;
+      color: var(--text-faint) !important;
+      border-color: var(--border-subtle) !important;
+    }
+    html.dark .heatmap-empty:hover {
+      background-color: rgba(79, 70, 229, 0.24) !important;
+      color: #e0e7ff !important;
+      border-color: rgba(129, 140, 248, 0.65) !important;
+      box-shadow: 0 0 0 2px #0f172a, 0 0 0 3.5px rgba(129, 140, 248, 0.65);
+    }
+    html.dark .heatmap-ok {
+      background-color: rgba(16, 185, 129, 0.14) !important;
+      color: #34d399 !important;
+      border-color: rgba(16, 185, 129, 0.35) !important;
+    }
+    html.dark .heatmap-ok:hover {
+      background-color: rgba(16, 185, 129, 0.26) !important;
+      color: #6ee7b7 !important;
+      border-color: rgba(52, 211, 153, 0.65) !important;
+      box-shadow: 0 0 0 2px #0f172a, 0 0 0 3.5px rgba(52, 211, 153, 0.55);
+    }
+    html.dark .heatmap-warn {
+      background-color: rgba(245, 158, 11, 0.20) !important;
+      color: #fbbf24 !important;
+      border-color: rgba(245, 158, 11, 0.42) !important;
+    }
+    html.dark .heatmap-warn:hover {
+      background-color: rgba(245, 158, 11, 0.32) !important;
+      color: #fde68a !important;
+      border-color: rgba(251, 191, 36, 0.72) !important;
+      box-shadow: 0 0 0 2px #0f172a, 0 0 0 3.5px rgba(251, 191, 36, 0.60);
+    }
+    html.dark .heatmap-over {
+      background-color: rgba(225, 29, 72, 0.38) !important;
+      color: #fecdd3 !important;
+      border-color: rgba(244, 63, 94, 0.55) !important;
+    }
+    html.dark .heatmap-over:hover {
+      background-color: rgba(225, 29, 72, 0.54) !important;
+      color: #ffffff !important;
+      border-color: rgba(251, 113, 133, 0.85) !important;
+      box-shadow: 0 0 0 2px #0f172a, 0 0 0 3.5px rgba(251, 113, 133, 0.70);
     }
     .bottleneck-pill-ring {
       box-shadow: 0 0 0 1.5px #f43f5e !important;
@@ -1698,17 +1792,23 @@ img, video { max-width: 100%; height: auto; }
     <section id="tab-matrix" role="tabpanel" aria-labelledby="nav-matrix" class="space-y-3 md:space-y-4">
 
       <!-- COMPACT MOBILE CONTROL BAR (Pattern 2 — visible on <768px) -->
-      <div id="mobileMatrixBar" class="md:hidden bg-white rounded-2xl border border-slate-200 p-2 shadow-xs flex items-center justify-between gap-2">
+      <div id="mobileMatrixBar" class="md:hidden bg-white rounded-2xl border border-slate-200 p-2 shadow-xs flex items-center justify-between gap-1.5">
         <!-- Quick Axis Switcher -->
         <div role="group" aria-label="Mobile matrix row grouping" class="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200/80 shrink-0">
-          <button id="m-axis-department" type="button" aria-pressed="true" onclick="setAxis('department')" class="px-2.5 h-8 rounded-lg text-xs font-bold transition">Depts</button>
-          <button id="m-axis-project" type="button" aria-pressed="false" onclick="setAxis('project')" class="px-2.5 h-8 rounded-lg text-xs font-semibold transition">Projects</button>
+          <button id="m-axis-department" type="button" aria-pressed="true" onclick="setAxis('department')" class="px-2 h-8 rounded-lg text-xs font-bold transition">Depts</button>
+          <button id="m-axis-project" type="button" aria-pressed="false" onclick="setAxis('project')" class="px-2 h-8 rounded-lg text-xs font-semibold transition">Projects</button>
         </div>
 
         <div class="flex items-center gap-1.5">
+          <!-- Jump to Today Button -->
+          <button id="mobileTodayBtn" type="button" onclick="jumpToToday()" title="Jump to current period"
+            class="h-9 px-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50 text-slate-700 text-xs font-bold transition shrink-0">
+            Today
+          </button>
+
           <!-- Filters & View Bottom Sheet Trigger -->
           <button id="mobileFiltersTriggerBtn" type="button" onclick="openMobileFiltersSheet()"
-            class="h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition">
+            class="h-9 px-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-bold flex items-center gap-1 transition shrink-0">
             <svg class="w-4 h-4 text-indigo-600 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 11-3 0m3 0a1.5 1.5 0 10-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 01-3 0m3 0a1.5 1.5 0 00-3 0m-9.75 0h9.75" />
             </svg>
@@ -1718,7 +1818,7 @@ img, video { max-width: 100%; height: auto; }
 
           <!-- Primary Quick-Add (+) Trigger -->
           <button type="button" onclick="openMobileQuickAddSheet()" aria-label="Quick actions: allocate, milestone, snapshot, export"
-            class="h-10 w-10 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-xs transition shrink-0">
+            class="h-9 w-9 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-xs transition shrink-0">
             <svg class="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
             </svg>
@@ -4360,8 +4460,8 @@ img, video { max-width: 100%; height: auto; }
           : `${base} font-semibold text-slate-600`;
       };
 
-      setMobileSeg('m-axis-department', ui.axis === 'department', 'px-2.5 h-8 rounded-lg text-xs transition');
-      setMobileSeg('m-axis-project', ui.axis === 'project', 'px-2.5 h-8 rounded-lg text-xs transition');
+      setMobileSeg('m-axis-department', ui.axis === 'department', 'px-2 h-8 rounded-lg text-xs transition');
+      setMobileSeg('m-axis-project', ui.axis === 'project', 'px-2 h-8 rounded-lg text-xs transition');
       setMobileSeg('m-time-month', ui.timeUnit === 'month');
       setMobileSeg('m-time-week', ui.timeUnit === 'week');
       setMobileSeg('m-unit-fte', ui.manpowerUnit === 'fte');
@@ -4819,6 +4919,41 @@ img, video { max-width: 100%; height: auto; }
       }
     }
 
+    function getMobileVisibleRows(db = getActiveDB()) {
+      const visibleDepts = db.departments.filter(d => ui.filterDept === 'all' || d.id === ui.filterDept);
+      const visibleProjs = getSortedProjects(db).filter(p => (!p.archived || ui.filterProj === p.id) && (ui.filterProj === 'all' || p.id === ui.filterProj));
+      return ui.axis === 'department' ? visibleDepts : visibleProjs;
+    }
+
+    function updateMobileCollapseAllButton() {
+      const btn = document.getElementById('mobileCollapseAllBtn');
+      if (!btn) return;
+      const rows = getMobileVisibleRows();
+      const collapsedSet = new Set(Array.isArray(ui.mobileCollapsedIds) ? ui.mobileCollapsedIds : []);
+      const allCollapsed = rows.length > 0 && rows.every(r => collapsedSet.has(r.id));
+      btn.setAttribute('aria-pressed', String(allCollapsed));
+      btn.innerHTML = allCollapsed
+        ? `<svg class="w-3.5 h-3.5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 5.25l-7.5 7.5-7.5-7.5m15 6l-7.5 7.5-7.5-7.5" /></svg><span>Expand All</span>`
+        : `<svg class="w-3.5 h-3.5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 18.75l7.5-7.5 7.5 7.5m-15-6l7.5-7.5 7.5 7.5" /></svg><span>Collapse All</span>`;
+    }
+
+    function toggleMobileCollapseAll() {
+      const rows = getMobileVisibleRows();
+      if (rows.length === 0) return;
+      if (!Array.isArray(ui.mobileCollapsedIds)) ui.mobileCollapsedIds = [];
+      const set = new Set(ui.mobileCollapsedIds);
+      const allCollapsed = rows.every(r => set.has(r.id));
+      if (allCollapsed) {
+        rows.forEach(r => set.delete(r.id));
+      } else {
+        rows.forEach(r => set.add(r.id));
+      }
+      ui.mobileCollapsedIds = [...set];
+      persistUIPrefs();
+      triggerHaptic(8);
+      renderMobileMatrixCards();
+    }
+
     function onMobileAccordionToggle(rowId, isOpen) {
       if (!Array.isArray(ui.mobileCollapsedIds)) ui.mobileCollapsedIds = [];
       const set = new Set(ui.mobileCollapsedIds);
@@ -4826,6 +4961,7 @@ img, video { max-width: 100%; height: auto; }
       else set.add(rowId);
       ui.mobileCollapsedIds = [...set];
       persistUIPrefs();
+      updateMobileCollapseAllButton();
     }
 
     function handleMobileDeckTouchStart(event) {
@@ -5228,11 +5364,26 @@ img, video { max-width: 100%; height: auto; }
         }
       }).join('');
 
+      const allCollapsed = rows.length > 0 && rows.every(r => collapsedSet.has(r.id));
+      const rowNoun = ui.axis === 'department' ? (rows.length === 1 ? 'Department' : 'Departments') : (rows.length === 1 ? 'Project' : 'Projects');
+      const collapseBarHtml = rows.length > 0
+        ? `<div class="flex items-center justify-between gap-2 px-0.5">
+             <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">${rows.length} ${rowNoun}</span>
+             <button id="mobileCollapseAllBtn" type="button" aria-pressed="${allCollapsed}" onclick="toggleMobileCollapseAll()"
+               class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold shadow-2xs transition cursor-pointer">
+               ${allCollapsed
+                 ? `<svg class="w-3.5 h-3.5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 5.25l-7.5 7.5-7.5-7.5m15 6l-7.5 7.5-7.5-7.5" /></svg><span>Expand All</span>`
+                 : `<svg class="w-3.5 h-3.5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 18.75l7.5-7.5 7.5 7.5m-15-6l7.5-7.5 7.5 7.5" /></svg><span>Collapse All</span>`}
+             </button>
+           </div>`
+        : '';
+
       deck.innerHTML = `
         <nav aria-label="Select roadmap period" class="flex items-center gap-2 overflow-x-auto snap-x snap-mandatory no-scrollbar py-0.5">
           ${pillsHtml}
         </nav>
         ${summaryStripHtml}
+        ${collapseBarHtml}
         <div class="space-y-3" ontouchstart="handleMobileDeckTouchStart(event)" ontouchend="handleMobileDeckTouchEnd(event)">
           ${accordionCardsHtml}
         </div>`;
@@ -6863,10 +7014,10 @@ img, video { max-width: 100%; height: auto; }
               const pct = c > 0 ? Math.round((a / c) * 100) : (a > 0 ? 999 : 0);
               const aStr = formatValue(fteToDisplayValue(a, pk, ui.timeUnit));
               const cStr = formatValue(fteToDisplayValue(c, pk, ui.timeUnit));
-              let cellCls = 'bg-slate-50 text-slate-400 border-slate-200';
-              if (pct > overT) cellCls = 'bg-rose-500 text-white border-rose-600 font-extrabold';
-              else if (pct >= warnT) cellCls = 'bg-amber-100 text-amber-900 border-amber-300 font-bold';
-              else if (pct > 0) cellCls = 'bg-emerald-50 text-emerald-800 border-emerald-200 font-bold';
+              let cellCls = 'heatmap-empty';
+              if (pct > overT) cellCls = 'heatmap-over font-extrabold';
+              else if (pct >= warnT) cellCls = 'heatmap-warn font-bold';
+              else if (pct > 0) cellCls = 'heatmap-ok font-bold';
               return `
                 <td class="p-1 text-center border-b border-slate-100">
                   <button type="button" onclick="jumpToMatrixCell('${d.id}', '${pk}')"
@@ -6877,7 +7028,7 @@ img, video { max-width: 100%; height: auto; }
                 </td>`;
             }).join('');
             return `
-              <tr class="hover:bg-slate-50/50">
+              <tr class="heatmap-row transition">
                 <th scope="row" class="px-3 py-1.5 text-left text-xs font-bold text-slate-800 border-b border-slate-100 whitespace-nowrap">
                   <span class="inline-flex items-center gap-1.5">
                     <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${d.color}" aria-hidden="true"></span>
@@ -11742,9 +11893,19 @@ img, video { max-width: 100%; height: auto; }
     function jumpToToday() {
       ui.startMonth = getCurrentMonthKey();
       ui.startWeek = getCurrentWeekKey();
-      ui.mobileSelectedPeriod = ui.timeUnit === 'month' ? ui.startMonth : ui.startWeek;
+      const targetPk = ui.timeUnit === 'month' ? ui.startMonth : ui.startWeek;
+      ui.mobileSelectedPeriod = targetPk;
       persistUIPrefs();
+      triggerHaptic(6);
       renderAll();
+      if (isMobileViewport()) {
+        setTimeout(() => {
+          const pill = document.querySelector(`[data-mobile-period-pill="${targetPk}"]`);
+          if (pill && typeof pill.scrollIntoView === 'function') {
+            pill.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+          }
+        }, 25);
+      }
     }
     function setStartPeriodDirect(val) {
       if (!val) return;
