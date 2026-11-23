@@ -671,6 +671,187 @@
         rgba(165, 180, 252, 0.10) 11px
       ) !important;
     }
+    /* Admin (Non-FTE) hashed / cross-hatched rendering (distinct from solid & pipeline cards across all views) */
+    .admin-hashed-card {
+      background-color: #f8fafc !important;
+      background-image:
+        repeating-linear-gradient(
+          -45deg,
+          transparent,
+          transparent 5px,
+          rgba(71, 85, 105, 0.15) 5px,
+          rgba(71, 85, 105, 0.15) 7px
+        ),
+        repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 5px,
+          rgba(71, 85, 105, 0.07) 5px,
+          rgba(71, 85, 105, 0.07) 7px
+        ) !important;
+      color: #0f172a !important;
+      border: 1.5px dashed #94a3b8 !important;
+      border-left: var(--accent-w, 4px) solid var(--admin-accent, #0ea5e9) !important;
+    }
+    html.dark .admin-hashed-card {
+      background-color: #131d31 !important;
+      background-image:
+        repeating-linear-gradient(
+          -45deg,
+          transparent,
+          transparent 5px,
+          rgba(148, 163, 184, 0.22) 5px,
+          rgba(148, 163, 184, 0.22) 7px
+        ),
+        repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 5px,
+          rgba(148, 163, 184, 0.10) 5px,
+          rgba(148, 163, 184, 0.10) 7px
+        ) !important;
+      color: #f1f5f9 !important;
+      border-color: #64748b !important;
+      border-left: var(--accent-w, 4px) solid var(--admin-accent, #38bdf8) !important;
+    }
+    .admin-hashed-card .accent-card-comment {
+      background-color: rgba(255, 255, 255, 0.88) !important;
+      border-color: #cbd5e1 !important;
+      color: #1e293b !important;
+    }
+    html.dark .admin-hashed-card .accent-card-comment {
+      background-color: rgba(15, 23, 42, 0.84) !important;
+      border-color: #475569 !important;
+      color: #e2e8f0 !important;
+    }
+    .admin-hashed-bar {
+      background-color: #f8fafc !important;
+      background-image:
+        repeating-linear-gradient(
+          -45deg,
+          transparent,
+          transparent 5px,
+          rgba(71, 85, 105, 0.18) 5px,
+          rgba(71, 85, 105, 0.18) 7.5px
+        ),
+        repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 5px,
+          rgba(71, 85, 105, 0.08) 5px,
+          rgba(71, 85, 105, 0.08) 7.5px
+        ) !important;
+      color: #0f172a !important;
+      border: 1.5px dashed #94a3b8 !important;
+      border-top: 3px solid var(--admin-accent, #0ea5e9) !important;
+      border-left: 4px solid var(--admin-accent, #0ea5e9) !important;
+    }
+    .admin-hashed-bar.timeline-bar-mid,
+    .admin-hashed-bar.timeline-bar-end {
+      border-left: 1px dashed #94a3b8 !important;
+    }
+    .admin-hashed-bar.timeline-bar-start,
+    .admin-hashed-bar.timeline-bar-mid {
+      border-right-width: 0 !important;
+    }
+    html.dark .admin-hashed-bar {
+      background-color: #131d31 !important;
+      background-image:
+        repeating-linear-gradient(
+          -45deg,
+          transparent,
+          transparent 5px,
+          rgba(148, 163, 184, 0.24) 5px,
+          rgba(148, 163, 184, 0.24) 7.5px
+        ),
+        repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 5px,
+          rgba(148, 163, 184, 0.11) 5px,
+          rgba(148, 163, 184, 0.11) 7.5px
+        ) !important;
+      color: #f1f5f9 !important;
+      border-color: #64748b !important;
+      border-top: 3px solid var(--admin-accent, #38bdf8) !important;
+      border-left: 4px solid var(--admin-accent, #38bdf8) !important;
+    }
+    html.dark .admin-hashed-bar.timeline-bar-mid,
+    html.dark .admin-hashed-bar.timeline-bar-end {
+      border-left: 1px dashed #64748b !important;
+    }
+    .admin-hashed-bar-label {
+      background-color: rgba(255, 255, 255, 0.86);
+      padding: 0.05rem 0.35rem;
+      border-radius: 0.3rem;
+    }
+    html.dark .admin-hashed-bar-label {
+      background-color: rgba(15, 23, 42, 0.80);
+    }
+    .admin-hashed-chip {
+      background-color: #f8fafc !important;
+      background-image:
+        repeating-linear-gradient(
+          -45deg,
+          transparent,
+          transparent 3px,
+          rgba(71, 85, 105, 0.20) 3px,
+          rgba(71, 85, 105, 0.20) 5px
+        ),
+        repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 3px,
+          rgba(71, 85, 105, 0.09) 3px,
+          rgba(71, 85, 105, 0.09) 5px
+        ) !important;
+      color: #0f172a !important;
+      border: 1px dashed #94a3b8 !important;
+      border-left: 3px solid var(--admin-accent, #0ea5e9) !important;
+    }
+    html.dark .admin-hashed-chip {
+      background-color: #131d31 !important;
+      background-image:
+        repeating-linear-gradient(
+          -45deg,
+          transparent,
+          transparent 3px,
+          rgba(148, 163, 184, 0.28) 3px,
+          rgba(148, 163, 184, 0.28) 5px
+        ),
+        repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 3px,
+          rgba(148, 163, 184, 0.12) 3px,
+          rgba(148, 163, 184, 0.12) 5px
+        ) !important;
+      color: #f1f5f9 !important;
+      border-color: #64748b !important;
+      border-left: 3px solid var(--admin-accent, #38bdf8) !important;
+    }
+    .admin-hashed-swatch {
+      background-color: #f8fafc !important;
+      background-image: repeating-linear-gradient(
+        -45deg,
+        var(--admin-accent, #0ea5e9),
+        var(--admin-accent, #0ea5e9) 2px,
+        transparent 2px,
+        transparent 4.5px
+      ) !important;
+      border: 1px dashed var(--admin-accent, #0ea5e9) !important;
+    }
+    html.dark .admin-hashed-swatch {
+      background-color: #131d31 !important;
+    }
+    .admin-row-divider td,
+    .admin-row-divider th {
+      border-top: 2px dashed #94a3b8 !important;
+    }
+    html.dark .admin-row-divider td,
+    html.dark .admin-row-divider th {
+      border-top: 2px dashed #475569 !important;
+    }
     .drag-over-cell {
       outline: 2px dashed #4f46e5 !important;
       outline-offset: -3px;
