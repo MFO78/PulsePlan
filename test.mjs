@@ -1554,12 +1554,12 @@ test('Admin (Non-FTE) project category logs issues & meetings across periods wit
       ui.cellColorMode = 'fte3';
       window.innerWidth = 1440;
 
-      // 1. Create an Admin (Non-FTE) project via Project Modal
+      // 1. Create an Admin (Non-FTE) project with alphabetically early code 'AAA' to verify bottom sorting
       openProjectModal('');
       const projModalHtml = document.getElementById('modalCard').innerHTML;
       document.getElementById('mProjId').value = '';
       document.getElementById('mProjName').value = 'Dept Issues & Meetings';
-      document.getElementById('mProjCode').value = 'ADM';
+      document.getElementById('mProjCode').value = 'AAA';
       document.getElementById('mProjCategory').value = 'admin';
       document.getElementById('mProjStatus').value = 'Active';
       document.getElementById('mProjPriority').value = 'High';
@@ -1570,13 +1570,14 @@ test('Admin (Non-FTE) project category logs issues & meetings across periods wit
       document.getElementById('mProjArchived').checked = false;
       saveProjectModal();
 
-      const adminProj = liveDB.projects.find(p => p.code === 'ADM');
+      const adminProj = liveDB.projects.find(p => p.code === 'AAA');
+      const sortedCodes = getSortedProjects(liveDB).map(p => p.code);
       const optLabel = formatProjectOptionLabel(adminProj);
 
       // Measure baseline ENG load in W48 before logging Admin note
       const fteBefore = getDeptTotalAllocatedFte('d_eng', '2026-W48', 'week', liveDB);
 
-      // 2. Log Admin Issues & Meetings across 2 weeks via openAllocationModal (zero FTE required)
+      // 2. Log Admin Issues & Meetings across 2 consecutive weeks (W48 & W49) via openAllocationModal (zero FTE required)
       openAllocationModal('d_eng', adminProj.id, '2026-W48');
       const allocModalHtml = document.getElementById('modalCard').innerHTML;
       document.getElementById('mAllocDept').value = 'd_eng';
@@ -1593,7 +1594,7 @@ test('Admin (Non-FTE) project category logs issues & meetings across periods wit
       const noteW48 = liveDB.comments['d_eng::' + adminProj.id + '::2026-W48'];
       const noteW49 = liveDB.comments['d_eng::' + adminProj.id + '::2026-W49'];
 
-      // 3. Render By Dept, Timeline, By Project, 12-wk Overview, and Executive Briefing
+      // 3. Render Desktop By Dept, Timeline/Gantt, By Project, 12-wk Overview (all in solid-fill fte3 mode!) + Mobile Timeline/By Dept + Setup
       ui.axis = 'department'; renderMatrix();
       const deptHtml = document.getElementById('matrixWrapper').innerHTML;
       ui.axis = 'timeline'; renderMatrix();
@@ -1603,12 +1604,26 @@ test('Admin (Non-FTE) project category logs issues & meetings across periods wit
       ui.horizon = 12; ui.axis = 'department'; renderMatrix();
       const ovHtml = document.getElementById('matrixWrapper').innerHTML;
       ui.horizon = 4;
+
+      // Mobile Timeline & Mobile By Dept rendering
+      ui.axis = 'timeline';
+      ui.mobileSelectedPeriod = '2026-W48';
+      renderMobileMatrixCards();
+      const mobTlHtml = document.getElementById('mobileMatrixDeck').innerHTML;
+      ui.axis = 'department';
+      renderMobileMatrixCards();
+      const mobDeptHtml = document.getElementById('mobileMatrixDeck').innerHTML;
+
+      // Setup -> Projects list order & hashed swatch
+      renderDataTab();
+      const setupProjHtml = document.getElementById('dataProjectsBody').innerHTML;
+
       const briefing = buildExecutiveBriefingText(liveDB);
 
       return {
-        adminProj, projModalHtml, optLabel, allocModalHtml,
+        adminProj, sortedCodes, projModalHtml, optLabel, allocModalHtml,
         fteBefore, fteAfter, projFte, hasAllocKey, noteW48, noteW49,
-        deptHtml, tlHtml, projHtml, ovHtml, briefing,
+        deptHtml, tlHtml, projHtml, ovHtml, mobTlHtml, mobDeptHtml, setupProjHtml, briefing,
       };
     })()`, ctx);
 
@@ -1617,16 +1632,20 @@ test('Admin (Non-FTE) project category logs issues & meetings across periods wit
     assert.equal(out.adminProj.category, 'admin', 'Admin project sets category = admin');
     assert.equal(out.adminProj.budgetDays, 0, 'Admin project ignores FTE effort budget');
     assert.equal(out.adminProj.budgetCost, 0, 'Admin project ignores cost budget');
+    assert.equal(out.sortedCodes[out.sortedCodes.length - 1], 'AAA', 'Admin project sorts strictly at the bottom of projects list even with code AAA');
     assert.ok(out.optLabel.includes('(Admin · Non-FTE)'), 'Project dropdown label tags Admin (Non-FTE)');
     assert.ok(out.allocModalHtml.includes('Admin — Issues &amp; Meetings') && out.allocModalHtml.includes('No FTE required'), 'Allocation modal adapts to Admin Note mode without requiring FTE');
     assert.equal(out.fteAfter, out.fteBefore, 'Admin notes have strictly zero impact on department FTE utilisation');
     assert.equal(out.projFte, 0, 'Admin project total FTE is always 0');
     assert.equal(out.hasAllocKey, false, 'Saving Admin notes writes zero entries into db.allocations');
     assert.ok(out.noteW48.includes('Server audit risk') && out.noteW49.includes('Server audit risk'), 'Admin notes repeat cleanly across selected weeks');
-    assert.ok(out.deptHtml.includes('Admin') && out.deptHtml.includes('Server audit risk'), 'By Dept renders Admin card and note text cleanly');
-    assert.ok(out.tlHtml.includes('Server audit risk') && out.tlHtml.includes('Admin'), 'Timeline/Gantt displays Admin issues & meetings bar');
-    assert.ok(out.projHtml.includes('Admin Notes') && out.projHtml.includes('Issues &amp; Meetings'), 'By Project renders Admin Notes header & Detailed label');
-    assert.ok(out.ovHtml.includes('ADM') && out.ovHtml.includes('&#9998;'), '12-period Simplified Overview surfaces Admin note chips');
+    assert.ok(out.deptHtml.includes('admin-hashed-card') && out.deptHtml.includes('Server audit risk'), 'By Dept renders Admin card with hashed styling (never solid colour) even in 3-Level mode');
+    assert.ok(out.tlHtml.includes('admin-hashed-bar timeline-bar-start') && out.tlHtml.includes('admin-hashed-bar timeline-bar-end') && out.tlHtml.includes('admin-row-divider'), 'Desktop Timeline/Gantt populates continuous hashed Admin spans at the bottom with divider');
+    assert.ok(out.projHtml.includes('admin-hashed-card') && out.projHtml.includes('admin-row-divider') && out.projHtml.includes('Admin Notes'), 'By Project renders hashed Admin cards and bottom divider');
+    assert.ok(out.ovHtml.includes('admin-hashed-chip') && out.ovHtml.includes('AAA') && out.ovHtml.includes('&#9998;'), '12-period Simplified Overview surfaces hashed Admin note chips');
+    assert.ok(out.mobTlHtml.includes('admin-hashed-bar') && out.mobTlHtml.includes('2 notes') && out.mobTlHtml.includes('admin-hashed-swatch'), 'Mobile Timeline/Gantt populates Admin project with hashed bars and note count');
+    assert.ok(out.mobDeptHtml.includes('admin-hashed-card') && out.mobDeptHtml.includes('Server audit risk'), 'Mobile By Dept renders Admin card with hashed styling instead of solid fill');
+    assert.ok(out.setupProjHtml.includes('admin-hashed-swatch') && out.setupProjHtml.includes('admin-row-divider'), 'Setup -> Projects renders Admin project at the bottom with hashed swatch and divider');
     assert.ok(out.briefing.includes('ADMIN — DEPT ISSUES & REQUESTED MEETINGS:') && out.briefing.includes('Server audit risk'), 'Executive Briefing groups Admin issues & meetings in its own section');
   } finally {
     sandbox.document.getElementById = prevGetById;
