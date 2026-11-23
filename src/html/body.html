@@ -783,6 +783,7 @@
                 <th scope="col" class="px-4 py-3 font-bold">Status</th>
                 <th scope="col" class="px-4 py-3 font-bold">Priority</th>
                 <th scope="col" class="px-4 py-3 font-bold">Owner</th>
+                <th scope="col" class="px-4 py-3 font-bold">Technical Lead</th>
                 <th scope="col" class="px-4 py-3 font-bold">Budget Burn</th>
                 <th scope="col" class="px-4 py-3 font-bold text-right">Actions</th>
               </tr>
@@ -971,6 +972,7 @@
           <div class="flex flex-wrap gap-2">
             <button type="button" onclick="openSharedDatabaseFile()" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition">Open &amp; Link Shared File</button>
             <button type="button" onclick="createSharedDatabaseFile()" class="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold transition">Create New Sync File</button>
+            <button id="btnBackupConnectedToFolder" type="button" onclick="backupConnectedJsonToFolder()" title="Create a timestamped JSON backup in a folder you choose (without changing your active sync link)" class="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-semibold transition">Backup to Folder&hellip;</button>
             <button id="btnReconnectFile" type="button" onclick="reconnectRememberedFile()" class="hidden px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold transition">Reconnect Remembered File</button>
             <button id="btnUnlinkFile" type="button" onclick="unlinkSharedFile()" class="hidden px-3 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition">Unlink</button>
           </div>
