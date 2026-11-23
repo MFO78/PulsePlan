@@ -1275,6 +1275,7 @@
       color: #a5b4fc !important;
     }
     html.dark .bg-violet-50,
+    html.dark .bg-violet-50\/40,
     html.dark .bg-violet-50\/70,
     html.dark .bg-violet-50\/90 {
       background-color: rgba(139, 92, 246, 0.16) !important;
