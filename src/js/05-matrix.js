@@ -103,10 +103,10 @@
               const a = getAllocationForPeriod(row.id, p.id, selectedPk, ui.timeUnit, db.allocations);
               const c = getCellProjectComments(row.id, p.id, selectedPk, ui.timeUnit, db);
               if (!a.hasData && !c.hasAny) return false;
-              return (`${p.name} ${p.code} ${p.owner || ''} ${c.direct || ''}`).toLowerCase().includes(searchQ);
+              return (`${p.name} ${p.code} ${p.owner || ''} ${p.techLead || ''} ${c.direct || ''}`).toLowerCase().includes(searchQ);
             });
           } else {
-            if ((`${row.name} ${row.code} ${row.owner || ''} ${row.status || ''}`).toLowerCase().includes(searchQ)) return true;
+            if ((`${row.name} ${row.code} ${row.owner || ''} ${row.techLead || ''} ${row.status || ''}`).toLowerCase().includes(searchQ)) return true;
             const checkPks = ui.axis === 'timeline' ? periods : [selectedPk];
             return checkPks.some(pk => visibleDepts.some(d => {
               const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
@@ -177,6 +177,23 @@
       if (Math.abs(dx) > 68 && Math.abs(dx) > Math.abs(dy) * 1.8) {
         shiftMobileSelectedPeriod(dx < 0 ? 1 : -1);
       }
+    }
+
+    function getVisibleMilestonesForDeptView(pk, db, visibleProjs) {
+      const visibleProjIdSet = new Set((visibleProjs || []).map(p => p.id));
+      const searchQ = (ui.matrixSearch || '').trim().toLowerCase();
+      return getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => {
+        if (ui.filterProj !== 'all' && m.projectId !== ui.filterProj) return false;
+        if (m.projectId && !visibleProjIdSet.has(m.projectId)) return false;
+        if (ui.filterDept !== 'all' && m.deptId && m.deptId !== ui.filterDept) return false;
+        if (searchQ) {
+          const p = db.projects.find(x => x.id === m.projectId);
+          const d = db.departments.find(x => x.id === m.deptId);
+          const hay = `${m.title || ''} ${m.notes || ''} ${m.status || ''} ${p?.name || ''} ${p?.code || ''} ${p?.owner || ''} ${p?.techLead || ''} ${d?.name || ''} ${d?.code || ''}`.toLowerCase();
+          if (!hay.includes(searchQ)) return false;
+        }
+        return true;
+      });
     }
 
     function renderMobileMatrixCards() {
@@ -520,7 +537,7 @@
             const a = getAllocationForPeriod(row.id, p.id, selectedPk, ui.timeUnit, db.allocations);
             const cmtObj = getCellProjectComments(row.id, p.id, selectedPk, ui.timeUnit, db);
             if (!a.hasData && !cmtObj.hasAny) return '';
-            if (searchQ && !(`${row.name} ${row.code} ${p.name} ${p.code} ${p.owner || ''} ${cmtObj.direct || ''}`).toLowerCase().includes(searchQ)) return '';
+            if (searchQ && !(`${row.name} ${row.code} ${p.name} ${p.code} ${p.owner || ''} ${p.techLead || ''} ${cmtObj.direct || ''}`).toLowerCase().includes(searchQ)) return '';
 
             const spotCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
             const tentCls = p.tentative ? (useColorFill ? 'tentative-card-filled' : 'tentative-card') : '';
@@ -626,22 +643,6 @@
               </div>`;
           }).join('');
 
-          const msHtml = getMilestonesInPeriod(selectedPk, ui.timeUnit, db.milestones)
-            .filter(m => {
-              if (ui.filterProj !== 'all' && m.projectId !== ui.filterProj) return false;
-              if (m.deptId) return m.deptId === row.id;
-              return getAllocationForPeriod(row.id, m.projectId, selectedPk, ui.timeUnit, db.allocations).hasData;
-            })
-            .map(m => {
-              const p = db.projects.find(x => x.id === m.projectId);
-              return `
-                <button type="button" onclick="openMilestoneModal('${m.id}')"
-                  class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-violet-50 border border-violet-200 text-violet-900 text-xs font-bold flex flex-wrap items-center justify-between gap-1.5 text-left">
-                  <span class="min-w-0 break-words"><span class="text-violet-600 mr-1.5" aria-hidden="true">&#9670;</span>${escapeHtml(m.title)}</span>
-                  <span class="font-mono text-[11px] text-violet-700 shrink-0">${p ? `[${escapeHtml(p.code)}] ` : ''}${escapeHtml(m.date)}</span>
-                </button>`;
-            }).join('');
-
           const mobileFixBtn = pct > overT
             ? `<button type="button" onclick="openBottleneckResolverModal('${row.id}', '${selectedPk}')"
                  class="w-full min-h-[38px] rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-extrabold flex items-center justify-center gap-1.5">&#9888; Resolve Overallocation (${pct}%)</button>`
@@ -676,7 +677,6 @@
               <div class="px-3.5 pb-3.5 pt-2 border-t border-slate-100 space-y-2.5">
                 ${mobileFixBtn}
                 ${itemsHtml || '<p class="text-xs text-slate-400 text-center py-2">No allocations in this period.</p>'}
-                ${msHtml}
                 <div class="grid grid-cols-3 gap-1.5 pt-1">
                   <button type="button" onclick="openAllocationModal('${row.id}', '', '${selectedPk}')"
                     class="min-h-[40px] px-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-bold truncate">+ Allocate</button>
@@ -857,12 +857,53 @@
            </div>`
         : '';
 
+      // Dedicated Milestones Card Section for Mobile By Department view
+      let mobileMilestonesFieldHtml = '';
+      if (ui.axis === 'department') {
+        const periodMilestones = getVisibleMilestonesForDeptView(selectedPk, db, visibleProjs);
+        const msCards = periodMilestones.map(m => {
+          const p = db.projects.find(x => x.id === m.projectId);
+          const d = db.departments.find(x => x.id === m.deptId);
+          const drift = getMilestoneDriftDays(m);
+          const msSpotCls = spotlightId ? (spotlightId === m.projectId ? 'spotlight-active' : 'spotlight-dimmed') : '';
+          return `
+            <button type="button" onclick="openMilestoneModal('${m.id}')"
+              class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-violet-50 border border-violet-200 text-violet-900 text-xs font-bold flex flex-wrap items-center justify-between gap-1.5 text-left ${msSpotCls}">
+              <span class="min-w-0 break-words inline-flex items-center gap-1.5">
+                <span class="text-violet-600 shrink-0" aria-hidden="true">&#9670;</span>
+                ${p ? `<span class="w-2 h-2 rounded-full shrink-0" style="background:${p.color}" aria-hidden="true"></span>` : ''}
+                <span>${escapeHtml(m.title)}</span>
+              </span>
+              <span class="font-mono text-[11px] text-violet-700 shrink-0 flex items-center gap-1">
+                ${p ? `<span>[${escapeHtml(p.code)}]</span>` : ''}
+                ${d ? `<span class="px-1 rounded bg-white border border-violet-200 text-[10px]">${escapeHtml(d.code)}</span>` : ''}
+                <span>${escapeHtml(m.date)}</span>
+                ${drift > 0 ? `<span class="text-rose-600">+${drift}d</span>` : ''}
+              </span>
+            </button>`;
+        }).join('');
+        mobileMilestonesFieldHtml = `
+          <div data-mobile-milestones-field="1" class="bg-white rounded-2xl border border-violet-200 p-3 shadow-xs space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5">
+                <span class="text-violet-600 font-bold" aria-hidden="true">&#9670;</span>
+                <span class="text-xs font-extrabold text-violet-900 uppercase tracking-wider">Milestones</span>
+                <span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold tabular-nums">${periodMilestones.length}</span>
+              </div>
+              <button type="button" onclick="openMilestoneModal('', '${ui.filterProj !== 'all' ? ui.filterProj : ''}', '${getPeriodMidDateISO(selectedPk, ui.timeUnit)}', '${ui.filterDept !== 'all' ? ui.filterDept : ''}')"
+                class="px-2.5 py-1 rounded-lg bg-violet-50 border border-violet-200 text-violet-700 text-[11px] font-bold">+ Milestone</button>
+            </div>
+            ${msCards || '<p class="text-[11px] text-slate-400 text-center py-1">No milestones scheduled in this period.</p>'}
+          </div>`;
+      }
+
       deck.innerHTML = `
         ${mobileFilterBannerHtml}
         <nav aria-label="Select roadmap period" class="flex items-center gap-2 overflow-x-auto snap-x snap-mandatory no-scrollbar py-0.5">
           ${pillsHtml}
         </nav>
         ${summaryStripHtml}
+        ${mobileMilestonesFieldHtml}
         ${collapseBarHtml}
         <div class="space-y-3" ontouchstart="handleMobileDeckTouchStart(event)" ontouchend="handleMobileDeckTouchEnd(event)">
           ${accordionCardsHtml || '<div class="bg-white rounded-2xl border border-slate-200 p-6 text-center text-xs text-slate-500">No rows match the active filters. <button type="button" onclick="clearMatrixFilters()" class="ml-1 font-bold text-indigo-600 underline">Reset</button></div>'}
@@ -1208,7 +1249,7 @@
       const matchesSearchForPair = (dept, proj, pk) => {
         if (!searchQ) return true;
         if (dept && (`${dept.name} ${dept.code} ${dept.manager || ''}`).toLowerCase().includes(searchQ)) return true;
-        if (proj && (`${proj.name} ${proj.code} ${proj.owner || ''} ${proj.status || ''}`).toLowerCase().includes(searchQ)) return true;
+        if (proj && (`${proj.name} ${proj.code} ${proj.owner || ''} ${proj.techLead || ''} ${proj.status || ''}`).toLowerCase().includes(searchQ)) return true;
         if (dept && proj && pk) {
           const cmt = getCellProjectComments(dept.id, proj.id, pk, ui.timeUnit, db);
           if (cmt.direct && cmt.direct.toLowerCase().includes(searchQ)) return true;
@@ -1219,17 +1260,11 @@
 
       const isRowActiveInPeriods = (row) => {
         if (ui.axis === 'department') {
-          return periods.some(pk => {
-            if (visibleProjs.some(p => {
-              const a = getAllocationForPeriod(row.id, p.id, pk, ui.timeUnit, db.allocations);
-              const c = getCellProjectComments(row.id, p.id, pk, ui.timeUnit, db);
-              return a.hasData || c.hasAny;
-            })) return true;
-            return getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).some(m =>
-              (ui.filterProj === 'all' || m.projectId === ui.filterProj) &&
-              (m.deptId ? m.deptId === row.id : getAllocationForPeriod(row.id, m.projectId, pk, ui.timeUnit, db.allocations).hasData)
-            );
-          });
+          return periods.some(pk => visibleProjs.some(p => {
+            const a = getAllocationForPeriod(row.id, p.id, pk, ui.timeUnit, db.allocations);
+            const c = getCellProjectComments(row.id, p.id, pk, ui.timeUnit, db);
+            return a.hasData || c.hasAny;
+          }));
         }
         const isAdminRowCheck = isNonFteProject(row);
         return periods.some(pk => {
@@ -1583,9 +1618,10 @@
                <div class="w-full h-1 rounded-full bg-slate-200/80 overflow-hidden"><div class="h-full ${budgetBarCls} rounded-full" style="width:${Math.min(100, budgetPct)}%"></div></div>
              </div>`
           : '';
-        const ownerLineHtml = (row.owner || adminTagHtml || tentTagHtml || bottleneckBadgeHtml || costBadgeHtml)
+        const ownerLineHtml = (row.owner || row.techLead || adminTagHtml || tentTagHtml || bottleneckBadgeHtml || costBadgeHtml)
           ? `<div class="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
-               ${row.owner ? `<span class="truncate max-w-[110px]" title="Owner: ${escapeHtml(row.owner)}">${escapeHtml(row.owner)}</span>` : ''}
+               ${row.owner ? `<span class="truncate max-w-[105px]" title="Owner: ${escapeHtml(row.owner)}">${escapeHtml(row.owner)}</span>` : ''}
+               ${row.techLead ? `<span class="px-1 py-0.5 rounded bg-slate-100 text-slate-700 text-[9px] font-semibold truncate max-w-[115px]" title="Technical Lead: ${escapeHtml(row.techLead)}">TL: ${escapeHtml(row.techLead)}</span>` : ''}
                ${adminTagHtml}${tentTagHtml}${bottleneckBadgeHtml}${costBadgeHtml}
              </div>`
           : '';
@@ -1676,12 +1712,6 @@
             const capDisp = formatValue(fteToDisplayValue(capFte, pk, ui.timeUnit), ui.manpowerUnit, true);
             const cmtCount = getCellTotalCommentCount(row.id, pk, 'department', ui.timeUnit, db);
 
-            const msList = getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => {
-              if (ui.filterProj !== 'all' && m.projectId !== ui.filterProj) return false;
-              if (m.deptId) return m.deptId === row.id;
-              return getAllocationForPeriod(row.id, m.projectId, pk, ui.timeUnit, db.allocations).hasData;
-            });
-
             if (isOverview) {
               const ovChips = visibleProjs.map(p => {
                 const a = getAllocationForPeriod(row.id, p.id, pk, ui.timeUnit, db.allocations);
@@ -1723,11 +1753,6 @@
                   ${ovShowVals ? `<span class="tabular-nums text-slate-600 shrink-0">${valNum}</span>` : ''}
                 </div>`;
               }).join('');
-              const ovMsBadge = msList.length > 0
-                ? `<span title="${escapeHtml(msList.map(m => '◆ ' + m.title + ' (' + m.date + ')').join('\n'))}"
-                    onclick="event.stopPropagation(); openMilestoneModal('${msList[0].id}')"
-                    class="text-[9px] font-bold text-violet-700 shrink-0 cursor-pointer">&#9670;${msList.length > 1 ? msList.length : ''}</span>`
-                : '';
               const hInfo = formatPeriodHeader(pk, ui.timeUnit);
               return `
                 <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 ${cellToneCls} transition cursor-pointer"
@@ -1737,7 +1762,6 @@
                     <span class="px-1 py-0.5 rounded text-[9px] font-extrabold tabular-nums leading-none ${pctBadgeCls}">${pct > 990 ? '&infin;' : pct + '%'}</span>
                     <span class="inline-flex items-center gap-0.5">
                       ${capObj.hasOverride ? '<span class="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" title="Variable capacity override"></span>' : ''}
-                      ${ovMsBadge}
                     </span>
                   </div>
                   <div class="w-full h-1 rounded-full bg-slate-200/80 overflow-hidden mb-1" aria-hidden="true">
@@ -1917,22 +1941,6 @@
                 </div>`;
             }).join('');
 
-            const msHtml = msList.map(m => {
-              const p = db.projects.find(x => x.id === m.projectId);
-              const drift = getMilestoneDriftDays(m);
-              const msSpotCls = spotlightId ? (spotlightId === m.projectId ? 'spotlight-active' : 'spotlight-dimmed') : '';
-              return `
-                <div draggable="${!isPresent}"
-                  data-drag-type="milestone" data-drag-ms="${m.id}" data-drag-period="${pk}"
-                  ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
-                  onclick="event.stopPropagation(); openMilestoneModal('${m.id}')"
-                  title="${escapeHtml(m.title)} (${m.date}${drift > 0 ? ', +' + drift + 'd slip' : ''})"
-                  class="flex items-center justify-between gap-1 ${msSpotCls} ${s.msBox} rounded-md bg-violet-50/90 hover:bg-violet-100/90 border border-violet-200/80 text-violet-900 cursor-grab transition">
-                  <span class="truncate"><span class="text-violet-600 mr-1" aria-hidden="true">◆</span>${escapeHtml(m.title)}</span>
-                  ${p ? `<span class="font-mono text-[10px] font-bold text-violet-700 shrink-0">${escapeHtml(p.code)}</span>` : ''}
-                </div>`;
-            }).join('');
-
             const capDelta = Math.round((capFte - (Number(row.defaultCapacity) || 0)) * 100) / 100;
             const varLabel = capDelta > 0.005 ? 'Var ▲' : capDelta < -0.005 ? 'Var ▼' : 'Var';
             const capTooltip = capObj.hasOverride
@@ -1990,7 +1998,6 @@
                 ${cellHeaderHtml}
                 <div class="${s.pillSpace}">
                   ${pills}
-                  ${msHtml}
                 </div>
                 ${addBtnHtml}
               </td>`;
@@ -2590,6 +2597,105 @@
         }
       }).join('');
 
+      // Dedicated Milestones Swimlane Row for By Department view (shown cleanly at top instead of inside dept cells)
+      let deptMilestonesRowHtml = '';
+      if (ui.axis === 'department' && rows.length > 0) {
+        let totalVisibleMs = 0;
+        const msCellsHtml = periods.map(pk => {
+          const pkMs = getVisibleMilestonesForDeptView(pk, db, visibleProjs);
+          totalVisibleMs += pkMs.length;
+          const chipsHtml = pkMs.map(m => {
+            const p = db.projects.find(x => x.id === m.projectId);
+            const d = db.departments.find(x => x.id === m.deptId);
+            const drift = getMilestoneDriftDays(m);
+            const msSpotCls = spotlightId ? (spotlightId === m.projectId ? 'spotlight-active' : 'spotlight-dimmed') : '';
+            const tip = `${m.title}${p ? ' [' + p.code + ' ' + p.name + ']' : ''}${d ? ' • Dept: ' + d.code : ''} (${m.date}${drift > 0 ? ', +' + drift + 'd slip' : ''})`;
+            if (isOverview) {
+              return `
+                <div draggable="${!isPresent}"
+                  data-drag-type="milestone" data-drag-ms="${m.id}" data-drag-period="${pk}"
+                  ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
+                  onclick="event.stopPropagation(); openMilestoneModal('${m.id}')"
+                  title="${escapeHtml(tip)}"
+                  class="${msSpotCls} px-1 py-0.5 rounded bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-900 text-[9px] font-bold flex items-center justify-between gap-0.5 leading-tight truncate cursor-pointer">
+                  <span class="truncate"><span class="text-violet-600" aria-hidden="true">&#9670;</span> ${escapeHtml(ovShowVals ? m.title : (p ? p.code : m.title))}</span>
+                </div>`;
+            }
+            return `
+              <div draggable="${!isPresent}"
+                data-drag-type="milestone" data-drag-ms="${m.id}" data-drag-period="${pk}"
+                ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
+                onclick="event.stopPropagation(); openMilestoneModal('${m.id}')"
+                title="${escapeHtml(tip)}"
+                class="flex items-center justify-between gap-1 ${msSpotCls} ${s.msBox} rounded-md bg-violet-50/90 hover:bg-violet-100/90 border border-violet-200/80 text-violet-900 cursor-grab transition">
+                <span class="inline-flex items-center gap-1 min-w-0 truncate">
+                  <span class="text-violet-600 shrink-0" aria-hidden="true">&#9670;</span>
+                  ${p ? `<span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${p.color}" aria-hidden="true"></span>` : ''}
+                  <span class="truncate">${escapeHtml(m.title)}</span>
+                </span>
+                <span class="inline-flex items-center gap-1 font-mono text-[10px] font-bold text-violet-700 shrink-0">
+                  ${p ? `<span>${escapeHtml(p.code)}</span>` : ''}
+                  ${drift > 0 ? `<span class="text-rose-600">+${drift}d</span>` : ''}
+                </span>
+              </div>`;
+          }).join('');
+          const addMsBtn = !isPresent
+            ? `<button type="button" onclick="event.stopPropagation(); openMilestoneModal('', '${ui.filterProj !== 'all' ? ui.filterProj : ''}', '${getPeriodMidDateISO(pk, ui.timeUnit)}', '${ui.filterDept !== 'all' ? ui.filterDept : ''}')"
+                 title="Add a milestone in ${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).title)}"
+                 class="${pkMs.length > 0 ? 'mt-1' : ''} w-full py-0.5 rounded-md border border-dashed border-violet-200 hover:border-violet-300 hover:bg-violet-50 text-[10px] font-semibold text-violet-700 opacity-0 group-hover/cell:opacity-100 transition">+ Milestone</button>`
+            : '';
+          return `
+            <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 bg-violet-50/40 transition cursor-pointer"
+              ondragover="handleCellDragOver(event)" ondragleave="handleCellDragLeave(event)"
+              ondrop="handleCellDrop(event, '__MILESTONES__', '${pk}')"
+              onclick="openMilestoneModal('', '${ui.filterProj !== 'all' ? ui.filterProj : ''}', '${getPeriodMidDateISO(pk, ui.timeUnit)}', '${ui.filterDept !== 'all' ? ui.filterDept : ''}')">
+              <div class="${s.pillSpace}">
+                ${chipsHtml || (isOverview ? '<div class="text-[9px] text-slate-300 text-center">&mdash;</div>' : '')}
+              </div>
+              ${addMsBtn}
+            </td>`;
+        }).join('');
+
+        const msRowHeaderHtml = isCompactRow
+          ? `<th scope="row" title="Roadmap Milestones (${totalVisibleMs} in visible window)"
+               class="meeting-row-accent sticky left-0 z-10 bg-violet-50 w-[62px] min-w-[62px] max-w-[62px] ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-middle font-normal text-center"
+               style="--row-accent:#7c3aed;">
+               <div class="flex flex-col items-center justify-center gap-1">
+                 <div class="meeting-vertical-text text-xs font-extrabold text-violet-900 tracking-wide">Milestones</div>
+                 <span class="rounded-md bg-violet-100 text-violet-800 px-1 py-0.5 text-[10px] font-extrabold tabular-nums">&#9670; ${totalVisibleMs}</span>
+               </div>
+             </th>`
+          : (isCompactGrid
+              ? `<th scope="row" class="sticky left-0 z-10 bg-violet-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left">
+                   <div class="flex items-center justify-between gap-1">
+                     <div class="flex items-center gap-1.5 min-w-0">
+                       <span class="w-1.5 h-7 rounded-full bg-violet-500 shrink-0" aria-hidden="true"></span>
+                       <div class="min-w-0">
+                         <div class="${s.rowName} text-violet-900 truncate">&#9670; Milestones</div>
+                       </div>
+                     </div>
+                     <span class="rounded-md bg-violet-100 text-violet-800 ${s.rowBadge} tabular-nums">${totalVisibleMs}</span>
+                   </div>
+                 </th>`
+              : `<th scope="row" class="sticky left-0 z-10 bg-violet-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left">
+                   <div class="flex items-stretch gap-2 min-w-0">
+                     <span class="w-1.5 rounded-full bg-violet-500 shrink-0" aria-hidden="true"></span>
+                     <div class="min-w-0 flex-1">
+                       <div class="flex items-center justify-between gap-1.5">
+                         <div class="${s.rowName} text-violet-900 truncate">&#9670; Milestones</div>
+                         <span class="rounded-md shrink-0 tabular-nums bg-violet-100 text-violet-800 ${s.rowBadge}">${totalVisibleMs}</span>
+                       </div>
+                       <div class="${s.rowMeta} text-violet-700 flex items-center justify-between gap-1 mt-0.5">
+                         <span>Dedicated milestone lane</span>
+                         ${!isPresent ? `<button type="button" onclick="openMilestoneModal('', '${ui.filterProj !== 'all' ? ui.filterProj : ''}', '${getPeriodMidDateISO(periods[0], ui.timeUnit)}', '${ui.filterDept !== 'all' ? ui.filterDept : ''}')" class="px-1.5 py-0.5 rounded bg-white border border-violet-200 hover:bg-violet-100 text-violet-700 text-[9px] font-bold transition shrink-0">+ Add</button>` : ''}
+                       </div>
+                     </div>
+                   </div>
+                 </th>`);
+
+        deptMilestonesRowHtml = `<tr class="group/row" data-row-id="__MILESTONES__">${msRowHeaderHtml}${msCellsHtml}</tr>`;
+      }
+
       const footerCells = periods.map(pk => {
         let totA = 0, totC = 0;
         visibleDepts.forEach(d => {
@@ -2649,7 +2755,7 @@
             </tr>
           </thead>
           <tbody>
-            ${bodyRows || `<tr><td colspan="${periods.length + 1}" class="px-6 py-10 text-center text-xs text-slate-500">No rows match the active filters. <button type="button" onclick="clearMatrixFilters(); if (ui.hideEmptyRows) toggleHideEmptyRows();" class="ml-1 font-bold text-indigo-600 hover:underline">Reset filters</button></td></tr>`}
+            ${deptMilestonesRowHtml}${bodyRows || `<tr><td colspan="${periods.length + 1}" class="px-6 py-10 text-center text-xs text-slate-500">No rows match the active filters. <button type="button" onclick="clearMatrixFilters(); if (ui.hideEmptyRows) toggleHideEmptyRows();" class="ml-1 font-bold text-indigo-600 hover:underline">Reset filters</button></td></tr>`}
           </tbody>
           ${footerHtml}
         </table>`;
@@ -2829,7 +2935,7 @@
         pushUndoState(`Move milestone "${ms.title}"`);
         const oldDate = ms.date;
         ms.date = getPeriodMidDateISO(targetPeriodKey, ui.timeUnit);
-        if (ui.axis === 'department') ms.deptId = targetRowId;
+        if (ui.axis === 'department' && targetRowId && targetRowId !== '__MILESTONES__') ms.deptId = targetRowId;
         if (ui.axis === 'project') ms.projectId = targetRowId;
         recordChange('Milestone', `Moved milestone "${ms.title}" from ${oldDate} to ${ms.date}`);
         renderAll();

@@ -180,11 +180,11 @@
 
       db.projects = getSortedProjects({
         projects: [
-          { id: 'p_nova', name: 'Project Nova (Core Platform)', code: 'NVA', color: '#4f46e5', status: 'Active', priority: 'High', owner: 'S. Chen', budgetDays: 700, budgetCost: 450000, tentative: false, archived: false },
-          { id: 'p_atlas', name: 'Atlas Mobile v3', code: 'ATL', color: '#0ea5e9', status: 'Active', priority: 'High', owner: 'M. Rossi', budgetDays: 450, budgetCost: 275000, tentative: false, archived: false },
-          { id: 'p_pulse', name: 'AI Copilot Analytics', code: 'AIC', color: '#8b5cf6', status: 'Active', priority: 'Medium', owner: 'P. Nair', budgetDays: 280, budgetCost: 200000, tentative: false, archived: false },
-          { id: 'p_cloud', name: 'Cloud EU Migration', code: 'CLD', color: '#10b981', status: 'At Risk', priority: 'Critical', owner: 'E. Rostova', budgetDays: 360, budgetCost: 210000, tentative: false, archived: false },
-          { id: 'p_brand', name: 'Enterprise Portal Refresh', code: 'EPR', color: '#f59e0b', status: 'Planned', priority: 'Low', owner: 'M. Bellini', budgetDays: 120, budgetCost: 75000, tentative: true, archived: false },
+          { id: 'p_nova', name: 'Project Nova (Core Platform)', code: 'NVA', color: '#4f46e5', status: 'Active', priority: 'High', owner: 'S. Chen', techLead: 'E. Rostova', budgetDays: 700, budgetCost: 450000, tentative: false, archived: false },
+          { id: 'p_atlas', name: 'Atlas Mobile v3', code: 'ATL', color: '#0ea5e9', status: 'Active', priority: 'High', owner: 'M. Rossi', techLead: 'A. Novak', budgetDays: 450, budgetCost: 275000, tentative: false, archived: false },
+          { id: 'p_pulse', name: 'AI Copilot Analytics', code: 'AIC', color: '#8b5cf6', status: 'Active', priority: 'Medium', owner: 'P. Nair', techLead: 'D. Park', budgetDays: 280, budgetCost: 200000, tentative: false, archived: false },
+          { id: 'p_cloud', name: 'Cloud EU Migration', code: 'CLD', color: '#10b981', status: 'At Risk', priority: 'Critical', owner: 'E. Rostova', techLead: 'L. Vance', budgetDays: 360, budgetCost: 210000, tentative: false, archived: false },
+          { id: 'p_brand', name: 'Enterprise Portal Refresh', code: 'EPR', color: '#f59e0b', status: 'Planned', priority: 'Low', owner: 'M. Bellini', techLead: '', budgetDays: 120, budgetCost: 75000, tentative: true, archived: false },
         ],
       });
 
@@ -473,6 +473,7 @@
           const status = String(p.status || 'Active');
           const priority = String(p.priority || 'Medium');
           const owner = String(p.owner || p.lead || p.manager || '').trim();
+          const techLead = String(p.techLead || p.technicalLead || p.tech_lead || '').trim();
           const color = p.color || PALETTE[(idx + 2) % PALETTE.length];
           const nonFte = Boolean(p.nonFte || p.category === 'admin');
           const budgetDays = nonFte ? 0 : Math.max(0, Number(p.budgetDays ?? p.targetDays ?? 0) || 0);
@@ -480,7 +481,7 @@
           const tentative = nonFte ? false : Boolean(p.tentative);
           const archived = Boolean(p.archived);
           const category = nonFte ? 'admin' : (tentative ? 'tentative' : 'standard');
-          return { id, name, code, color, status, priority, owner, budgetDays, budgetCost, tentative, nonFte, category, archived };
+          return { id, name, code, color, status, priority, owner, techLead, budgetDays, budgetCost, tentative, nonFte, category, archived };
         }),
       });
 
@@ -1003,33 +1004,84 @@
       });
 
       const sortedWeeks = [...byWeek.keys()].sort((a, b) => a.localeCompare(b));
-      const companyWeekMap = new Map();
+      const companyWeekMap = new Map(); // wk -> { deptIds: Set, valuesByDept: Map }
 
-      // Automatically detect company-wide holiday / shutdown superposition weeks across ALL departments
-      if (depts.length >= 2) {
-        const totalBaseAll = depts.reduce((acc, d) => acc + (Number(d.defaultCapacity) || 0), 0);
+      // Automatically detect company-wide holiday / shutdown superposition weeks
+      // Resilient to: 0-capacity depts, newly added / on-call depts, tiny-dept rounding, and mixed-rate dips
+      const activeDepts = depts.filter(d => (Number(d.defaultCapacity) || 0) > 0);
+      const baselineDepts = activeDepts.length >= 2 ? activeDepts : depts;
+      if (baselineDepts.length >= 2) {
+        const totalBaseAll = baselineDepts.reduce((acc, d) => acc + (Number(d.defaultCapacity) || 0), 0);
         if (totalBaseAll > 0) {
+          const denom = baselineDepts.length;
           sortedWeeks.forEach(wk => {
             const wkMap = byWeek.get(wk);
-            if (!wkMap || wkMap.size < depts.length) return;
-            const allReduced = depts.every(d => {
-              if (!wkMap.has(d.id)) return false;
+            if (!wkMap || wkMap.size < 2) return;
+
+            const reducedDepts = [];
+            const equalDepts = [];
+            depts.forEach(d => {
+              if (!wkMap.has(d.id)) return;
               const baseFte = Number(d.defaultCapacity) || 0;
               const fte = wkMap.get(d.id);
-              return baseFte > 0 ? (fte < baseFte - 0.001) : (fte <= 0.001);
+              if (baseFte > 0) {
+                if (fte < baseFte - 0.001) reducedDepts.push(d);
+                else if (Math.abs(fte - baseFte) <= 0.001) equalDepts.push(d);
+              } else if (fte <= 0.001) {
+                reducedDepts.push(d);
+              }
             });
-            if (allReduced) {
-              companyWeekMap.set(wk, wkMap);
+
+            if (reducedDepts.length < 2) return;
+
+            // Include tiny departments whose uniform-% scaled FTE rounded back to baseFte (e.g. 0.25 * 90% -> 0.25)
+            const reducedActive = reducedDepts.filter(d => (Number(d.defaultCapacity) || 0) > 0);
+            const sumRedBase = reducedActive.reduce((acc, d) => acc + (Number(d.defaultCapacity) || 0), 0);
+            const sumRedFte = reducedActive.reduce((acc, d) => acc + wkMap.get(d.id), 0);
+            const approxPct = sumRedBase > 0 ? Math.round((sumRedFte / sumRedBase) * 100) : 0;
+
+            const groupedDepts = [...reducedDepts];
+            if (approxPct > 0 && approxPct < 100 && equalDepts.length > 0) {
+              equalDepts.forEach(d => {
+                const baseFte = Number(d.defaultCapacity) || 0;
+                const roundedScaled = Math.round((baseFte * (approxPct / 100)) * 20) / 20;
+                if (Math.abs(roundedScaled - baseFte) <= 0.001) {
+                  groupedDepts.push(d);
+                }
+              });
+            }
+
+            const groupedActiveCount = groupedDepts.filter(d => (Number(d.defaultCapacity) || 0) > 0).length;
+            const isFullActive = groupedActiveCount >= denom;
+            const isAllShutdown = groupedDepts.every(d => wkMap.get(d.id) <= 0.001);
+            const isShutdownMajority = isAllShutdown && groupedActiveCount >= Math.max(2, Math.ceil(denom * 0.6));
+            const isUniformReduced = !isAllShutdown && groupedDepts.every(d => {
+              const baseFte = Number(d.defaultCapacity) || 0;
+              if (baseFte <= 0) return true;
+              const fte = wkMap.get(d.id);
+              const pct = Math.round((fte / baseFte) * 100);
+              const expected = Math.round((baseFte * (approxPct / 100)) * 20) / 20;
+              return Math.abs(fte - expected) <= 0.051 || Math.abs(pct - approxPct) <= 5;
+            });
+            const isHolidayMajority = groupedActiveCount >= Math.max(2, Math.ceil(denom * 0.6))
+              && (isUniformReduced || (denom >= 3 && groupedActiveCount >= denom - 1));
+
+            if (isFullActive || isShutdownMajority || isHolidayMajority) {
+              const idSet = new Set(groupedDepts.map(d => d.id));
+              const vals = new Map();
+              groupedDepts.forEach(d => vals.set(d.id, wkMap.get(d.id)));
+              companyWeekMap.set(wk, { deptIds: idSet, valuesByDept: vals });
             }
           });
         }
       }
 
-      // Merge contiguous company-wide weeks that have identical per-department FTE overrides
+      // Merge contiguous company-wide weeks that have identical grouped departments and per-department FTE overrides
       const companyGroups = [];
       let curCo = null;
       const finalizeCompanyGroup = (grp) => {
-        const items = depts.map(d => {
+        const coveredDepts = depts.filter(d => grp.deptIds.has(d.id));
+        const items = coveredDepts.map(d => {
           const baseFte = Number(d.defaultCapacity) || 0;
           const fte = grp.valuesByDept.get(d.id);
           const deltaFte = Math.round((fte - baseFte) * 100) / 100;
@@ -1044,11 +1096,14 @@
         const isUniformPct = !isShutdown && items.every(it => {
           if (it.baseFte <= 0) return true;
           const expected = Math.round((it.baseFte * (overallPct / 100)) * 20) / 20;
-          return Math.abs(it.fte - expected) <= 0.051 || Math.abs(it.pct - overallPct) <= 2;
+          return Math.abs(it.fte - expected) <= 0.051 || Math.abs(it.pct - overallPct) <= 3;
         });
         const eventType = isShutdown ? 'shutdown' : (isUniformPct ? 'holiday' : 'mixed-holiday');
         const label = isShutdown ? 'Company Shutdown' : (isUniformPct ? 'Company Holiday' : 'Company-Wide Holiday / Dip');
         const pctLabel = isShutdown ? '0%' : (isUniformPct ? `${overallPct}%` : `~${overallPct}% avg`);
+        const totalActiveDepts = baselineDepts.length;
+        const coveredActiveDepts = items.filter(it => it.baseFte > 0).length;
+        const isPartial = coveredActiveDepts < totalActiveDepts;
         return {
           kind: 'company',
           id: `co__${grp.startWk}__${grp.endWk}`,
@@ -1062,21 +1117,25 @@
           totalBaseFte,
           totalFte,
           totalDeltaFte,
+          totalDepts: totalActiveDepts,
+          isPartial,
+          deptIds: items.map(it => it.deptId),
           items,
         };
       };
 
       [...companyWeekMap.keys()].sort((a, b) => a.localeCompare(b)).forEach(wk => {
-        const wkMap = companyWeekMap.get(wk);
+        const wkEntry = companyWeekMap.get(wk);
         const sameAsPrev = curCo
           && addWeeksToWeekKey(curCo.endWk, 1) === wk
-          && depts.every(d => Math.abs((curCo.valuesByDept.get(d.id) || 0) - (wkMap.get(d.id) || 0)) < 0.001);
+          && curCo.deptIds.size === wkEntry.deptIds.size
+          && [...curCo.deptIds].every(id => wkEntry.deptIds.has(id) && Math.abs((curCo.valuesByDept.get(id) || 0) - (wkEntry.valuesByDept.get(id) || 0)) < 0.001);
         if (sameAsPrev) {
           curCo.endWk = wk;
           curCo.weekKeys.push(wk);
         } else {
           if (curCo) companyGroups.push(finalizeCompanyGroup(curCo));
-          curCo = { startWk: wk, endWk: wk, weekKeys: [wk], valuesByDept: wkMap };
+          curCo = { startWk: wk, endWk: wk, weekKeys: [wk], deptIds: wkEntry.deptIds, valuesByDept: wkEntry.valuesByDept };
         }
       });
       if (curCo) companyGroups.push(finalizeCompanyGroup(curCo));
@@ -1084,7 +1143,11 @@
       // Single-department filter: show that department's spans with subtle company-wide badges when overlapping
       if (deptFilter !== 'all') {
         const companyByWk = new Map();
-        companyGroups.forEach(cg => cg.weekKeys.forEach(wk => companyByWk.set(wk, cg)));
+        companyGroups.forEach(cg => {
+          if (cg.deptIds.includes(deptFilter)) {
+            cg.weekKeys.forEach(wk => companyByWk.set(wk, cg));
+          }
+        });
         return getGroupedCapacityOverrides(db, deptFilter).map(sp => {
           const coMatches = sp.weekKeys.map(wk => companyByWk.get(wk)).filter(Boolean);
           let companyBadge = '';
@@ -1108,9 +1171,10 @@
       // All-Departments view: extract remaining non-company-wide overrides into per-department contiguous spans
       const byDeptRemaining = new Map();
       sortedWeeks.forEach(wk => {
-        if (companyWeekMap.has(wk)) return;
+        const coEntry = companyWeekMap.get(wk);
         const wkMap = byWeek.get(wk);
         wkMap.forEach((fte, deptId) => {
+          if (coEntry && coEntry.deptIds.has(deptId)) return;
           if (!byDeptRemaining.has(deptId)) byDeptRemaining.set(deptId, []);
           byDeptRemaining.get(deptId).push({ weekKey: wk, fte });
         });

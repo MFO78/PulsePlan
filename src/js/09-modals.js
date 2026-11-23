@@ -289,7 +289,7 @@
       addName(ui.userName, true);
       (ui.recentUsers || []).forEach(u => addName(u));
       (db.departments || []).forEach(d => addName(d.manager));
-      (db.projects || []).forEach(p => addName(p.owner));
+      (db.projects || []).forEach(p => { addName(p.owner); addName(p.techLead); });
       (db.changeLog || []).slice(0, 30).forEach(l => addName(l.user));
       (db.snapshots || []).forEach(s => addName(s.createdBy));
       return [...seen.values()];
@@ -1435,10 +1435,14 @@
           <div id="mProjAdminInfo" class="${isAdmin ? '' : 'hidden'} p-3 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 text-[11px] leading-relaxed">
             <strong>Admin (Non-FTE) Category:</strong> Requires no FTE input and never affects department utilisation %, bottlenecks, or cost burn. Ideal for logging expected departmental issues, risks, and requested meetings inside each period.
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-5 gap-3">
             <div class="sm:col-span-2">
               <label for="mProjOwner" class="block font-semibold text-slate-700 mb-1">Project Owner</label>
               <input id="mProjOwner" type="text" value="${escapeHtml(p?.owner || '')}" placeholder="Optional" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50" />
+            </div>
+            <div class="sm:col-span-2">
+              <label for="mProjTechLead" class="block font-semibold text-slate-700 mb-1">Technical Lead</label>
+              <input id="mProjTechLead" type="text" value="${escapeHtml(p?.techLead || '')}" placeholder="Optional" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50" />
             </div>
             <div>
               <label for="mProjColor" class="block font-semibold text-slate-700 mb-1">Color Tag</label>
@@ -1478,6 +1482,7 @@
       const status = document.getElementById('mProjStatus').value;
       const priority = document.getElementById('mProjPriority').value;
       const owner = document.getElementById('mProjOwner').value.trim();
+      const techLead = (document.getElementById('mProjTechLead')?.value || '').trim();
       const color = document.getElementById('mProjColor').value || '#4f46e5';
       const budgetDays = nonFte ? 0 : Math.max(0, parseFloat(document.getElementById('mProjBudget')?.value) || 0);
       const budgetCost = nonFte ? 0 : Math.max(0, parseFloat(document.getElementById('mProjBudgetCost')?.value) || 0);
@@ -1488,18 +1493,18 @@
       pushUndoState(`${id ? 'Update' : 'Add'} project [${code}]`);
       if (id) {
         const p = db.projects.find(x => x.id === id);
-        if (p) Object.assign(p, { name, code, status, priority, owner, color, budgetDays, budgetCost, tentative, nonFte, category, archived });
+        if (p) Object.assign(p, { name, code, status, priority, owner, techLead, color, budgetDays, budgetCost, tentative, nonFte, category, archived });
         if (nonFte) {
           Object.keys(db.allocations || {}).forEach(k => { if (k.split('::')[1] === id) delete db.allocations[k]; });
         }
         db.projects = getSortedProjects(db);
         if (archived && ui.filterProj === id) ui.filterProj = 'all';
         if (archived && ui.spotlightProjId === id) ui.spotlightProjId = '';
-        recordChange('Project', `Updated project [${code}] ${name} (${status}${nonFte ? ', Admin Non-FTE' : tentative ? ', pipeline' : ''}${budgetDays > 0 ? `, budget ${budgetDays}d` : ''}${archived ? ', archived' : ''})`);
+        recordChange('Project', `Updated project [${code}] ${name} (${status}${nonFte ? ', Admin Non-FTE' : tentative ? ', pipeline' : ''}${techLead ? `, TL: ${techLead}` : ''}${budgetDays > 0 ? `, budget ${budgetDays}d` : ''}${archived ? ', archived' : ''})`);
       } else {
-        db.projects.push({ id: uid('p'), name, code, status, priority, owner, color, budgetDays, budgetCost, tentative, nonFte, category, archived });
+        db.projects.push({ id: uid('p'), name, code, status, priority, owner, techLead, color, budgetDays, budgetCost, tentative, nonFte, category, archived });
         db.projects = getSortedProjects(db);
-        recordChange('Project', `Added project [${code}] ${name}${nonFte ? ' (Admin Non-FTE)' : tentative ? ' (pipeline)' : ''}${budgetDays > 0 ? ` (budget ${budgetDays}d)` : ''}`);
+        recordChange('Project', `Added project [${code}] ${name}${nonFte ? ' (Admin Non-FTE)' : tentative ? ' (pipeline)' : ''}${techLead ? ` (TL: ${techLead})` : ''}${budgetDays > 0 ? ` (budget ${budgetDays}d)` : ''}`);
       }
       closeModal();
       renderAll();

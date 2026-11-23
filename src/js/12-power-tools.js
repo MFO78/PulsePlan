@@ -198,7 +198,7 @@
 
     function applyHolidayFactor(deptIds, startPk, count, timeUnit, pctFactor, db = getActiveDB()) {
       const cleanPct = Math.max(0, Math.min(200, Number(pctFactor)));
-      const numPeriods = Math.max(1, Math.min(24, parseInt(count, 10) || 1));
+      const numPeriods = Math.max(1, Math.min(52, parseInt(count, 10) || 1));
       const targets = (db.departments || []).filter(d => deptIds.includes(d.id));
       let updatedWeeks = 0;
 
@@ -353,9 +353,10 @@
       const endOptsHtml = buildPeriodEndSelectOptionsHtml(startPk, effectiveUnit, endPk, 26);
       const summaryTxt = formatPeriodRangeSummaryText(startPk, endPk, effectiveUnit);
 
+      const preCheckedSet = (opts && Array.isArray(opts.deptIds) && opts.deptIds.length > 0) ? new Set(opts.deptIds) : null;
       const deptChecks = db.departments.map(d => `
         <label class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer text-xs font-semibold text-slate-700">
-          <input type="checkbox" data-holiday-dept="1" class="rounded text-indigo-600" value="${d.id}" checked />
+          <input type="checkbox" data-holiday-dept="1" class="rounded text-indigo-600" value="${d.id}" ${!preCheckedSet || preCheckedSet.has(d.id) ? 'checked' : ''} />
           <span class="w-2 h-2 rounded-full shrink-0" style="background:${d.color}"></span>
           <span>${escapeHtml(d.code)}</span>
         </label>`).join('');

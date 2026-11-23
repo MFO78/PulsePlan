@@ -32,7 +32,7 @@
       redFte: 2.5,
     };
 
-    const PULSEPLAN_BUILD_ID = '2026-11-23-v8.1';
+    const PULSEPLAN_BUILD_ID = '2026-11-23-v8.2';
     const _debugLogEntries = [];
     const MAX_DEBUG_LOG_ENTRIES = 120;
 
@@ -219,13 +219,54 @@
     }
 
     /**
-     * Mobile-first Web Share API with seamless desktop download fallback.
+     * Universal export helper:
+     * - mode 'disk': Save directly to a user-chosen disk path via showSaveFilePicker (or pre-acquired fileHandle), with <a download> fallback
+     * - mode 'download': Direct browser download to disk (never opens OS Share sheet)
+     * - mode 'share': Web Share API when supported, with <a download> fallback
+     * - mode 'auto' (default): Web Share ONLY on narrow touch-first phones; desktop (incl. Windows touch laptops) always downloads to disk
      */
-    async function shareOrDownloadFile(blob, filename, mimeType, title = 'PulsePlan Export') {
-      const isTouchMobile = window.matchMedia && (window.matchMedia('(max-width: 767px)').matches || window.matchMedia('(pointer: coarse)').matches);
-      if (isTouchMobile && typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof File === 'function') {
+    async function shareOrDownloadFile(blob, filename, mimeType, title = 'PulsePlan Export', opts = {}) {
+      const mode = opts && opts.mode ? String(opts.mode) : 'auto';
+      const resolvedMime = mimeType || blob?.type || 'application/octet-stream';
+
+      if (mode === 'disk') {
+        const preHandle = opts && opts.fileHandle ? opts.fileHandle : null;
+        let handle = preHandle;
+        if (!handle && typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function' && (typeof location === 'undefined' || location.protocol !== 'file:')) {
+          const extMatch = String(filename || '').match(/(\.[a-z0-9]+)$/i);
+          const ext = extMatch ? extMatch[1].toLowerCase() : '';
+          const pickerOpts = { suggestedName: filename };
+          if (ext && resolvedMime) {
+            pickerOpts.types = [{ description: title || 'PulsePlan File', accept: { [resolvedMime.split(';')[0]]: [ext] } }];
+          }
+          try {
+            handle = await window.showSaveFilePicker(pickerOpts);
+          } catch (err) {
+            if (err && err.name === 'AbortError') return 'cancelled';
+            handle = null; // Fall back cleanly to direct browser download
+          }
+        }
+        if (handle && typeof handle.createWritable === 'function') {
+          try {
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            return 'saved';
+          } catch (err) {
+            if (err && err.name === 'AbortError') return 'cancelled';
+            // Fall through to direct download on unexpected disk write error
+          }
+        }
+      }
+
+      const isNarrowViewport = Boolean(window.matchMedia && window.matchMedia('(max-width: 767px)').matches);
+      const isFinePointer = Boolean(window.matchMedia && window.matchMedia('(pointer: fine)').matches);
+      const isTouchPhone = isNarrowViewport && !isFinePointer;
+      const shouldShare = mode === 'share' || (mode === 'auto' && isTouchPhone);
+
+      if (shouldShare && typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof File === 'function') {
         try {
-          const file = new File([blob], filename, { type: mimeType || blob.type || 'application/octet-stream' });
+          const file = new File([blob], filename, { type: resolvedMime });
           if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
             await navigator.share({ title, files: [file] });
             return 'shared';
@@ -234,6 +275,7 @@
           if (err && err.name === 'AbortError') return 'cancelled';
         }
       }
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

@@ -210,9 +210,25 @@
       openExportPdfModal();
     }
 
+    function syncPdfDeliveryButtonLabel() {
+      const sel = document.getElementById('mPdfDelivery');
+      const btn = document.getElementById('btnGeneratePdfSubmit');
+      if (!sel || !btn) return;
+      const v = sel.value;
+      if (v === 'disk') btn.textContent = 'Save PDF to Disk…';
+      else if (v === 'download') btn.textContent = 'Download PDF to Disk';
+      else if (v === 'share') btn.textContent = 'Share PDF Report';
+      else btn.textContent = 'Generate PDF Report';
+    }
+
     function openExportPdfModal() {
       const db = getActiveDB();
-      const opts = { colorMode: 'match', colsPerPage: 6, ...(ui.pdfOptions || {}) };
+      const canSavePicker = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function' && (typeof location === 'undefined' || location.protocol !== 'file:');
+      const canWebShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+      const isMobileNow = isMobileViewport();
+      const defaultDelivery = isMobileNow ? (canWebShare ? 'share' : 'download') : (canSavePicker ? 'disk' : 'download');
+      const opts = { colorMode: 'match', colsPerPage: 6, delivery: defaultDelivery, ...(ui.pdfOptions || {}) };
+      if (opts.delivery === 'disk' && !canSavePicker) opts.delivery = 'download';
       const defaultSnapId = ui.compareSnapshotId || (db.snapshots[0] ? db.snapshots[0].id : '');
       const activeModeLabelMap = {
         accent: 'Accent Border',
@@ -221,6 +237,9 @@
         fte3: '3-Level Green/Yellow/Red',
       };
       const curModeLabel = activeModeLabelMap[getActiveCellColorMode()] || 'Accent Border';
+      const submitBtnLabel = opts.delivery === 'disk'
+        ? 'Save PDF to Disk…'
+        : (opts.delivery === 'download' ? 'Download PDF to Disk' : (opts.delivery === 'share' ? 'Share PDF Report' : 'Generate PDF Report'));
 
       showModal(`
         <div class="p-5 space-y-4 text-xs">
@@ -232,10 +251,20 @@
             <button type="button" aria-label="Close dialog" onclick="closeModal()" class="text-slate-400 hover:text-slate-700 text-lg font-bold leading-none">&times;</button>
           </div>
 
-          <div>
-            <label for="mPdfTitle" class="block font-semibold text-slate-700 mb-1">Report Title</label>
-            <input id="mPdfTitle" type="text" value="${escapeHtml(opts.title || 'PulsePlan - Company Roadmap & Utilisation Report')}"
-              class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label for="mPdfTitle" class="block font-semibold text-slate-700 mb-1">Report Title</label>
+              <input id="mPdfTitle" type="text" value="${escapeHtml(opts.title || 'PulsePlan - Company Roadmap & Utilisation Report')}"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
+            </div>
+            <div>
+              <label for="mPdfDelivery" class="block font-semibold text-slate-700 mb-1">Export Destination</label>
+              <select id="mPdfDelivery" onchange="syncPdfDeliveryButtonLabel()" class="w-full px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-800">
+                ${canSavePicker ? `<option value="disk" ${opts.delivery === 'disk' ? 'selected' : ''}>Save to Disk (Choose Folder&hellip;)</option>` : ''}
+                <option value="download" ${opts.delivery === 'download' ? 'selected' : ''}>Download Directly to Disk</option>
+                ${canWebShare ? `<option value="share" ${opts.delivery === 'share' ? 'selected' : ''}>Share via System Sheet</option>` : ''}
+              </select>
+            </div>
           </div>
 
           <fieldset class="p-3 rounded-xl bg-indigo-50/60 border border-indigo-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -316,16 +345,18 @@
 
           <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
             <button type="button" onclick="closeModal()" class="px-3.5 py-2.5 sm:py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold transition">Cancel</button>
-            <button type="button" onclick="runPdfExportFromModal()" class="px-4 py-2.5 sm:py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold shadow-xs transition">Generate PDF Report</button>
+            <button id="btnGeneratePdfSubmit" type="button" onclick="runPdfExportFromModal()" class="px-4 py-2.5 sm:py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold shadow-xs transition">${submitBtnLabel}</button>
           </div>
         </div>`, 'max-w-xl');
     }
 
-    function runPdfExportFromModal() {
+    async function runPdfExportFromModal() {
+      const delivery = document.getElementById('mPdfDelivery')?.value || (isMobileViewport() ? 'auto' : 'download');
       ui.pdfOptions = {
         title: (document.getElementById('mPdfTitle')?.value || 'PulsePlan - Company Roadmap & Utilisation Report').trim(),
         colorMode: document.getElementById('mPdfColorMode')?.value || 'match',
         colsPerPage: Math.max(4, Math.min(6, parseInt(document.getElementById('mPdfColsPerPage')?.value, 10) || 6)),
+        delivery,
         includeChart: Boolean(document.getElementById('pdfIncChart')?.checked),
         includeMatrix: Boolean(document.getElementById('pdfIncMatrix')?.checked),
         includeDeptHealth: Boolean(document.getElementById('pdfIncDeptHealth')?.checked),
@@ -338,8 +369,24 @@
       };
       const snapId = document.getElementById('mPdfSnapSelect')?.value || '';
       persistUIPrefs();
+
+      // Acquire disk Save-As handle immediately inside the click gesture so Chrome never expires user activation
+      let preFileHandle = null;
+      const suggestedFname = `pulseplan_roadmap_${ui.timeUnit}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      if (delivery === 'disk' && window.jspdf && window.jspdf.jsPDF && typeof window.showSaveFilePicker === 'function' && (typeof location === 'undefined' || location.protocol !== 'file:')) {
+        try {
+          preFileHandle = await window.showSaveFilePicker({
+            suggestedName: suggestedFname,
+            types: [{ description: 'PDF Document', accept: { 'application/pdf': ['.pdf'] } }],
+          });
+        } catch (err) {
+          if (err && err.name === 'AbortError') return; // User cancelled Save dialog
+          preFileHandle = null; // Fall back cleanly to direct browser download
+        }
+      }
+
       closeModal();
-      generateRoadmapPDF({ ...ui.pdfOptions, snapshotId: snapId });
+      generateRoadmapPDF({ ...ui.pdfOptions, snapshotId: snapId, fileHandle: preFileHandle });
     }
 
     function pdfSafeText(str) {
@@ -737,7 +784,12 @@
       let badgeTextRgb = [51, 65, 85];
       const metaLines = [];
 
-      if (axis === 'department') {
+      if (row.id === '__MILESTONES__') {
+        badgeText = `${Number(row.totalCount) || 0} Total`;
+        badgeBgRgb = [237, 233, 254];
+        badgeTextRgb = [109, 40, 217];
+        metaLines.push('Dedicated milestone lane');
+      } else if (axis === 'department') {
         let rA = 0, rC = 0;
         chunk.forEach(pk => {
           rA += getDeptTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
@@ -763,6 +815,7 @@
 
         metaLines.push(`${row.priority || 'Medium'} | ${Math.round(totalDays)}d`);
         if (row.owner) metaLines.push(`Owner: ${row.owner}`);
+        if (row.techLead) metaLines.push(`Tech Lead: ${row.techLead}`);
       }
 
       const h = 2.0 + (nameLines.length * 3.0) + 1.2 + 3.8 + 1.2 + (metaLines.length * 2.7) + 2.0;
@@ -834,6 +887,32 @@
       let header = null;
       let cellBgRgb = [255, 255, 255];
       let cursorH = padY;
+
+      if (row.id === '__MILESTONES__') {
+        const msRaw = getVisibleMilestonesForDeptView(pk, db, visibleProjs);
+        const msTextMaxW = Math.max(8, innerW - 5.4);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(5.5);
+        const msItems = msRaw.map(m => {
+          const p = db.projects.find(x => x.id === m.projectId);
+          const lbl = `${m.title}${p ? ` [${p.code}]` : ''} (${m.date || ''})`;
+          const lines = pdfWrapLines(doc, lbl, msTextMaxW, compactMode ? 1 : 2);
+          return { lines, textMaxW: msTextMaxW, height: 1.0 + lines.length * 2.3 + 1.0 };
+        });
+        const cardGap = 1.2;
+        let totalH = padY + 0.5;
+        msItems.forEach(m => { totalH += m.height + cardGap; });
+        totalH += padY;
+        return {
+          height: Math.max(12, totalH),
+          padX, padY, innerW, cardGap,
+          cellBgRgb: [248, 245, 255],
+          header: { kind: 'milestones' },
+          cards: [],
+          milestones: msItems,
+          overflowCount: 0,
+        };
+      }
 
       if (axis === 'department') {
         const capObj = getDeptCapacityForPeriod(row.id, pk, ui.timeUnit, db);
@@ -944,14 +1023,9 @@
         });
       });
 
-      const msRawList = getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => {
-        if (axis === 'department') {
-          if (ui.filterProj !== 'all' && m.projectId !== ui.filterProj) return false;
-          if (m.deptId) return m.deptId === row.id;
-          return getAllocationForPeriod(row.id, m.projectId, pk, ui.timeUnit, db.allocations).hasData;
-        }
-        return m.projectId === row.id;
-      });
+      const msRawList = axis === 'department'
+        ? []
+        : getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => m.projectId === row.id);
 
       const milestones = msRawList.map(m => {
         const msTextMaxW = Math.max(8, innerW - 5.4);
@@ -1002,7 +1076,9 @@
       const innerW = Math.max(10, cell.width - layout.padX * 2);
       let cy = cell.y + layout.padY;
 
-      if (layout.header.kind === 'dept') {
+      if (layout.header.kind === 'milestones') {
+        cy += 0.5;
+      } else if (layout.header.kind === 'dept') {
         const h = layout.header;
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(5.7);
@@ -1398,11 +1474,21 @@
               );
             }
 
+            const pdfMatrixRows = ui.axis === 'department'
+              ? [{
+                  id: '__MILESTONES__',
+                  name: 'Milestones',
+                  code: 'MS',
+                  color: '#7c3aed',
+                  totalCount: chunk.reduce((acc, pk) => acc + getVisibleMilestonesForDeptView(pk, db, visibleProjs).length, 0),
+                }, ...rows]
+              : rows;
+
             const rowHeaderLayouts = [];
             const cellLayouts = [];
             const rowHeights = [];
 
-            rows.forEach((row) => {
+            pdfMatrixRows.forEach((row) => {
               const hdrLayout = measurePdfRowHeader(doc, row, ui.axis, chunk, rowColW, db, warnT, overT);
               rowHeaderLayouts.push(hdrLayout);
               const rCells = chunk.map(pk =>
@@ -1421,7 +1507,7 @@
               })
             ];
 
-            const blankBodyRows = rows.map(() => ['', ...chunk.map(() => '')]);
+            const blankBodyRows = pdfMatrixRows.map(() => ['', ...chunk.map(() => '')]);
 
             const footPcts = [null];
             const footRow = [
@@ -1552,19 +1638,19 @@
           const projRows = projTotals.map(x => {
             const sharePct = grandDays > 0 ? Math.round((x.pDays / grandDays) * 100) : 0;
             const effortStr = ui.manpowerUnit === 'fte' ? `${formatValue(x.pFteAvg, 'fte')} avg (${Math.round(x.pDays)}d)` : formatValue(x.pDispSum);
-            return [pdfSafeText(x.p.code), pdfSafeText(x.p.name), pdfSafeText(x.p.status), pdfSafeText(x.p.priority || 'Medium'), pdfSafeText(x.p.owner || '-'), pdfSafeText(effortStr), `${sharePct}%`, pdfSafeText(x.depts.length ? x.depts.join(', ') : '-')];
+            return [pdfSafeText(x.p.code), pdfSafeText(x.p.name), pdfSafeText(x.p.status), pdfSafeText(x.p.priority || 'Medium'), pdfSafeText(x.p.owner || '-'), pdfSafeText(x.p.techLead || '-'), pdfSafeText(effortStr), `${sharePct}%`, pdfSafeText(x.depts.length ? x.depts.join(', ') : '-')];
           });
 
           doc.autoTable({
             startY: currentY,
-            head: [['Code', 'Project Name', 'Status', 'Priority', 'Owner', `Horizon Effort (${unitShortLabel()})`, 'Share', 'Assigned Depts']],
+            head: [['Code', 'Project Name', 'Status', 'Priority', 'Owner', 'Tech Lead', `Horizon Effort (${unitShortLabel()})`, 'Share', 'Assigned Depts']],
             body: projRows,
             margin: safeMargin,
             tableWidth: tableW,
             theme: 'striped',
-            styles: { fontSize: 7.1, cellPadding: 2, overflow: 'linebreak', textColor: [30, 41, 59] },
+            styles: { fontSize: 7.0, cellPadding: 2, overflow: 'linebreak', textColor: [30, 41, 59] },
             headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold' },
-            columnStyles: { 0: { cellWidth: 16, fontStyle: 'bold' }, 1: { cellWidth: 62 }, 2: { cellWidth: 22 }, 3: { cellWidth: 20 }, 4: { cellWidth: 30 }, 5: { cellWidth: 42 }, 6: { cellWidth: 16, halign: 'right' }, 7: { cellWidth: 65 } },
+            columnStyles: { 0: { cellWidth: 15, fontStyle: 'bold' }, 1: { cellWidth: 52 }, 2: { cellWidth: 20 }, 3: { cellWidth: 18 }, 4: { cellWidth: 26 }, 5: { cellWidth: 26 }, 6: { cellWidth: 40 }, 7: { cellWidth: 15, halign: 'right' }, 8: { cellWidth: 61 } },
           });
           currentY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 7 : currentY + 35;
         }
@@ -1704,10 +1790,15 @@
 
         const fname = `pulseplan_roadmap_${ui.timeUnit}_${new Date().toISOString().slice(0, 10)}.pdf`;
         const pdfBlob = doc.output('blob');
-        const outcome = await shareOrDownloadFile(pdfBlob, fname, 'application/pdf', opts.title || 'PulsePlan Roadmap PDF');
+        const deliveryMode = opts.delivery || (isMobileViewport() ? 'auto' : 'download');
+        const outcome = await shareOrDownloadFile(pdfBlob, fname, 'application/pdf', opts.title || 'PulsePlan Roadmap PDF', {
+          mode: deliveryMode,
+          fileHandle: opts.fileHandle || null,
+        });
         if (outcome !== 'cancelled') {
           recordDumpEvent('PDF', fname, pdfBlob ? pdfBlob.size : 0, `${pageCount}p colorful vector report (${periods.length} ${ui.timeUnit}s)`);
-          showToast(`${outcome === 'shared' ? 'PDF shared' : 'Colorful PDF exported'} (${pageCount} page${pageCount === 1 ? '' : 's'})`, 'success');
+          const verb = outcome === 'saved' ? 'PDF saved to disk' : (outcome === 'shared' ? 'PDF shared' : 'PDF downloaded to disk');
+          showToast(`${verb} (${pageCount} page${pageCount === 1 ? '' : 's'})`, 'success');
         }
       } catch (err) {
         console.error('PDF export failed:', err);

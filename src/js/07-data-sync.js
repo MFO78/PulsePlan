@@ -109,7 +109,7 @@
       const displayedProjects = ui.showArchivedProjects ? sortedProjectsAll : sortedProjectsAll.filter(p => !p.archived);
       const hasRates = hasAnyDayRates(db);
       if (displayedProjects.length === 0) {
-        pBody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">${db.projects.length > 0 ? 'All projects are archived. Click "Show Archived" above to view them.' : 'No projects yet. Click "+ Add Project" to start.'}</td></tr>`;
+        pBody.innerHTML = `<tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">${db.projects.length > 0 ? 'All projects are archived. Click "Show Archived" above to view them.' : 'No projects yet. Click "+ Add Project" to start.'}</td></tr>`;
       } else {
         pBody.innerHTML = displayedProjects.map((p, pIdx) => {
           const plannedDays = getProjectTotalPlannedDays(p.id, db);
@@ -152,6 +152,7 @@
               <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-md bg-slate-100 font-semibold">${escapeHtml(p.status)}</span></td>
               <td class="px-4 py-3 text-slate-600">${escapeHtml(p.priority || 'Medium')}</td>
               <td class="px-4 py-3 text-slate-600">${escapeHtml(p.owner || '—')}</td>
+              <td class="px-4 py-3 text-slate-600">${escapeHtml(p.techLead || '—')}</td>
               <td class="px-4 py-3">${effortPart}${costPart}</td>
               <td class="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
                 <button type="button" onclick="openShiftProjectModal('${p.id}')" title="Shift all allocations, comments, and milestones by ±N weeks/months" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-semibold transition">&#8644; Shift</button>
@@ -307,17 +308,22 @@
       showToast(`Reset ${wks.length} week${wks.length === 1 ? '' : 's'} to base ${baseFte} FTE`, 'info', { undoable: true });
     }
 
-    function editCompanyOverrideGroup(startWk, endWk, pctFactor) {
-      openHolidayFactorModal(startWk, { forceWeeks: true, endPeriod: endWk, pct: pctFactor });
+    function editCompanyOverrideGroup(startWk, endWk, pctFactor, deptIdsCsv = '') {
+      const deptIds = deptIdsCsv ? String(deptIdsCsv).split(',').filter(Boolean) : null;
+      openHolidayFactorModal(startWk, { forceWeeks: true, endPeriod: endWk, pct: pctFactor, deptIds });
     }
 
-    function resetCompanyOverrideGroup(startWk, endWk) {
+    function resetCompanyOverrideGroup(startWk, endWk, deptIdsCsv = '') {
       const db = getActiveDB();
       const wks = enumerateIsoWeekSpan(startWk, endWk);
       if (wks.length === 0) return;
+      const targetIdSet = deptIdsCsv ? new Set(String(deptIdsCsv).split(',').filter(Boolean)) : null;
+      const targetDepts = targetIdSet
+        ? (db.departments || []).filter(d => targetIdSet.has(d.id))
+        : (db.departments || []);
       let removed = 0;
       pushUndoState(`Reset company-wide override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''})`);
-      (db.departments || []).forEach(d => {
+      targetDepts.forEach(d => {
         wks.forEach(wk => {
           const key = `${d.id}::${wk}`;
           if (Object.prototype.hasOwnProperty.call(db.capacityOverrides || {}, key)) {
@@ -327,9 +333,9 @@
         });
       });
       if (removed === 0) return;
-      recordChange('Capacity', `Reset company-wide capacity override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''}, ${wks.length} wk${wks.length === 1 ? '' : 's'}) across all departments`);
+      recordChange('Capacity', `Reset company-wide capacity override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''}, ${wks.length} wk${wks.length === 1 ? '' : 's'}) across ${targetDepts.length} department(s)`);
       renderAll();
-      showToast(`Reset company-wide override (${wks.length} wk${wks.length === 1 ? '' : 's'}) for all departments`, 'info', { undoable: true });
+      showToast(`Reset company-wide override (${wks.length} wk${wks.length === 1 ? '' : 's'}) for ${targetDepts.length} department${targetDepts.length === 1 ? '' : 's'}`, 'info', { undoable: true });
     }
 
     function toggleOverrideGroup(groupId) {
@@ -464,6 +470,8 @@
             ? 'bg-rose-50 text-rose-700 border-rose-200'
             : 'bg-violet-50 text-violet-800 border-violet-200';
           const rowBgCls = isShutdown ? 'bg-rose-50/50 hover:bg-rose-50' : 'bg-violet-50/70 hover:bg-violet-50';
+          const deptScopeTxt = entry.isPartial ? `(${entry.items.length}/${entry.totalDepts} depts)` : `(${entry.items.length} depts)`;
+          const deptIdsAttr = escapeHtml((entry.deptIds || []).join(','));
           const mainRow = `
             <tr class="${rowBgCls} transition" data-override-group-id="${escapeHtml(entry.id)}">
               <th scope="row" class="px-3.5 py-2.5 font-bold text-slate-900 whitespace-nowrap cursor-pointer" onclick="toggleOverrideGroup('${escapeHtml(entry.id)}')">
@@ -473,7 +481,7 @@
                     class="w-6 h-6 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 flex items-center justify-center text-[11px] font-bold transition shrink-0 cursor-pointer">${isExpanded ? '&#9662;' : '&#9656;'}</button>
                   <span class="px-2 py-0.5 rounded-md border text-[10px] font-extrabold ${pillCls}">${escapeHtml(entry.label)}</span>
                   <span class="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] font-extrabold text-slate-700 tabular-nums">${escapeHtml(entry.pctLabel)}</span>
-                  <span class="text-[10px] font-semibold text-slate-500">(${entry.items.length} depts)</span>
+                  <span class="text-[10px] font-semibold text-slate-500">${deptScopeTxt}</span>
                 </div>
               </th>
               <td class="px-3.5 py-2.5 whitespace-nowrap cursor-pointer" onclick="toggleOverrideGroup('${escapeHtml(entry.id)}')">
@@ -487,8 +495,8 @@
               <td class="px-3.5 py-2.5 text-right tabular-nums font-extrabold ${isShutdown ? 'text-rose-700' : 'text-violet-700'} whitespace-nowrap">${entry.totalFte} FTE</td>
               <td class="px-3.5 py-2.5 text-right whitespace-nowrap">${formatDeltaBadge(entry.totalDeltaFte)}</td>
               <td class="px-3.5 py-2.5 text-right space-x-2 whitespace-nowrap">
-                <button type="button" onclick="editCompanyOverrideGroup('${entry.startWk}', '${entry.endWk}', ${entry.pctFactor})" class="text-indigo-600 hover:underline font-semibold">Edit %</button>
-                <button type="button" onclick="resetCompanyOverrideGroup('${entry.startWk}', '${entry.endWk}')" class="text-amber-700 hover:underline font-semibold">Reset All</button>
+                <button type="button" onclick="editCompanyOverrideGroup('${entry.startWk}', '${entry.endWk}', ${entry.pctFactor}, '${deptIdsAttr}')" class="text-indigo-600 hover:underline font-semibold">Edit %</button>
+                <button type="button" onclick="resetCompanyOverrideGroup('${entry.startWk}', '${entry.endWk}', '${deptIdsAttr}')" class="text-amber-700 hover:underline font-semibold">Reset All</button>
               </td>
             </tr>`;
 
@@ -907,6 +915,75 @@
           showToast(`Could not create linked file (${e?.name || 'Error'}). Use "Share / Save JSON" instead.`, 'warning');
         }
       }
+    }
+
+    /**
+     * Creates a timestamped backup copy of the connected JSON file (or active DB)
+     * by prompting the user for the destination folder via showDirectoryPicker
+     * (with showSaveFilePicker and direct download fallbacks). Never alters the active sync link.
+     */
+    async function backupConnectedJsonToFolder() {
+      const db = linkedFileHandle ? liveDB : getActiveDB();
+      const now = new Date();
+      const pad2 = (n) => String(n).padStart(2, '0');
+      const stamp = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}_${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}`;
+      const rawBase = linkedFileHandle && linkedFileHandle.name
+        ? linkedFileHandle.name.replace(/\.json$/i, '')
+        : `pulseplan_${ui.demoMode ? 'demo' : 'live'}`;
+      const safeBase = rawBase.replace(/[^a-zA-Z0-9._-]/g, '_') || 'pulseplan_roadmap';
+      const backupName = `${safeBase}_backup_${stamp}.json`;
+
+      let jsonStr = '';
+      if (linkedFileHandle && (ui.demoMode || ui.whatIfMode)) {
+        try {
+          const f = await linkedFileHandle.getFile();
+          jsonStr = await f.text();
+        } catch (e) {
+          jsonStr = JSON.stringify(liveDB, null, 2);
+        }
+      } else {
+        jsonStr = JSON.stringify(db, null, 2);
+      }
+
+      const sourceLabel = linkedFileHandle ? linkedFileHandle.name : (ui.demoMode ? 'Demo DB' : 'Live DB');
+      ppDebug('INFO', 'backupConnectedJsonToFolder triggered', { backupName, sourceLabel, bytes: jsonStr.length });
+
+      // Primary path: Prompt directly for the destination folder (File System Access Directory Picker)
+      if (typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function' && (typeof location === 'undefined' || location.protocol !== 'file:')) {
+        try {
+          const dirHandle = await window.showDirectoryPicker({
+            id: 'pulseplan-backup-dir',
+            mode: 'readwrite',
+          });
+          if (!dirHandle) return;
+          const fileHandle = await dirHandle.getFileHandle(backupName, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(jsonStr);
+          await writable.close();
+          const savedLabel = `${dirHandle.name}/${backupName}`;
+          recordDumpEvent('BACKUP', savedLabel, jsonStr.length, `Backup of ${sourceLabel} (Rev ${db.meta?.revision || 1})`);
+          renderSyncTab();
+          showToast(`Backup saved to "${savedLabel}" (${formatBytes(jsonStr.length)})`, 'success');
+          return;
+        } catch (e) {
+          ppDebug('WARN', 'showDirectoryPicker backup aborted/failed', { name: e?.name, message: e?.message });
+          if (e && e.name === 'AbortError') return;
+          if (e && e.name === 'SecurityError' && typeof window.showSaveFilePicker === 'function') {
+            showToast('Chrome restricts direct folder access on Desktop/Downloads roots — opening Save As dialog instead.', 'info');
+          }
+          // Fall through to showSaveFilePicker / direct download
+        }
+      }
+
+      // Secondary path: Native Save As file picker (lets user choose any folder & filename) or direct disk download
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const outcome = await shareOrDownloadFile(blob, backupName, 'application/json', 'PulsePlan JSON Backup', {
+        mode: (typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function') ? 'disk' : 'download',
+      });
+      if (outcome === 'cancelled') return;
+      recordDumpEvent('BACKUP', backupName, jsonStr.length, `Backup of ${sourceLabel} (Rev ${db.meta?.revision || 1})`);
+      renderSyncTab();
+      showToast(`Backup ${outcome === 'saved' ? 'saved to disk' : 'downloaded'}: "${backupName}" (${formatBytes(jsonStr.length)})`, 'success');
     }
 
     async function reconnectRememberedFile() {
