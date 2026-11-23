@@ -100,6 +100,7 @@ img, video { max-width: 100%; height: auto; }
 .bg-violet-100 { background-color: #ede9fe; }
 .bg-violet-400 { background-color: #a78bfa; }
 .bg-violet-50 { background-color: #f5f3ff; }
+.bg-violet-50\/40 { background-color: rgba(245, 243, 255, 0.4); }
 .bg-violet-50\/70 { background-color: rgba(245, 243, 255, 0.7); }
 .bg-violet-50\/90 { background-color: rgba(245, 243, 255, 0.9); }
 .bg-violet-500 { background-color: #8b5cf6; }
@@ -221,7 +222,8 @@ img, video { max-width: 100%; height: auto; }
 .max-w-2xl { max-width: 42rem; }
 .max-w-3xl { max-width: 48rem; }
 .max-w-4xl { max-width: 56rem; }
-.max-w-\[110px\] { max-width: 110px; }
+.max-w-\[105px\] { max-width: 105px; }
+.max-w-\[115px\] { max-width: 115px; }
 .max-w-\[180px\] { max-width: 180px; }
 .max-w-\[62px\] { max-width: 62px; }
 .max-w-\[96px\] { max-width: 96px; }
@@ -577,6 +579,7 @@ img, video { max-width: 100%; height: auto; }
   .sm\:gap-3 { gap: 0.75rem; }
   .sm\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sm\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sm\:grid-cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .sm\:h-8 { height: 2rem; }
   .sm\:items-center { align-items: center; }
   .sm\:min-w-\[200px\] { min-width: 200px; }
@@ -1927,6 +1930,7 @@ img, video { max-width: 100%; height: auto; }
       color: #a5b4fc !important;
     }
     html.dark .bg-violet-50,
+    html.dark .bg-violet-50\/40,
     html.dark .bg-violet-50\/70,
     html.dark .bg-violet-50\/90 {
       background-color: rgba(139, 92, 246, 0.16) !important;
@@ -2968,6 +2972,7 @@ img, video { max-width: 100%; height: auto; }
                 <th scope="col" class="px-4 py-3 font-bold">Status</th>
                 <th scope="col" class="px-4 py-3 font-bold">Priority</th>
                 <th scope="col" class="px-4 py-3 font-bold">Owner</th>
+                <th scope="col" class="px-4 py-3 font-bold">Technical Lead</th>
                 <th scope="col" class="px-4 py-3 font-bold">Budget Burn</th>
                 <th scope="col" class="px-4 py-3 font-bold text-right">Actions</th>
               </tr>
@@ -3156,6 +3161,7 @@ img, video { max-width: 100%; height: auto; }
           <div class="flex flex-wrap gap-2">
             <button type="button" onclick="openSharedDatabaseFile()" class="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs transition">Open &amp; Link Shared File</button>
             <button type="button" onclick="createSharedDatabaseFile()" class="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold transition">Create New Sync File</button>
+            <button id="btnBackupConnectedToFolder" type="button" onclick="backupConnectedJsonToFolder()" title="Create a timestamped JSON backup in a folder you choose (without changing your active sync link)" class="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-xs font-semibold transition">Backup to Folder&hellip;</button>
             <button id="btnReconnectFile" type="button" onclick="reconnectRememberedFile()" class="hidden px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold transition">Reconnect Remembered File</button>
             <button id="btnUnlinkFile" type="button" onclick="unlinkSharedFile()" class="hidden px-3 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold transition">Unlink</button>
           </div>
@@ -3597,7 +3603,7 @@ img, video { max-width: 100%; height: auto; }
       redFte: 2.5,
     };
 
-    const PULSEPLAN_BUILD_ID = '2026-11-23-v8.1';
+    const PULSEPLAN_BUILD_ID = '2026-11-23-v8.2';
     const _debugLogEntries = [];
     const MAX_DEBUG_LOG_ENTRIES = 120;
 
@@ -3784,13 +3790,54 @@ img, video { max-width: 100%; height: auto; }
     }
 
     /**
-     * Mobile-first Web Share API with seamless desktop download fallback.
+     * Universal export helper:
+     * - mode 'disk': Save directly to a user-chosen disk path via showSaveFilePicker (or pre-acquired fileHandle), with <a download> fallback
+     * - mode 'download': Direct browser download to disk (never opens OS Share sheet)
+     * - mode 'share': Web Share API when supported, with <a download> fallback
+     * - mode 'auto' (default): Web Share ONLY on narrow touch-first phones; desktop (incl. Windows touch laptops) always downloads to disk
      */
-    async function shareOrDownloadFile(blob, filename, mimeType, title = 'PulsePlan Export') {
-      const isTouchMobile = window.matchMedia && (window.matchMedia('(max-width: 767px)').matches || window.matchMedia('(pointer: coarse)').matches);
-      if (isTouchMobile && typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof File === 'function') {
+    async function shareOrDownloadFile(blob, filename, mimeType, title = 'PulsePlan Export', opts = {}) {
+      const mode = opts && opts.mode ? String(opts.mode) : 'auto';
+      const resolvedMime = mimeType || blob?.type || 'application/octet-stream';
+
+      if (mode === 'disk') {
+        const preHandle = opts && opts.fileHandle ? opts.fileHandle : null;
+        let handle = preHandle;
+        if (!handle && typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function' && (typeof location === 'undefined' || location.protocol !== 'file:')) {
+          const extMatch = String(filename || '').match(/(\.[a-z0-9]+)$/i);
+          const ext = extMatch ? extMatch[1].toLowerCase() : '';
+          const pickerOpts = { suggestedName: filename };
+          if (ext && resolvedMime) {
+            pickerOpts.types = [{ description: title || 'PulsePlan File', accept: { [resolvedMime.split(';')[0]]: [ext] } }];
+          }
+          try {
+            handle = await window.showSaveFilePicker(pickerOpts);
+          } catch (err) {
+            if (err && err.name === 'AbortError') return 'cancelled';
+            handle = null; // Fall back cleanly to direct browser download
+          }
+        }
+        if (handle && typeof handle.createWritable === 'function') {
+          try {
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            return 'saved';
+          } catch (err) {
+            if (err && err.name === 'AbortError') return 'cancelled';
+            // Fall through to direct download on unexpected disk write error
+          }
+        }
+      }
+
+      const isNarrowViewport = Boolean(window.matchMedia && window.matchMedia('(max-width: 767px)').matches);
+      const isFinePointer = Boolean(window.matchMedia && window.matchMedia('(pointer: fine)').matches);
+      const isTouchPhone = isNarrowViewport && !isFinePointer;
+      const shouldShare = mode === 'share' || (mode === 'auto' && isTouchPhone);
+
+      if (shouldShare && typeof navigator !== 'undefined' && typeof navigator.share === 'function' && typeof File === 'function') {
         try {
-          const file = new File([blob], filename, { type: mimeType || blob.type || 'application/octet-stream' });
+          const file = new File([blob], filename, { type: resolvedMime });
           if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
             await navigator.share({ title, files: [file] });
             return 'shared';
@@ -3799,6 +3846,7 @@ img, video { max-width: 100%; height: auto; }
           if (err && err.name === 'AbortError') return 'cancelled';
         }
       }
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -4348,11 +4396,11 @@ img, video { max-width: 100%; height: auto; }
 
       db.projects = getSortedProjects({
         projects: [
-          { id: 'p_nova', name: 'Project Nova (Core Platform)', code: 'NVA', color: '#4f46e5', status: 'Active', priority: 'High', owner: 'S. Chen', budgetDays: 700, budgetCost: 450000, tentative: false, archived: false },
-          { id: 'p_atlas', name: 'Atlas Mobile v3', code: 'ATL', color: '#0ea5e9', status: 'Active', priority: 'High', owner: 'M. Rossi', budgetDays: 450, budgetCost: 275000, tentative: false, archived: false },
-          { id: 'p_pulse', name: 'AI Copilot Analytics', code: 'AIC', color: '#8b5cf6', status: 'Active', priority: 'Medium', owner: 'P. Nair', budgetDays: 280, budgetCost: 200000, tentative: false, archived: false },
-          { id: 'p_cloud', name: 'Cloud EU Migration', code: 'CLD', color: '#10b981', status: 'At Risk', priority: 'Critical', owner: 'E. Rostova', budgetDays: 360, budgetCost: 210000, tentative: false, archived: false },
-          { id: 'p_brand', name: 'Enterprise Portal Refresh', code: 'EPR', color: '#f59e0b', status: 'Planned', priority: 'Low', owner: 'M. Bellini', budgetDays: 120, budgetCost: 75000, tentative: true, archived: false },
+          { id: 'p_nova', name: 'Project Nova (Core Platform)', code: 'NVA', color: '#4f46e5', status: 'Active', priority: 'High', owner: 'S. Chen', techLead: 'E. Rostova', budgetDays: 700, budgetCost: 450000, tentative: false, archived: false },
+          { id: 'p_atlas', name: 'Atlas Mobile v3', code: 'ATL', color: '#0ea5e9', status: 'Active', priority: 'High', owner: 'M. Rossi', techLead: 'A. Novak', budgetDays: 450, budgetCost: 275000, tentative: false, archived: false },
+          { id: 'p_pulse', name: 'AI Copilot Analytics', code: 'AIC', color: '#8b5cf6', status: 'Active', priority: 'Medium', owner: 'P. Nair', techLead: 'D. Park', budgetDays: 280, budgetCost: 200000, tentative: false, archived: false },
+          { id: 'p_cloud', name: 'Cloud EU Migration', code: 'CLD', color: '#10b981', status: 'At Risk', priority: 'Critical', owner: 'E. Rostova', techLead: 'L. Vance', budgetDays: 360, budgetCost: 210000, tentative: false, archived: false },
+          { id: 'p_brand', name: 'Enterprise Portal Refresh', code: 'EPR', color: '#f59e0b', status: 'Planned', priority: 'Low', owner: 'M. Bellini', techLead: '', budgetDays: 120, budgetCost: 75000, tentative: true, archived: false },
         ],
       });
 
@@ -4641,6 +4689,7 @@ img, video { max-width: 100%; height: auto; }
           const status = String(p.status || 'Active');
           const priority = String(p.priority || 'Medium');
           const owner = String(p.owner || p.lead || p.manager || '').trim();
+          const techLead = String(p.techLead || p.technicalLead || p.tech_lead || '').trim();
           const color = p.color || PALETTE[(idx + 2) % PALETTE.length];
           const nonFte = Boolean(p.nonFte || p.category === 'admin');
           const budgetDays = nonFte ? 0 : Math.max(0, Number(p.budgetDays ?? p.targetDays ?? 0) || 0);
@@ -4648,7 +4697,7 @@ img, video { max-width: 100%; height: auto; }
           const tentative = nonFte ? false : Boolean(p.tentative);
           const archived = Boolean(p.archived);
           const category = nonFte ? 'admin' : (tentative ? 'tentative' : 'standard');
-          return { id, name, code, color, status, priority, owner, budgetDays, budgetCost, tentative, nonFte, category, archived };
+          return { id, name, code, color, status, priority, owner, techLead, budgetDays, budgetCost, tentative, nonFte, category, archived };
         }),
       });
 
@@ -5171,33 +5220,84 @@ img, video { max-width: 100%; height: auto; }
       });
 
       const sortedWeeks = [...byWeek.keys()].sort((a, b) => a.localeCompare(b));
-      const companyWeekMap = new Map();
+      const companyWeekMap = new Map(); // wk -> { deptIds: Set, valuesByDept: Map }
 
-      // Automatically detect company-wide holiday / shutdown superposition weeks across ALL departments
-      if (depts.length >= 2) {
-        const totalBaseAll = depts.reduce((acc, d) => acc + (Number(d.defaultCapacity) || 0), 0);
+      // Automatically detect company-wide holiday / shutdown superposition weeks
+      // Resilient to: 0-capacity depts, newly added / on-call depts, tiny-dept rounding, and mixed-rate dips
+      const activeDepts = depts.filter(d => (Number(d.defaultCapacity) || 0) > 0);
+      const baselineDepts = activeDepts.length >= 2 ? activeDepts : depts;
+      if (baselineDepts.length >= 2) {
+        const totalBaseAll = baselineDepts.reduce((acc, d) => acc + (Number(d.defaultCapacity) || 0), 0);
         if (totalBaseAll > 0) {
+          const denom = baselineDepts.length;
           sortedWeeks.forEach(wk => {
             const wkMap = byWeek.get(wk);
-            if (!wkMap || wkMap.size < depts.length) return;
-            const allReduced = depts.every(d => {
-              if (!wkMap.has(d.id)) return false;
+            if (!wkMap || wkMap.size < 2) return;
+
+            const reducedDepts = [];
+            const equalDepts = [];
+            depts.forEach(d => {
+              if (!wkMap.has(d.id)) return;
               const baseFte = Number(d.defaultCapacity) || 0;
               const fte = wkMap.get(d.id);
-              return baseFte > 0 ? (fte < baseFte - 0.001) : (fte <= 0.001);
+              if (baseFte > 0) {
+                if (fte < baseFte - 0.001) reducedDepts.push(d);
+                else if (Math.abs(fte - baseFte) <= 0.001) equalDepts.push(d);
+              } else if (fte <= 0.001) {
+                reducedDepts.push(d);
+              }
             });
-            if (allReduced) {
-              companyWeekMap.set(wk, wkMap);
+
+            if (reducedDepts.length < 2) return;
+
+            // Include tiny departments whose uniform-% scaled FTE rounded back to baseFte (e.g. 0.25 * 90% -> 0.25)
+            const reducedActive = reducedDepts.filter(d => (Number(d.defaultCapacity) || 0) > 0);
+            const sumRedBase = reducedActive.reduce((acc, d) => acc + (Number(d.defaultCapacity) || 0), 0);
+            const sumRedFte = reducedActive.reduce((acc, d) => acc + wkMap.get(d.id), 0);
+            const approxPct = sumRedBase > 0 ? Math.round((sumRedFte / sumRedBase) * 100) : 0;
+
+            const groupedDepts = [...reducedDepts];
+            if (approxPct > 0 && approxPct < 100 && equalDepts.length > 0) {
+              equalDepts.forEach(d => {
+                const baseFte = Number(d.defaultCapacity) || 0;
+                const roundedScaled = Math.round((baseFte * (approxPct / 100)) * 20) / 20;
+                if (Math.abs(roundedScaled - baseFte) <= 0.001) {
+                  groupedDepts.push(d);
+                }
+              });
+            }
+
+            const groupedActiveCount = groupedDepts.filter(d => (Number(d.defaultCapacity) || 0) > 0).length;
+            const isFullActive = groupedActiveCount >= denom;
+            const isAllShutdown = groupedDepts.every(d => wkMap.get(d.id) <= 0.001);
+            const isShutdownMajority = isAllShutdown && groupedActiveCount >= Math.max(2, Math.ceil(denom * 0.6));
+            const isUniformReduced = !isAllShutdown && groupedDepts.every(d => {
+              const baseFte = Number(d.defaultCapacity) || 0;
+              if (baseFte <= 0) return true;
+              const fte = wkMap.get(d.id);
+              const pct = Math.round((fte / baseFte) * 100);
+              const expected = Math.round((baseFte * (approxPct / 100)) * 20) / 20;
+              return Math.abs(fte - expected) <= 0.051 || Math.abs(pct - approxPct) <= 5;
+            });
+            const isHolidayMajority = groupedActiveCount >= Math.max(2, Math.ceil(denom * 0.6))
+              && (isUniformReduced || (denom >= 3 && groupedActiveCount >= denom - 1));
+
+            if (isFullActive || isShutdownMajority || isHolidayMajority) {
+              const idSet = new Set(groupedDepts.map(d => d.id));
+              const vals = new Map();
+              groupedDepts.forEach(d => vals.set(d.id, wkMap.get(d.id)));
+              companyWeekMap.set(wk, { deptIds: idSet, valuesByDept: vals });
             }
           });
         }
       }
 
-      // Merge contiguous company-wide weeks that have identical per-department FTE overrides
+      // Merge contiguous company-wide weeks that have identical grouped departments and per-department FTE overrides
       const companyGroups = [];
       let curCo = null;
       const finalizeCompanyGroup = (grp) => {
-        const items = depts.map(d => {
+        const coveredDepts = depts.filter(d => grp.deptIds.has(d.id));
+        const items = coveredDepts.map(d => {
           const baseFte = Number(d.defaultCapacity) || 0;
           const fte = grp.valuesByDept.get(d.id);
           const deltaFte = Math.round((fte - baseFte) * 100) / 100;
@@ -5212,11 +5312,14 @@ img, video { max-width: 100%; height: auto; }
         const isUniformPct = !isShutdown && items.every(it => {
           if (it.baseFte <= 0) return true;
           const expected = Math.round((it.baseFte * (overallPct / 100)) * 20) / 20;
-          return Math.abs(it.fte - expected) <= 0.051 || Math.abs(it.pct - overallPct) <= 2;
+          return Math.abs(it.fte - expected) <= 0.051 || Math.abs(it.pct - overallPct) <= 3;
         });
         const eventType = isShutdown ? 'shutdown' : (isUniformPct ? 'holiday' : 'mixed-holiday');
         const label = isShutdown ? 'Company Shutdown' : (isUniformPct ? 'Company Holiday' : 'Company-Wide Holiday / Dip');
         const pctLabel = isShutdown ? '0%' : (isUniformPct ? `${overallPct}%` : `~${overallPct}% avg`);
+        const totalActiveDepts = baselineDepts.length;
+        const coveredActiveDepts = items.filter(it => it.baseFte > 0).length;
+        const isPartial = coveredActiveDepts < totalActiveDepts;
         return {
           kind: 'company',
           id: `co__${grp.startWk}__${grp.endWk}`,
@@ -5230,21 +5333,25 @@ img, video { max-width: 100%; height: auto; }
           totalBaseFte,
           totalFte,
           totalDeltaFte,
+          totalDepts: totalActiveDepts,
+          isPartial,
+          deptIds: items.map(it => it.deptId),
           items,
         };
       };
 
       [...companyWeekMap.keys()].sort((a, b) => a.localeCompare(b)).forEach(wk => {
-        const wkMap = companyWeekMap.get(wk);
+        const wkEntry = companyWeekMap.get(wk);
         const sameAsPrev = curCo
           && addWeeksToWeekKey(curCo.endWk, 1) === wk
-          && depts.every(d => Math.abs((curCo.valuesByDept.get(d.id) || 0) - (wkMap.get(d.id) || 0)) < 0.001);
+          && curCo.deptIds.size === wkEntry.deptIds.size
+          && [...curCo.deptIds].every(id => wkEntry.deptIds.has(id) && Math.abs((curCo.valuesByDept.get(id) || 0) - (wkEntry.valuesByDept.get(id) || 0)) < 0.001);
         if (sameAsPrev) {
           curCo.endWk = wk;
           curCo.weekKeys.push(wk);
         } else {
           if (curCo) companyGroups.push(finalizeCompanyGroup(curCo));
-          curCo = { startWk: wk, endWk: wk, weekKeys: [wk], valuesByDept: wkMap };
+          curCo = { startWk: wk, endWk: wk, weekKeys: [wk], deptIds: wkEntry.deptIds, valuesByDept: wkEntry.valuesByDept };
         }
       });
       if (curCo) companyGroups.push(finalizeCompanyGroup(curCo));
@@ -5252,7 +5359,11 @@ img, video { max-width: 100%; height: auto; }
       // Single-department filter: show that department's spans with subtle company-wide badges when overlapping
       if (deptFilter !== 'all') {
         const companyByWk = new Map();
-        companyGroups.forEach(cg => cg.weekKeys.forEach(wk => companyByWk.set(wk, cg)));
+        companyGroups.forEach(cg => {
+          if (cg.deptIds.includes(deptFilter)) {
+            cg.weekKeys.forEach(wk => companyByWk.set(wk, cg));
+          }
+        });
         return getGroupedCapacityOverrides(db, deptFilter).map(sp => {
           const coMatches = sp.weekKeys.map(wk => companyByWk.get(wk)).filter(Boolean);
           let companyBadge = '';
@@ -5276,9 +5387,10 @@ img, video { max-width: 100%; height: auto; }
       // All-Departments view: extract remaining non-company-wide overrides into per-department contiguous spans
       const byDeptRemaining = new Map();
       sortedWeeks.forEach(wk => {
-        if (companyWeekMap.has(wk)) return;
+        const coEntry = companyWeekMap.get(wk);
         const wkMap = byWeek.get(wk);
         wkMap.forEach((fte, deptId) => {
+          if (coEntry && coEntry.deptIds.has(deptId)) return;
           if (!byDeptRemaining.has(deptId)) byDeptRemaining.set(deptId, []);
           byDeptRemaining.get(deptId).push({ weekKey: wk, fte });
         });
@@ -6281,10 +6393,10 @@ img, video { max-width: 100%; height: auto; }
               const a = getAllocationForPeriod(row.id, p.id, selectedPk, ui.timeUnit, db.allocations);
               const c = getCellProjectComments(row.id, p.id, selectedPk, ui.timeUnit, db);
               if (!a.hasData && !c.hasAny) return false;
-              return (`${p.name} ${p.code} ${p.owner || ''} ${c.direct || ''}`).toLowerCase().includes(searchQ);
+              return (`${p.name} ${p.code} ${p.owner || ''} ${p.techLead || ''} ${c.direct || ''}`).toLowerCase().includes(searchQ);
             });
           } else {
-            if ((`${row.name} ${row.code} ${row.owner || ''} ${row.status || ''}`).toLowerCase().includes(searchQ)) return true;
+            if ((`${row.name} ${row.code} ${row.owner || ''} ${row.techLead || ''} ${row.status || ''}`).toLowerCase().includes(searchQ)) return true;
             const checkPks = ui.axis === 'timeline' ? periods : [selectedPk];
             return checkPks.some(pk => visibleDepts.some(d => {
               const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
@@ -6355,6 +6467,23 @@ img, video { max-width: 100%; height: auto; }
       if (Math.abs(dx) > 68 && Math.abs(dx) > Math.abs(dy) * 1.8) {
         shiftMobileSelectedPeriod(dx < 0 ? 1 : -1);
       }
+    }
+
+    function getVisibleMilestonesForDeptView(pk, db, visibleProjs) {
+      const visibleProjIdSet = new Set((visibleProjs || []).map(p => p.id));
+      const searchQ = (ui.matrixSearch || '').trim().toLowerCase();
+      return getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => {
+        if (ui.filterProj !== 'all' && m.projectId !== ui.filterProj) return false;
+        if (m.projectId && !visibleProjIdSet.has(m.projectId)) return false;
+        if (ui.filterDept !== 'all' && m.deptId && m.deptId !== ui.filterDept) return false;
+        if (searchQ) {
+          const p = db.projects.find(x => x.id === m.projectId);
+          const d = db.departments.find(x => x.id === m.deptId);
+          const hay = `${m.title || ''} ${m.notes || ''} ${m.status || ''} ${p?.name || ''} ${p?.code || ''} ${p?.owner || ''} ${p?.techLead || ''} ${d?.name || ''} ${d?.code || ''}`.toLowerCase();
+          if (!hay.includes(searchQ)) return false;
+        }
+        return true;
+      });
     }
 
     function renderMobileMatrixCards() {
@@ -6698,7 +6827,7 @@ img, video { max-width: 100%; height: auto; }
             const a = getAllocationForPeriod(row.id, p.id, selectedPk, ui.timeUnit, db.allocations);
             const cmtObj = getCellProjectComments(row.id, p.id, selectedPk, ui.timeUnit, db);
             if (!a.hasData && !cmtObj.hasAny) return '';
-            if (searchQ && !(`${row.name} ${row.code} ${p.name} ${p.code} ${p.owner || ''} ${cmtObj.direct || ''}`).toLowerCase().includes(searchQ)) return '';
+            if (searchQ && !(`${row.name} ${row.code} ${p.name} ${p.code} ${p.owner || ''} ${p.techLead || ''} ${cmtObj.direct || ''}`).toLowerCase().includes(searchQ)) return '';
 
             const spotCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
             const tentCls = p.tentative ? (useColorFill ? 'tentative-card-filled' : 'tentative-card') : '';
@@ -6804,22 +6933,6 @@ img, video { max-width: 100%; height: auto; }
               </div>`;
           }).join('');
 
-          const msHtml = getMilestonesInPeriod(selectedPk, ui.timeUnit, db.milestones)
-            .filter(m => {
-              if (ui.filterProj !== 'all' && m.projectId !== ui.filterProj) return false;
-              if (m.deptId) return m.deptId === row.id;
-              return getAllocationForPeriod(row.id, m.projectId, selectedPk, ui.timeUnit, db.allocations).hasData;
-            })
-            .map(m => {
-              const p = db.projects.find(x => x.id === m.projectId);
-              return `
-                <button type="button" onclick="openMilestoneModal('${m.id}')"
-                  class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-violet-50 border border-violet-200 text-violet-900 text-xs font-bold flex flex-wrap items-center justify-between gap-1.5 text-left">
-                  <span class="min-w-0 break-words"><span class="text-violet-600 mr-1.5" aria-hidden="true">&#9670;</span>${escapeHtml(m.title)}</span>
-                  <span class="font-mono text-[11px] text-violet-700 shrink-0">${p ? `[${escapeHtml(p.code)}] ` : ''}${escapeHtml(m.date)}</span>
-                </button>`;
-            }).join('');
-
           const mobileFixBtn = pct > overT
             ? `<button type="button" onclick="openBottleneckResolverModal('${row.id}', '${selectedPk}')"
                  class="w-full min-h-[38px] rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-extrabold flex items-center justify-center gap-1.5">&#9888; Resolve Overallocation (${pct}%)</button>`
@@ -6854,7 +6967,6 @@ img, video { max-width: 100%; height: auto; }
               <div class="px-3.5 pb-3.5 pt-2 border-t border-slate-100 space-y-2.5">
                 ${mobileFixBtn}
                 ${itemsHtml || '<p class="text-xs text-slate-400 text-center py-2">No allocations in this period.</p>'}
-                ${msHtml}
                 <div class="grid grid-cols-3 gap-1.5 pt-1">
                   <button type="button" onclick="openAllocationModal('${row.id}', '', '${selectedPk}')"
                     class="min-h-[40px] px-1.5 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-700 text-[11px] font-bold truncate">+ Allocate</button>
@@ -7035,12 +7147,53 @@ img, video { max-width: 100%; height: auto; }
            </div>`
         : '';
 
+      // Dedicated Milestones Card Section for Mobile By Department view
+      let mobileMilestonesFieldHtml = '';
+      if (ui.axis === 'department') {
+        const periodMilestones = getVisibleMilestonesForDeptView(selectedPk, db, visibleProjs);
+        const msCards = periodMilestones.map(m => {
+          const p = db.projects.find(x => x.id === m.projectId);
+          const d = db.departments.find(x => x.id === m.deptId);
+          const drift = getMilestoneDriftDays(m);
+          const msSpotCls = spotlightId ? (spotlightId === m.projectId ? 'spotlight-active' : 'spotlight-dimmed') : '';
+          return `
+            <button type="button" onclick="openMilestoneModal('${m.id}')"
+              class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-violet-50 border border-violet-200 text-violet-900 text-xs font-bold flex flex-wrap items-center justify-between gap-1.5 text-left ${msSpotCls}">
+              <span class="min-w-0 break-words inline-flex items-center gap-1.5">
+                <span class="text-violet-600 shrink-0" aria-hidden="true">&#9670;</span>
+                ${p ? `<span class="w-2 h-2 rounded-full shrink-0" style="background:${p.color}" aria-hidden="true"></span>` : ''}
+                <span>${escapeHtml(m.title)}</span>
+              </span>
+              <span class="font-mono text-[11px] text-violet-700 shrink-0 flex items-center gap-1">
+                ${p ? `<span>[${escapeHtml(p.code)}]</span>` : ''}
+                ${d ? `<span class="px-1 rounded bg-white border border-violet-200 text-[10px]">${escapeHtml(d.code)}</span>` : ''}
+                <span>${escapeHtml(m.date)}</span>
+                ${drift > 0 ? `<span class="text-rose-600">+${drift}d</span>` : ''}
+              </span>
+            </button>`;
+        }).join('');
+        mobileMilestonesFieldHtml = `
+          <div data-mobile-milestones-field="1" class="bg-white rounded-2xl border border-violet-200 p-3 shadow-xs space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5">
+                <span class="text-violet-600 font-bold" aria-hidden="true">&#9670;</span>
+                <span class="text-xs font-extrabold text-violet-900 uppercase tracking-wider">Milestones</span>
+                <span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold tabular-nums">${periodMilestones.length}</span>
+              </div>
+              <button type="button" onclick="openMilestoneModal('', '${ui.filterProj !== 'all' ? ui.filterProj : ''}', '${getPeriodMidDateISO(selectedPk, ui.timeUnit)}', '${ui.filterDept !== 'all' ? ui.filterDept : ''}')"
+                class="px-2.5 py-1 rounded-lg bg-violet-50 border border-violet-200 text-violet-700 text-[11px] font-bold">+ Milestone</button>
+            </div>
+            ${msCards || '<p class="text-[11px] text-slate-400 text-center py-1">No milestones scheduled in this period.</p>'}
+          </div>`;
+      }
+
       deck.innerHTML = `
         ${mobileFilterBannerHtml}
         <nav aria-label="Select roadmap period" class="flex items-center gap-2 overflow-x-auto snap-x snap-mandatory no-scrollbar py-0.5">
           ${pillsHtml}
         </nav>
         ${summaryStripHtml}
+        ${mobileMilestonesFieldHtml}
         ${collapseBarHtml}
         <div class="space-y-3" ontouchstart="handleMobileDeckTouchStart(event)" ontouchend="handleMobileDeckTouchEnd(event)">
           ${accordionCardsHtml || '<div class="bg-white rounded-2xl border border-slate-200 p-6 text-center text-xs text-slate-500">No rows match the active filters. <button type="button" onclick="clearMatrixFilters()" class="ml-1 font-bold text-indigo-600 underline">Reset</button></div>'}
@@ -7386,7 +7539,7 @@ img, video { max-width: 100%; height: auto; }
       const matchesSearchForPair = (dept, proj, pk) => {
         if (!searchQ) return true;
         if (dept && (`${dept.name} ${dept.code} ${dept.manager || ''}`).toLowerCase().includes(searchQ)) return true;
-        if (proj && (`${proj.name} ${proj.code} ${proj.owner || ''} ${proj.status || ''}`).toLowerCase().includes(searchQ)) return true;
+        if (proj && (`${proj.name} ${proj.code} ${proj.owner || ''} ${proj.techLead || ''} ${proj.status || ''}`).toLowerCase().includes(searchQ)) return true;
         if (dept && proj && pk) {
           const cmt = getCellProjectComments(dept.id, proj.id, pk, ui.timeUnit, db);
           if (cmt.direct && cmt.direct.toLowerCase().includes(searchQ)) return true;
@@ -7397,17 +7550,11 @@ img, video { max-width: 100%; height: auto; }
 
       const isRowActiveInPeriods = (row) => {
         if (ui.axis === 'department') {
-          return periods.some(pk => {
-            if (visibleProjs.some(p => {
-              const a = getAllocationForPeriod(row.id, p.id, pk, ui.timeUnit, db.allocations);
-              const c = getCellProjectComments(row.id, p.id, pk, ui.timeUnit, db);
-              return a.hasData || c.hasAny;
-            })) return true;
-            return getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).some(m =>
-              (ui.filterProj === 'all' || m.projectId === ui.filterProj) &&
-              (m.deptId ? m.deptId === row.id : getAllocationForPeriod(row.id, m.projectId, pk, ui.timeUnit, db.allocations).hasData)
-            );
-          });
+          return periods.some(pk => visibleProjs.some(p => {
+            const a = getAllocationForPeriod(row.id, p.id, pk, ui.timeUnit, db.allocations);
+            const c = getCellProjectComments(row.id, p.id, pk, ui.timeUnit, db);
+            return a.hasData || c.hasAny;
+          }));
         }
         const isAdminRowCheck = isNonFteProject(row);
         return periods.some(pk => {
@@ -7761,9 +7908,10 @@ img, video { max-width: 100%; height: auto; }
                <div class="w-full h-1 rounded-full bg-slate-200/80 overflow-hidden"><div class="h-full ${budgetBarCls} rounded-full" style="width:${Math.min(100, budgetPct)}%"></div></div>
              </div>`
           : '';
-        const ownerLineHtml = (row.owner || adminTagHtml || tentTagHtml || bottleneckBadgeHtml || costBadgeHtml)
+        const ownerLineHtml = (row.owner || row.techLead || adminTagHtml || tentTagHtml || bottleneckBadgeHtml || costBadgeHtml)
           ? `<div class="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
-               ${row.owner ? `<span class="truncate max-w-[110px]" title="Owner: ${escapeHtml(row.owner)}">${escapeHtml(row.owner)}</span>` : ''}
+               ${row.owner ? `<span class="truncate max-w-[105px]" title="Owner: ${escapeHtml(row.owner)}">${escapeHtml(row.owner)}</span>` : ''}
+               ${row.techLead ? `<span class="px-1 py-0.5 rounded bg-slate-100 text-slate-700 text-[9px] font-semibold truncate max-w-[115px]" title="Technical Lead: ${escapeHtml(row.techLead)}">TL: ${escapeHtml(row.techLead)}</span>` : ''}
                ${adminTagHtml}${tentTagHtml}${bottleneckBadgeHtml}${costBadgeHtml}
              </div>`
           : '';
@@ -7854,12 +8002,6 @@ img, video { max-width: 100%; height: auto; }
             const capDisp = formatValue(fteToDisplayValue(capFte, pk, ui.timeUnit), ui.manpowerUnit, true);
             const cmtCount = getCellTotalCommentCount(row.id, pk, 'department', ui.timeUnit, db);
 
-            const msList = getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => {
-              if (ui.filterProj !== 'all' && m.projectId !== ui.filterProj) return false;
-              if (m.deptId) return m.deptId === row.id;
-              return getAllocationForPeriod(row.id, m.projectId, pk, ui.timeUnit, db.allocations).hasData;
-            });
-
             if (isOverview) {
               const ovChips = visibleProjs.map(p => {
                 const a = getAllocationForPeriod(row.id, p.id, pk, ui.timeUnit, db.allocations);
@@ -7901,11 +8043,6 @@ img, video { max-width: 100%; height: auto; }
                   ${ovShowVals ? `<span class="tabular-nums text-slate-600 shrink-0">${valNum}</span>` : ''}
                 </div>`;
               }).join('');
-              const ovMsBadge = msList.length > 0
-                ? `<span title="${escapeHtml(msList.map(m => '◆ ' + m.title + ' (' + m.date + ')').join('\n'))}"
-                    onclick="event.stopPropagation(); openMilestoneModal('${msList[0].id}')"
-                    class="text-[9px] font-bold text-violet-700 shrink-0 cursor-pointer">&#9670;${msList.length > 1 ? msList.length : ''}</span>`
-                : '';
               const hInfo = formatPeriodHeader(pk, ui.timeUnit);
               return `
                 <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 ${cellToneCls} transition cursor-pointer"
@@ -7915,7 +8052,6 @@ img, video { max-width: 100%; height: auto; }
                     <span class="px-1 py-0.5 rounded text-[9px] font-extrabold tabular-nums leading-none ${pctBadgeCls}">${pct > 990 ? '&infin;' : pct + '%'}</span>
                     <span class="inline-flex items-center gap-0.5">
                       ${capObj.hasOverride ? '<span class="w-1.5 h-1.5 rounded-full bg-sky-500 shrink-0" title="Variable capacity override"></span>' : ''}
-                      ${ovMsBadge}
                     </span>
                   </div>
                   <div class="w-full h-1 rounded-full bg-slate-200/80 overflow-hidden mb-1" aria-hidden="true">
@@ -8095,22 +8231,6 @@ img, video { max-width: 100%; height: auto; }
                 </div>`;
             }).join('');
 
-            const msHtml = msList.map(m => {
-              const p = db.projects.find(x => x.id === m.projectId);
-              const drift = getMilestoneDriftDays(m);
-              const msSpotCls = spotlightId ? (spotlightId === m.projectId ? 'spotlight-active' : 'spotlight-dimmed') : '';
-              return `
-                <div draggable="${!isPresent}"
-                  data-drag-type="milestone" data-drag-ms="${m.id}" data-drag-period="${pk}"
-                  ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
-                  onclick="event.stopPropagation(); openMilestoneModal('${m.id}')"
-                  title="${escapeHtml(m.title)} (${m.date}${drift > 0 ? ', +' + drift + 'd slip' : ''})"
-                  class="flex items-center justify-between gap-1 ${msSpotCls} ${s.msBox} rounded-md bg-violet-50/90 hover:bg-violet-100/90 border border-violet-200/80 text-violet-900 cursor-grab transition">
-                  <span class="truncate"><span class="text-violet-600 mr-1" aria-hidden="true">◆</span>${escapeHtml(m.title)}</span>
-                  ${p ? `<span class="font-mono text-[10px] font-bold text-violet-700 shrink-0">${escapeHtml(p.code)}</span>` : ''}
-                </div>`;
-            }).join('');
-
             const capDelta = Math.round((capFte - (Number(row.defaultCapacity) || 0)) * 100) / 100;
             const varLabel = capDelta > 0.005 ? 'Var ▲' : capDelta < -0.005 ? 'Var ▼' : 'Var';
             const capTooltip = capObj.hasOverride
@@ -8168,7 +8288,6 @@ img, video { max-width: 100%; height: auto; }
                 ${cellHeaderHtml}
                 <div class="${s.pillSpace}">
                   ${pills}
-                  ${msHtml}
                 </div>
                 ${addBtnHtml}
               </td>`;
@@ -8768,6 +8887,105 @@ img, video { max-width: 100%; height: auto; }
         }
       }).join('');
 
+      // Dedicated Milestones Swimlane Row for By Department view (shown cleanly at top instead of inside dept cells)
+      let deptMilestonesRowHtml = '';
+      if (ui.axis === 'department' && rows.length > 0) {
+        let totalVisibleMs = 0;
+        const msCellsHtml = periods.map(pk => {
+          const pkMs = getVisibleMilestonesForDeptView(pk, db, visibleProjs);
+          totalVisibleMs += pkMs.length;
+          const chipsHtml = pkMs.map(m => {
+            const p = db.projects.find(x => x.id === m.projectId);
+            const d = db.departments.find(x => x.id === m.deptId);
+            const drift = getMilestoneDriftDays(m);
+            const msSpotCls = spotlightId ? (spotlightId === m.projectId ? 'spotlight-active' : 'spotlight-dimmed') : '';
+            const tip = `${m.title}${p ? ' [' + p.code + ' ' + p.name + ']' : ''}${d ? ' • Dept: ' + d.code : ''} (${m.date}${drift > 0 ? ', +' + drift + 'd slip' : ''})`;
+            if (isOverview) {
+              return `
+                <div draggable="${!isPresent}"
+                  data-drag-type="milestone" data-drag-ms="${m.id}" data-drag-period="${pk}"
+                  ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
+                  onclick="event.stopPropagation(); openMilestoneModal('${m.id}')"
+                  title="${escapeHtml(tip)}"
+                  class="${msSpotCls} px-1 py-0.5 rounded bg-violet-50 hover:bg-violet-100 border border-violet-200 text-violet-900 text-[9px] font-bold flex items-center justify-between gap-0.5 leading-tight truncate cursor-pointer">
+                  <span class="truncate"><span class="text-violet-600" aria-hidden="true">&#9670;</span> ${escapeHtml(ovShowVals ? m.title : (p ? p.code : m.title))}</span>
+                </div>`;
+            }
+            return `
+              <div draggable="${!isPresent}"
+                data-drag-type="milestone" data-drag-ms="${m.id}" data-drag-period="${pk}"
+                ondragstart="handleDragStart(event)" ondragend="handleDragEnd(event)"
+                onclick="event.stopPropagation(); openMilestoneModal('${m.id}')"
+                title="${escapeHtml(tip)}"
+                class="flex items-center justify-between gap-1 ${msSpotCls} ${s.msBox} rounded-md bg-violet-50/90 hover:bg-violet-100/90 border border-violet-200/80 text-violet-900 cursor-grab transition">
+                <span class="inline-flex items-center gap-1 min-w-0 truncate">
+                  <span class="text-violet-600 shrink-0" aria-hidden="true">&#9670;</span>
+                  ${p ? `<span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${p.color}" aria-hidden="true"></span>` : ''}
+                  <span class="truncate">${escapeHtml(m.title)}</span>
+                </span>
+                <span class="inline-flex items-center gap-1 font-mono text-[10px] font-bold text-violet-700 shrink-0">
+                  ${p ? `<span>${escapeHtml(p.code)}</span>` : ''}
+                  ${drift > 0 ? `<span class="text-rose-600">+${drift}d</span>` : ''}
+                </span>
+              </div>`;
+          }).join('');
+          const addMsBtn = !isPresent
+            ? `<button type="button" onclick="event.stopPropagation(); openMilestoneModal('', '${ui.filterProj !== 'all' ? ui.filterProj : ''}', '${getPeriodMidDateISO(pk, ui.timeUnit)}', '${ui.filterDept !== 'all' ? ui.filterDept : ''}')"
+                 title="Add a milestone in ${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).title)}"
+                 class="${pkMs.length > 0 ? 'mt-1' : ''} w-full py-0.5 rounded-md border border-dashed border-violet-200 hover:border-violet-300 hover:bg-violet-50 text-[10px] font-semibold text-violet-700 opacity-0 group-hover/cell:opacity-100 transition">+ Milestone</button>`
+            : '';
+          return `
+            <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 bg-violet-50/40 transition cursor-pointer"
+              ondragover="handleCellDragOver(event)" ondragleave="handleCellDragLeave(event)"
+              ondrop="handleCellDrop(event, '__MILESTONES__', '${pk}')"
+              onclick="openMilestoneModal('', '${ui.filterProj !== 'all' ? ui.filterProj : ''}', '${getPeriodMidDateISO(pk, ui.timeUnit)}', '${ui.filterDept !== 'all' ? ui.filterDept : ''}')">
+              <div class="${s.pillSpace}">
+                ${chipsHtml || (isOverview ? '<div class="text-[9px] text-slate-300 text-center">&mdash;</div>' : '')}
+              </div>
+              ${addMsBtn}
+            </td>`;
+        }).join('');
+
+        const msRowHeaderHtml = isCompactRow
+          ? `<th scope="row" title="Roadmap Milestones (${totalVisibleMs} in visible window)"
+               class="meeting-row-accent sticky left-0 z-10 bg-violet-50 w-[62px] min-w-[62px] max-w-[62px] ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-middle font-normal text-center"
+               style="--row-accent:#7c3aed;">
+               <div class="flex flex-col items-center justify-center gap-1">
+                 <div class="meeting-vertical-text text-xs font-extrabold text-violet-900 tracking-wide">Milestones</div>
+                 <span class="rounded-md bg-violet-100 text-violet-800 px-1 py-0.5 text-[10px] font-extrabold tabular-nums">&#9670; ${totalVisibleMs}</span>
+               </div>
+             </th>`
+          : (isCompactGrid
+              ? `<th scope="row" class="sticky left-0 z-10 bg-violet-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left">
+                   <div class="flex items-center justify-between gap-1">
+                     <div class="flex items-center gap-1.5 min-w-0">
+                       <span class="w-1.5 h-7 rounded-full bg-violet-500 shrink-0" aria-hidden="true"></span>
+                       <div class="min-w-0">
+                         <div class="${s.rowName} text-violet-900 truncate">&#9670; Milestones</div>
+                       </div>
+                     </div>
+                     <span class="rounded-md bg-violet-100 text-violet-800 ${s.rowBadge} tabular-nums">${totalVisibleMs}</span>
+                   </div>
+                 </th>`
+              : `<th scope="row" class="sticky left-0 z-10 bg-violet-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left">
+                   <div class="flex items-stretch gap-2 min-w-0">
+                     <span class="w-1.5 rounded-full bg-violet-500 shrink-0" aria-hidden="true"></span>
+                     <div class="min-w-0 flex-1">
+                       <div class="flex items-center justify-between gap-1.5">
+                         <div class="${s.rowName} text-violet-900 truncate">&#9670; Milestones</div>
+                         <span class="rounded-md shrink-0 tabular-nums bg-violet-100 text-violet-800 ${s.rowBadge}">${totalVisibleMs}</span>
+                       </div>
+                       <div class="${s.rowMeta} text-violet-700 flex items-center justify-between gap-1 mt-0.5">
+                         <span>Dedicated milestone lane</span>
+                         ${!isPresent ? `<button type="button" onclick="openMilestoneModal('', '${ui.filterProj !== 'all' ? ui.filterProj : ''}', '${getPeriodMidDateISO(periods[0], ui.timeUnit)}', '${ui.filterDept !== 'all' ? ui.filterDept : ''}')" class="px-1.5 py-0.5 rounded bg-white border border-violet-200 hover:bg-violet-100 text-violet-700 text-[9px] font-bold transition shrink-0">+ Add</button>` : ''}
+                       </div>
+                     </div>
+                   </div>
+                 </th>`);
+
+        deptMilestonesRowHtml = `<tr class="group/row" data-row-id="__MILESTONES__">${msRowHeaderHtml}${msCellsHtml}</tr>`;
+      }
+
       const footerCells = periods.map(pk => {
         let totA = 0, totC = 0;
         visibleDepts.forEach(d => {
@@ -8827,7 +9045,7 @@ img, video { max-width: 100%; height: auto; }
             </tr>
           </thead>
           <tbody>
-            ${bodyRows || `<tr><td colspan="${periods.length + 1}" class="px-6 py-10 text-center text-xs text-slate-500">No rows match the active filters. <button type="button" onclick="clearMatrixFilters(); if (ui.hideEmptyRows) toggleHideEmptyRows();" class="ml-1 font-bold text-indigo-600 hover:underline">Reset filters</button></td></tr>`}
+            ${deptMilestonesRowHtml}${bodyRows || `<tr><td colspan="${periods.length + 1}" class="px-6 py-10 text-center text-xs text-slate-500">No rows match the active filters. <button type="button" onclick="clearMatrixFilters(); if (ui.hideEmptyRows) toggleHideEmptyRows();" class="ml-1 font-bold text-indigo-600 hover:underline">Reset filters</button></td></tr>`}
           </tbody>
           ${footerHtml}
         </table>`;
@@ -9007,7 +9225,7 @@ img, video { max-width: 100%; height: auto; }
         pushUndoState(`Move milestone "${ms.title}"`);
         const oldDate = ms.date;
         ms.date = getPeriodMidDateISO(targetPeriodKey, ui.timeUnit);
-        if (ui.axis === 'department') ms.deptId = targetRowId;
+        if (ui.axis === 'department' && targetRowId && targetRowId !== '__MILESTONES__') ms.deptId = targetRowId;
         if (ui.axis === 'project') ms.projectId = targetRowId;
         recordChange('Milestone', `Moved milestone "${ms.title}" from ${oldDate} to ${ms.date}`);
         renderAll();
@@ -10152,7 +10370,7 @@ img, video { max-width: 100%; height: auto; }
       const displayedProjects = ui.showArchivedProjects ? sortedProjectsAll : sortedProjectsAll.filter(p => !p.archived);
       const hasRates = hasAnyDayRates(db);
       if (displayedProjects.length === 0) {
-        pBody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">${db.projects.length > 0 ? 'All projects are archived. Click "Show Archived" above to view them.' : 'No projects yet. Click "+ Add Project" to start.'}</td></tr>`;
+        pBody.innerHTML = `<tr><td colspan="8" class="px-4 py-8 text-center text-slate-400">${db.projects.length > 0 ? 'All projects are archived. Click "Show Archived" above to view them.' : 'No projects yet. Click "+ Add Project" to start.'}</td></tr>`;
       } else {
         pBody.innerHTML = displayedProjects.map((p, pIdx) => {
           const plannedDays = getProjectTotalPlannedDays(p.id, db);
@@ -10195,6 +10413,7 @@ img, video { max-width: 100%; height: auto; }
               <td class="px-4 py-3"><span class="px-2 py-0.5 rounded-md bg-slate-100 font-semibold">${escapeHtml(p.status)}</span></td>
               <td class="px-4 py-3 text-slate-600">${escapeHtml(p.priority || 'Medium')}</td>
               <td class="px-4 py-3 text-slate-600">${escapeHtml(p.owner || '—')}</td>
+              <td class="px-4 py-3 text-slate-600">${escapeHtml(p.techLead || '—')}</td>
               <td class="px-4 py-3">${effortPart}${costPart}</td>
               <td class="px-4 py-3 text-right space-x-1.5 whitespace-nowrap">
                 <button type="button" onclick="openShiftProjectModal('${p.id}')" title="Shift all allocations, comments, and milestones by ±N weeks/months" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-semibold transition">&#8644; Shift</button>
@@ -10350,17 +10569,22 @@ img, video { max-width: 100%; height: auto; }
       showToast(`Reset ${wks.length} week${wks.length === 1 ? '' : 's'} to base ${baseFte} FTE`, 'info', { undoable: true });
     }
 
-    function editCompanyOverrideGroup(startWk, endWk, pctFactor) {
-      openHolidayFactorModal(startWk, { forceWeeks: true, endPeriod: endWk, pct: pctFactor });
+    function editCompanyOverrideGroup(startWk, endWk, pctFactor, deptIdsCsv = '') {
+      const deptIds = deptIdsCsv ? String(deptIdsCsv).split(',').filter(Boolean) : null;
+      openHolidayFactorModal(startWk, { forceWeeks: true, endPeriod: endWk, pct: pctFactor, deptIds });
     }
 
-    function resetCompanyOverrideGroup(startWk, endWk) {
+    function resetCompanyOverrideGroup(startWk, endWk, deptIdsCsv = '') {
       const db = getActiveDB();
       const wks = enumerateIsoWeekSpan(startWk, endWk);
       if (wks.length === 0) return;
+      const targetIdSet = deptIdsCsv ? new Set(String(deptIdsCsv).split(',').filter(Boolean)) : null;
+      const targetDepts = targetIdSet
+        ? (db.departments || []).filter(d => targetIdSet.has(d.id))
+        : (db.departments || []);
       let removed = 0;
       pushUndoState(`Reset company-wide override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''})`);
-      (db.departments || []).forEach(d => {
+      targetDepts.forEach(d => {
         wks.forEach(wk => {
           const key = `${d.id}::${wk}`;
           if (Object.prototype.hasOwnProperty.call(db.capacityOverrides || {}, key)) {
@@ -10370,9 +10594,9 @@ img, video { max-width: 100%; height: auto; }
         });
       });
       if (removed === 0) return;
-      recordChange('Capacity', `Reset company-wide capacity override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''}, ${wks.length} wk${wks.length === 1 ? '' : 's'}) across all departments`);
+      recordChange('Capacity', `Reset company-wide capacity override (${startWk}${endWk !== startWk ? ' → ' + endWk : ''}, ${wks.length} wk${wks.length === 1 ? '' : 's'}) across ${targetDepts.length} department(s)`);
       renderAll();
-      showToast(`Reset company-wide override (${wks.length} wk${wks.length === 1 ? '' : 's'}) for all departments`, 'info', { undoable: true });
+      showToast(`Reset company-wide override (${wks.length} wk${wks.length === 1 ? '' : 's'}) for ${targetDepts.length} department${targetDepts.length === 1 ? '' : 's'}`, 'info', { undoable: true });
     }
 
     function toggleOverrideGroup(groupId) {
@@ -10507,6 +10731,8 @@ img, video { max-width: 100%; height: auto; }
             ? 'bg-rose-50 text-rose-700 border-rose-200'
             : 'bg-violet-50 text-violet-800 border-violet-200';
           const rowBgCls = isShutdown ? 'bg-rose-50/50 hover:bg-rose-50' : 'bg-violet-50/70 hover:bg-violet-50';
+          const deptScopeTxt = entry.isPartial ? `(${entry.items.length}/${entry.totalDepts} depts)` : `(${entry.items.length} depts)`;
+          const deptIdsAttr = escapeHtml((entry.deptIds || []).join(','));
           const mainRow = `
             <tr class="${rowBgCls} transition" data-override-group-id="${escapeHtml(entry.id)}">
               <th scope="row" class="px-3.5 py-2.5 font-bold text-slate-900 whitespace-nowrap cursor-pointer" onclick="toggleOverrideGroup('${escapeHtml(entry.id)}')">
@@ -10516,7 +10742,7 @@ img, video { max-width: 100%; height: auto; }
                     class="w-6 h-6 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 flex items-center justify-center text-[11px] font-bold transition shrink-0 cursor-pointer">${isExpanded ? '&#9662;' : '&#9656;'}</button>
                   <span class="px-2 py-0.5 rounded-md border text-[10px] font-extrabold ${pillCls}">${escapeHtml(entry.label)}</span>
                   <span class="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-[10px] font-extrabold text-slate-700 tabular-nums">${escapeHtml(entry.pctLabel)}</span>
-                  <span class="text-[10px] font-semibold text-slate-500">(${entry.items.length} depts)</span>
+                  <span class="text-[10px] font-semibold text-slate-500">${deptScopeTxt}</span>
                 </div>
               </th>
               <td class="px-3.5 py-2.5 whitespace-nowrap cursor-pointer" onclick="toggleOverrideGroup('${escapeHtml(entry.id)}')">
@@ -10530,8 +10756,8 @@ img, video { max-width: 100%; height: auto; }
               <td class="px-3.5 py-2.5 text-right tabular-nums font-extrabold ${isShutdown ? 'text-rose-700' : 'text-violet-700'} whitespace-nowrap">${entry.totalFte} FTE</td>
               <td class="px-3.5 py-2.5 text-right whitespace-nowrap">${formatDeltaBadge(entry.totalDeltaFte)}</td>
               <td class="px-3.5 py-2.5 text-right space-x-2 whitespace-nowrap">
-                <button type="button" onclick="editCompanyOverrideGroup('${entry.startWk}', '${entry.endWk}', ${entry.pctFactor})" class="text-indigo-600 hover:underline font-semibold">Edit %</button>
-                <button type="button" onclick="resetCompanyOverrideGroup('${entry.startWk}', '${entry.endWk}')" class="text-amber-700 hover:underline font-semibold">Reset All</button>
+                <button type="button" onclick="editCompanyOverrideGroup('${entry.startWk}', '${entry.endWk}', ${entry.pctFactor}, '${deptIdsAttr}')" class="text-indigo-600 hover:underline font-semibold">Edit %</button>
+                <button type="button" onclick="resetCompanyOverrideGroup('${entry.startWk}', '${entry.endWk}', '${deptIdsAttr}')" class="text-amber-700 hover:underline font-semibold">Reset All</button>
               </td>
             </tr>`;
 
@@ -10950,6 +11176,75 @@ img, video { max-width: 100%; height: auto; }
           showToast(`Could not create linked file (${e?.name || 'Error'}). Use "Share / Save JSON" instead.`, 'warning');
         }
       }
+    }
+
+    /**
+     * Creates a timestamped backup copy of the connected JSON file (or active DB)
+     * by prompting the user for the destination folder via showDirectoryPicker
+     * (with showSaveFilePicker and direct download fallbacks). Never alters the active sync link.
+     */
+    async function backupConnectedJsonToFolder() {
+      const db = linkedFileHandle ? liveDB : getActiveDB();
+      const now = new Date();
+      const pad2 = (n) => String(n).padStart(2, '0');
+      const stamp = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}_${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}`;
+      const rawBase = linkedFileHandle && linkedFileHandle.name
+        ? linkedFileHandle.name.replace(/\.json$/i, '')
+        : `pulseplan_${ui.demoMode ? 'demo' : 'live'}`;
+      const safeBase = rawBase.replace(/[^a-zA-Z0-9._-]/g, '_') || 'pulseplan_roadmap';
+      const backupName = `${safeBase}_backup_${stamp}.json`;
+
+      let jsonStr = '';
+      if (linkedFileHandle && (ui.demoMode || ui.whatIfMode)) {
+        try {
+          const f = await linkedFileHandle.getFile();
+          jsonStr = await f.text();
+        } catch (e) {
+          jsonStr = JSON.stringify(liveDB, null, 2);
+        }
+      } else {
+        jsonStr = JSON.stringify(db, null, 2);
+      }
+
+      const sourceLabel = linkedFileHandle ? linkedFileHandle.name : (ui.demoMode ? 'Demo DB' : 'Live DB');
+      ppDebug('INFO', 'backupConnectedJsonToFolder triggered', { backupName, sourceLabel, bytes: jsonStr.length });
+
+      // Primary path: Prompt directly for the destination folder (File System Access Directory Picker)
+      if (typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function' && (typeof location === 'undefined' || location.protocol !== 'file:')) {
+        try {
+          const dirHandle = await window.showDirectoryPicker({
+            id: 'pulseplan-backup-dir',
+            mode: 'readwrite',
+          });
+          if (!dirHandle) return;
+          const fileHandle = await dirHandle.getFileHandle(backupName, { create: true });
+          const writable = await fileHandle.createWritable();
+          await writable.write(jsonStr);
+          await writable.close();
+          const savedLabel = `${dirHandle.name}/${backupName}`;
+          recordDumpEvent('BACKUP', savedLabel, jsonStr.length, `Backup of ${sourceLabel} (Rev ${db.meta?.revision || 1})`);
+          renderSyncTab();
+          showToast(`Backup saved to "${savedLabel}" (${formatBytes(jsonStr.length)})`, 'success');
+          return;
+        } catch (e) {
+          ppDebug('WARN', 'showDirectoryPicker backup aborted/failed', { name: e?.name, message: e?.message });
+          if (e && e.name === 'AbortError') return;
+          if (e && e.name === 'SecurityError' && typeof window.showSaveFilePicker === 'function') {
+            showToast('Chrome restricts direct folder access on Desktop/Downloads roots — opening Save As dialog instead.', 'info');
+          }
+          // Fall through to showSaveFilePicker / direct download
+        }
+      }
+
+      // Secondary path: Native Save As file picker (lets user choose any folder & filename) or direct disk download
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const outcome = await shareOrDownloadFile(blob, backupName, 'application/json', 'PulsePlan JSON Backup', {
+        mode: (typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function') ? 'disk' : 'download',
+      });
+      if (outcome === 'cancelled') return;
+      recordDumpEvent('BACKUP', backupName, jsonStr.length, `Backup of ${sourceLabel} (Rev ${db.meta?.revision || 1})`);
+      renderSyncTab();
+      showToast(`Backup ${outcome === 'saved' ? 'saved to disk' : 'downloaded'}: "${backupName}" (${formatBytes(jsonStr.length)})`, 'success');
     }
 
     async function reconnectRememberedFile() {
@@ -12264,9 +12559,25 @@ img, video { max-width: 100%; height: auto; }
       openExportPdfModal();
     }
 
+    function syncPdfDeliveryButtonLabel() {
+      const sel = document.getElementById('mPdfDelivery');
+      const btn = document.getElementById('btnGeneratePdfSubmit');
+      if (!sel || !btn) return;
+      const v = sel.value;
+      if (v === 'disk') btn.textContent = 'Save PDF to Disk…';
+      else if (v === 'download') btn.textContent = 'Download PDF to Disk';
+      else if (v === 'share') btn.textContent = 'Share PDF Report';
+      else btn.textContent = 'Generate PDF Report';
+    }
+
     function openExportPdfModal() {
       const db = getActiveDB();
-      const opts = { colorMode: 'match', colsPerPage: 6, ...(ui.pdfOptions || {}) };
+      const canSavePicker = typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function' && (typeof location === 'undefined' || location.protocol !== 'file:');
+      const canWebShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+      const isMobileNow = isMobileViewport();
+      const defaultDelivery = isMobileNow ? (canWebShare ? 'share' : 'download') : (canSavePicker ? 'disk' : 'download');
+      const opts = { colorMode: 'match', colsPerPage: 6, delivery: defaultDelivery, ...(ui.pdfOptions || {}) };
+      if (opts.delivery === 'disk' && !canSavePicker) opts.delivery = 'download';
       const defaultSnapId = ui.compareSnapshotId || (db.snapshots[0] ? db.snapshots[0].id : '');
       const activeModeLabelMap = {
         accent: 'Accent Border',
@@ -12275,6 +12586,9 @@ img, video { max-width: 100%; height: auto; }
         fte3: '3-Level Green/Yellow/Red',
       };
       const curModeLabel = activeModeLabelMap[getActiveCellColorMode()] || 'Accent Border';
+      const submitBtnLabel = opts.delivery === 'disk'
+        ? 'Save PDF to Disk…'
+        : (opts.delivery === 'download' ? 'Download PDF to Disk' : (opts.delivery === 'share' ? 'Share PDF Report' : 'Generate PDF Report'));
 
       showModal(`
         <div class="p-5 space-y-4 text-xs">
@@ -12286,10 +12600,20 @@ img, video { max-width: 100%; height: auto; }
             <button type="button" aria-label="Close dialog" onclick="closeModal()" class="text-slate-400 hover:text-slate-700 text-lg font-bold leading-none">&times;</button>
           </div>
 
-          <div>
-            <label for="mPdfTitle" class="block font-semibold text-slate-700 mb-1">Report Title</label>
-            <input id="mPdfTitle" type="text" value="${escapeHtml(opts.title || 'PulsePlan - Company Roadmap & Utilisation Report')}"
-              class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label for="mPdfTitle" class="block font-semibold text-slate-700 mb-1">Report Title</label>
+              <input id="mPdfTitle" type="text" value="${escapeHtml(opts.title || 'PulsePlan - Company Roadmap & Utilisation Report')}"
+                class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
+            </div>
+            <div>
+              <label for="mPdfDelivery" class="block font-semibold text-slate-700 mb-1">Export Destination</label>
+              <select id="mPdfDelivery" onchange="syncPdfDeliveryButtonLabel()" class="w-full px-2.5 py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold text-slate-800">
+                ${canSavePicker ? `<option value="disk" ${opts.delivery === 'disk' ? 'selected' : ''}>Save to Disk (Choose Folder&hellip;)</option>` : ''}
+                <option value="download" ${opts.delivery === 'download' ? 'selected' : ''}>Download Directly to Disk</option>
+                ${canWebShare ? `<option value="share" ${opts.delivery === 'share' ? 'selected' : ''}>Share via System Sheet</option>` : ''}
+              </select>
+            </div>
           </div>
 
           <fieldset class="p-3 rounded-xl bg-indigo-50/60 border border-indigo-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -12370,16 +12694,18 @@ img, video { max-width: 100%; height: auto; }
 
           <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
             <button type="button" onclick="closeModal()" class="px-3.5 py-2.5 sm:py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold transition">Cancel</button>
-            <button type="button" onclick="runPdfExportFromModal()" class="px-4 py-2.5 sm:py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold shadow-xs transition">Generate PDF Report</button>
+            <button id="btnGeneratePdfSubmit" type="button" onclick="runPdfExportFromModal()" class="px-4 py-2.5 sm:py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold shadow-xs transition">${submitBtnLabel}</button>
           </div>
         </div>`, 'max-w-xl');
     }
 
-    function runPdfExportFromModal() {
+    async function runPdfExportFromModal() {
+      const delivery = document.getElementById('mPdfDelivery')?.value || (isMobileViewport() ? 'auto' : 'download');
       ui.pdfOptions = {
         title: (document.getElementById('mPdfTitle')?.value || 'PulsePlan - Company Roadmap & Utilisation Report').trim(),
         colorMode: document.getElementById('mPdfColorMode')?.value || 'match',
         colsPerPage: Math.max(4, Math.min(6, parseInt(document.getElementById('mPdfColsPerPage')?.value, 10) || 6)),
+        delivery,
         includeChart: Boolean(document.getElementById('pdfIncChart')?.checked),
         includeMatrix: Boolean(document.getElementById('pdfIncMatrix')?.checked),
         includeDeptHealth: Boolean(document.getElementById('pdfIncDeptHealth')?.checked),
@@ -12392,8 +12718,24 @@ img, video { max-width: 100%; height: auto; }
       };
       const snapId = document.getElementById('mPdfSnapSelect')?.value || '';
       persistUIPrefs();
+
+      // Acquire disk Save-As handle immediately inside the click gesture so Chrome never expires user activation
+      let preFileHandle = null;
+      const suggestedFname = `pulseplan_roadmap_${ui.timeUnit}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      if (delivery === 'disk' && window.jspdf && window.jspdf.jsPDF && typeof window.showSaveFilePicker === 'function' && (typeof location === 'undefined' || location.protocol !== 'file:')) {
+        try {
+          preFileHandle = await window.showSaveFilePicker({
+            suggestedName: suggestedFname,
+            types: [{ description: 'PDF Document', accept: { 'application/pdf': ['.pdf'] } }],
+          });
+        } catch (err) {
+          if (err && err.name === 'AbortError') return; // User cancelled Save dialog
+          preFileHandle = null; // Fall back cleanly to direct browser download
+        }
+      }
+
       closeModal();
-      generateRoadmapPDF({ ...ui.pdfOptions, snapshotId: snapId });
+      generateRoadmapPDF({ ...ui.pdfOptions, snapshotId: snapId, fileHandle: preFileHandle });
     }
 
     function pdfSafeText(str) {
@@ -12791,7 +13133,12 @@ img, video { max-width: 100%; height: auto; }
       let badgeTextRgb = [51, 65, 85];
       const metaLines = [];
 
-      if (axis === 'department') {
+      if (row.id === '__MILESTONES__') {
+        badgeText = `${Number(row.totalCount) || 0} Total`;
+        badgeBgRgb = [237, 233, 254];
+        badgeTextRgb = [109, 40, 217];
+        metaLines.push('Dedicated milestone lane');
+      } else if (axis === 'department') {
         let rA = 0, rC = 0;
         chunk.forEach(pk => {
           rA += getDeptTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
@@ -12817,6 +13164,7 @@ img, video { max-width: 100%; height: auto; }
 
         metaLines.push(`${row.priority || 'Medium'} | ${Math.round(totalDays)}d`);
         if (row.owner) metaLines.push(`Owner: ${row.owner}`);
+        if (row.techLead) metaLines.push(`Tech Lead: ${row.techLead}`);
       }
 
       const h = 2.0 + (nameLines.length * 3.0) + 1.2 + 3.8 + 1.2 + (metaLines.length * 2.7) + 2.0;
@@ -12888,6 +13236,32 @@ img, video { max-width: 100%; height: auto; }
       let header = null;
       let cellBgRgb = [255, 255, 255];
       let cursorH = padY;
+
+      if (row.id === '__MILESTONES__') {
+        const msRaw = getVisibleMilestonesForDeptView(pk, db, visibleProjs);
+        const msTextMaxW = Math.max(8, innerW - 5.4);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(5.5);
+        const msItems = msRaw.map(m => {
+          const p = db.projects.find(x => x.id === m.projectId);
+          const lbl = `${m.title}${p ? ` [${p.code}]` : ''} (${m.date || ''})`;
+          const lines = pdfWrapLines(doc, lbl, msTextMaxW, compactMode ? 1 : 2);
+          return { lines, textMaxW: msTextMaxW, height: 1.0 + lines.length * 2.3 + 1.0 };
+        });
+        const cardGap = 1.2;
+        let totalH = padY + 0.5;
+        msItems.forEach(m => { totalH += m.height + cardGap; });
+        totalH += padY;
+        return {
+          height: Math.max(12, totalH),
+          padX, padY, innerW, cardGap,
+          cellBgRgb: [248, 245, 255],
+          header: { kind: 'milestones' },
+          cards: [],
+          milestones: msItems,
+          overflowCount: 0,
+        };
+      }
 
       if (axis === 'department') {
         const capObj = getDeptCapacityForPeriod(row.id, pk, ui.timeUnit, db);
@@ -12998,14 +13372,9 @@ img, video { max-width: 100%; height: auto; }
         });
       });
 
-      const msRawList = getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => {
-        if (axis === 'department') {
-          if (ui.filterProj !== 'all' && m.projectId !== ui.filterProj) return false;
-          if (m.deptId) return m.deptId === row.id;
-          return getAllocationForPeriod(row.id, m.projectId, pk, ui.timeUnit, db.allocations).hasData;
-        }
-        return m.projectId === row.id;
-      });
+      const msRawList = axis === 'department'
+        ? []
+        : getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => m.projectId === row.id);
 
       const milestones = msRawList.map(m => {
         const msTextMaxW = Math.max(8, innerW - 5.4);
@@ -13056,7 +13425,9 @@ img, video { max-width: 100%; height: auto; }
       const innerW = Math.max(10, cell.width - layout.padX * 2);
       let cy = cell.y + layout.padY;
 
-      if (layout.header.kind === 'dept') {
+      if (layout.header.kind === 'milestones') {
+        cy += 0.5;
+      } else if (layout.header.kind === 'dept') {
         const h = layout.header;
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(5.7);
@@ -13452,11 +13823,21 @@ img, video { max-width: 100%; height: auto; }
               );
             }
 
+            const pdfMatrixRows = ui.axis === 'department'
+              ? [{
+                  id: '__MILESTONES__',
+                  name: 'Milestones',
+                  code: 'MS',
+                  color: '#7c3aed',
+                  totalCount: chunk.reduce((acc, pk) => acc + getVisibleMilestonesForDeptView(pk, db, visibleProjs).length, 0),
+                }, ...rows]
+              : rows;
+
             const rowHeaderLayouts = [];
             const cellLayouts = [];
             const rowHeights = [];
 
-            rows.forEach((row) => {
+            pdfMatrixRows.forEach((row) => {
               const hdrLayout = measurePdfRowHeader(doc, row, ui.axis, chunk, rowColW, db, warnT, overT);
               rowHeaderLayouts.push(hdrLayout);
               const rCells = chunk.map(pk =>
@@ -13475,7 +13856,7 @@ img, video { max-width: 100%; height: auto; }
               })
             ];
 
-            const blankBodyRows = rows.map(() => ['', ...chunk.map(() => '')]);
+            const blankBodyRows = pdfMatrixRows.map(() => ['', ...chunk.map(() => '')]);
 
             const footPcts = [null];
             const footRow = [
@@ -13606,19 +13987,19 @@ img, video { max-width: 100%; height: auto; }
           const projRows = projTotals.map(x => {
             const sharePct = grandDays > 0 ? Math.round((x.pDays / grandDays) * 100) : 0;
             const effortStr = ui.manpowerUnit === 'fte' ? `${formatValue(x.pFteAvg, 'fte')} avg (${Math.round(x.pDays)}d)` : formatValue(x.pDispSum);
-            return [pdfSafeText(x.p.code), pdfSafeText(x.p.name), pdfSafeText(x.p.status), pdfSafeText(x.p.priority || 'Medium'), pdfSafeText(x.p.owner || '-'), pdfSafeText(effortStr), `${sharePct}%`, pdfSafeText(x.depts.length ? x.depts.join(', ') : '-')];
+            return [pdfSafeText(x.p.code), pdfSafeText(x.p.name), pdfSafeText(x.p.status), pdfSafeText(x.p.priority || 'Medium'), pdfSafeText(x.p.owner || '-'), pdfSafeText(x.p.techLead || '-'), pdfSafeText(effortStr), `${sharePct}%`, pdfSafeText(x.depts.length ? x.depts.join(', ') : '-')];
           });
 
           doc.autoTable({
             startY: currentY,
-            head: [['Code', 'Project Name', 'Status', 'Priority', 'Owner', `Horizon Effort (${unitShortLabel()})`, 'Share', 'Assigned Depts']],
+            head: [['Code', 'Project Name', 'Status', 'Priority', 'Owner', 'Tech Lead', `Horizon Effort (${unitShortLabel()})`, 'Share', 'Assigned Depts']],
             body: projRows,
             margin: safeMargin,
             tableWidth: tableW,
             theme: 'striped',
-            styles: { fontSize: 7.1, cellPadding: 2, overflow: 'linebreak', textColor: [30, 41, 59] },
+            styles: { fontSize: 7.0, cellPadding: 2, overflow: 'linebreak', textColor: [30, 41, 59] },
             headStyles: { fillColor: [79, 70, 229], textColor: [255, 255, 255], fontStyle: 'bold' },
-            columnStyles: { 0: { cellWidth: 16, fontStyle: 'bold' }, 1: { cellWidth: 62 }, 2: { cellWidth: 22 }, 3: { cellWidth: 20 }, 4: { cellWidth: 30 }, 5: { cellWidth: 42 }, 6: { cellWidth: 16, halign: 'right' }, 7: { cellWidth: 65 } },
+            columnStyles: { 0: { cellWidth: 15, fontStyle: 'bold' }, 1: { cellWidth: 52 }, 2: { cellWidth: 20 }, 3: { cellWidth: 18 }, 4: { cellWidth: 26 }, 5: { cellWidth: 26 }, 6: { cellWidth: 40 }, 7: { cellWidth: 15, halign: 'right' }, 8: { cellWidth: 61 } },
           });
           currentY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 7 : currentY + 35;
         }
@@ -13758,10 +14139,15 @@ img, video { max-width: 100%; height: auto; }
 
         const fname = `pulseplan_roadmap_${ui.timeUnit}_${new Date().toISOString().slice(0, 10)}.pdf`;
         const pdfBlob = doc.output('blob');
-        const outcome = await shareOrDownloadFile(pdfBlob, fname, 'application/pdf', opts.title || 'PulsePlan Roadmap PDF');
+        const deliveryMode = opts.delivery || (isMobileViewport() ? 'auto' : 'download');
+        const outcome = await shareOrDownloadFile(pdfBlob, fname, 'application/pdf', opts.title || 'PulsePlan Roadmap PDF', {
+          mode: deliveryMode,
+          fileHandle: opts.fileHandle || null,
+        });
         if (outcome !== 'cancelled') {
           recordDumpEvent('PDF', fname, pdfBlob ? pdfBlob.size : 0, `${pageCount}p colorful vector report (${periods.length} ${ui.timeUnit}s)`);
-          showToast(`${outcome === 'shared' ? 'PDF shared' : 'Colorful PDF exported'} (${pageCount} page${pageCount === 1 ? '' : 's'})`, 'success');
+          const verb = outcome === 'saved' ? 'PDF saved to disk' : (outcome === 'shared' ? 'PDF shared' : 'PDF downloaded to disk');
+          showToast(`${verb} (${pageCount} page${pageCount === 1 ? '' : 's'})`, 'success');
         }
       } catch (err) {
         console.error('PDF export failed:', err);
@@ -14060,7 +14446,7 @@ img, video { max-width: 100%; height: auto; }
       addName(ui.userName, true);
       (ui.recentUsers || []).forEach(u => addName(u));
       (db.departments || []).forEach(d => addName(d.manager));
-      (db.projects || []).forEach(p => addName(p.owner));
+      (db.projects || []).forEach(p => { addName(p.owner); addName(p.techLead); });
       (db.changeLog || []).slice(0, 30).forEach(l => addName(l.user));
       (db.snapshots || []).forEach(s => addName(s.createdBy));
       return [...seen.values()];
@@ -15206,10 +15592,14 @@ img, video { max-width: 100%; height: auto; }
           <div id="mProjAdminInfo" class="${isAdmin ? '' : 'hidden'} p-3 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 text-[11px] leading-relaxed">
             <strong>Admin (Non-FTE) Category:</strong> Requires no FTE input and never affects department utilisation %, bottlenecks, or cost burn. Ideal for logging expected departmental issues, risks, and requested meetings inside each period.
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-5 gap-3">
             <div class="sm:col-span-2">
               <label for="mProjOwner" class="block font-semibold text-slate-700 mb-1">Project Owner</label>
               <input id="mProjOwner" type="text" value="${escapeHtml(p?.owner || '')}" placeholder="Optional" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50" />
+            </div>
+            <div class="sm:col-span-2">
+              <label for="mProjTechLead" class="block font-semibold text-slate-700 mb-1">Technical Lead</label>
+              <input id="mProjTechLead" type="text" value="${escapeHtml(p?.techLead || '')}" placeholder="Optional" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50" />
             </div>
             <div>
               <label for="mProjColor" class="block font-semibold text-slate-700 mb-1">Color Tag</label>
@@ -15249,6 +15639,7 @@ img, video { max-width: 100%; height: auto; }
       const status = document.getElementById('mProjStatus').value;
       const priority = document.getElementById('mProjPriority').value;
       const owner = document.getElementById('mProjOwner').value.trim();
+      const techLead = (document.getElementById('mProjTechLead')?.value || '').trim();
       const color = document.getElementById('mProjColor').value || '#4f46e5';
       const budgetDays = nonFte ? 0 : Math.max(0, parseFloat(document.getElementById('mProjBudget')?.value) || 0);
       const budgetCost = nonFte ? 0 : Math.max(0, parseFloat(document.getElementById('mProjBudgetCost')?.value) || 0);
@@ -15259,18 +15650,18 @@ img, video { max-width: 100%; height: auto; }
       pushUndoState(`${id ? 'Update' : 'Add'} project [${code}]`);
       if (id) {
         const p = db.projects.find(x => x.id === id);
-        if (p) Object.assign(p, { name, code, status, priority, owner, color, budgetDays, budgetCost, tentative, nonFte, category, archived });
+        if (p) Object.assign(p, { name, code, status, priority, owner, techLead, color, budgetDays, budgetCost, tentative, nonFte, category, archived });
         if (nonFte) {
           Object.keys(db.allocations || {}).forEach(k => { if (k.split('::')[1] === id) delete db.allocations[k]; });
         }
         db.projects = getSortedProjects(db);
         if (archived && ui.filterProj === id) ui.filterProj = 'all';
         if (archived && ui.spotlightProjId === id) ui.spotlightProjId = '';
-        recordChange('Project', `Updated project [${code}] ${name} (${status}${nonFte ? ', Admin Non-FTE' : tentative ? ', pipeline' : ''}${budgetDays > 0 ? `, budget ${budgetDays}d` : ''}${archived ? ', archived' : ''})`);
+        recordChange('Project', `Updated project [${code}] ${name} (${status}${nonFte ? ', Admin Non-FTE' : tentative ? ', pipeline' : ''}${techLead ? `, TL: ${techLead}` : ''}${budgetDays > 0 ? `, budget ${budgetDays}d` : ''}${archived ? ', archived' : ''})`);
       } else {
-        db.projects.push({ id: uid('p'), name, code, status, priority, owner, color, budgetDays, budgetCost, tentative, nonFte, category, archived });
+        db.projects.push({ id: uid('p'), name, code, status, priority, owner, techLead, color, budgetDays, budgetCost, tentative, nonFte, category, archived });
         db.projects = getSortedProjects(db);
-        recordChange('Project', `Added project [${code}] ${name}${nonFte ? ' (Admin Non-FTE)' : tentative ? ' (pipeline)' : ''}${budgetDays > 0 ? ` (budget ${budgetDays}d)` : ''}`);
+        recordChange('Project', `Added project [${code}] ${name}${nonFte ? ' (Admin Non-FTE)' : tentative ? ' (pipeline)' : ''}${techLead ? ` (TL: ${techLead})` : ''}${budgetDays > 0 ? ` (budget ${budgetDays}d)` : ''}`);
       }
       closeModal();
       renderAll();
@@ -17140,7 +17531,7 @@ img, video { max-width: 100%; height: auto; }
 
     function applyHolidayFactor(deptIds, startPk, count, timeUnit, pctFactor, db = getActiveDB()) {
       const cleanPct = Math.max(0, Math.min(200, Number(pctFactor)));
-      const numPeriods = Math.max(1, Math.min(24, parseInt(count, 10) || 1));
+      const numPeriods = Math.max(1, Math.min(52, parseInt(count, 10) || 1));
       const targets = (db.departments || []).filter(d => deptIds.includes(d.id));
       let updatedWeeks = 0;
 
@@ -17295,9 +17686,10 @@ img, video { max-width: 100%; height: auto; }
       const endOptsHtml = buildPeriodEndSelectOptionsHtml(startPk, effectiveUnit, endPk, 26);
       const summaryTxt = formatPeriodRangeSummaryText(startPk, endPk, effectiveUnit);
 
+      const preCheckedSet = (opts && Array.isArray(opts.deptIds) && opts.deptIds.length > 0) ? new Set(opts.deptIds) : null;
       const deptChecks = db.departments.map(d => `
         <label class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer text-xs font-semibold text-slate-700">
-          <input type="checkbox" data-holiday-dept="1" class="rounded text-indigo-600" value="${d.id}" checked />
+          <input type="checkbox" data-holiday-dept="1" class="rounded text-indigo-600" value="${d.id}" ${!preCheckedSet || preCheckedSet.has(d.id) ? 'checked' : ''} />
           <span class="w-2 h-2 rounded-full shrink-0" style="background:${d.color}"></span>
           <span>${escapeHtml(d.code)}</span>
         </label>`).join('');

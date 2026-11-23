@@ -1252,8 +1252,11 @@ test('Active Variable Capacity Overrides auto-groups company-wide holidays & shu
       const htmlReCollapsed = document.getElementById('dataCapacityOverridesTable').innerHTML;
       const labelReCollapsed = document.getElementById('btnToggleExpandAllOverridesLabel').textContent;
 
-      // Reset single department slice inside W33 superposition (ENG only) -> W33 ungroups for remaining 3 depts, ENG W32 & W34 preserved
+      // Reset two department slices inside W33 superposition (ENG & DES) -> W33 drops below 60% majority (2/4) and ungroups; ENG W32 & W34 preserved
       resetCapacityOverrideSpan('d_eng', '2026-W33', '2026-W33');
+      const afterOneReset = getStructuredCapacityOverrides(liveDB, 'all');
+      const w33AfterOne = afterOneReset.find(e => e.kind === 'company' && e.startWk === '2026-W33');
+      resetCapacityOverrideSpan('d_des', '2026-W33', '2026-W33');
       const afterSliceReset = getStructuredCapacityOverrides(liveDB, 'all');
       const engW32Still = liveDB.capacityOverrides['d_eng::2026-W32'];
       const engW33Gone = !Object.prototype.hasOwnProperty.call(liveDB.capacityOverrides, 'd_eng::2026-W33');
@@ -1266,6 +1269,7 @@ test('Active Variable Capacity Overrides auto-groups company-wide holidays & shu
       return {
         companies, depts, htmlCollapsed, expandBtnVisible, labelCollapsed,
         htmlExpanded, labelExpanded, htmlReCollapsed, labelReCollapsed,
+        w33AfterOne,
         afterSliceResetCompanies: afterSliceReset.filter(e => e.kind === 'company').length,
         engW32Still, engW33Gone, engW34Still, shutdownRemaining,
       };
@@ -1293,7 +1297,8 @@ test('Active Variable Capacity Overrides auto-groups company-wide holidays & shu
     assert.equal(out.engW32Still, 4.0, 'Resetting ENG W33 slice preserves ENG W32');
     assert.equal(out.engW33Gone, true, 'Resetting ENG W33 slice removes ENG W33');
     assert.equal(out.engW34Still, 4.0, 'Resetting ENG W33 slice preserves ENG W34');
-    assert.equal(out.afterSliceResetCompanies, 2, 'Removing one dept from W33 cleanly ungroups W33 while leaving W40 and W52-W53 grouped');
+    assert.ok(out.w33AfterOne && out.w33AfterOne.isPartial && out.w33AfterOne.items.length === 3, 'With 3/4 depts remaining at 50%, W33 stays grouped as partial Company Holiday (3/4 depts)');
+    assert.equal(out.afterSliceResetCompanies, 2, 'Dropping below majority (2/4) cleanly ungroups W33 while leaving W40 and W52-W53 grouped');
     assert.equal(out.shutdownRemaining, false, 'resetCompanyOverrideGroup removes all dept overrides across W52-W53');
   } finally {
     sandbox.document.getElementById = prevGetById;
@@ -1647,6 +1652,207 @@ test('Admin (Non-FTE) project category logs issues & meetings across periods wit
     assert.ok(out.mobDeptHtml.includes('admin-hashed-card') && out.mobDeptHtml.includes('Server audit risk'), 'Mobile By Dept renders Admin card with hashed styling instead of solid fill');
     assert.ok(out.setupProjHtml.includes('admin-hashed-swatch') && out.setupProjHtml.includes('admin-row-divider'), 'Setup -> Projects renders Admin project at the bottom with hashed swatch and divider');
     assert.ok(out.briefing.includes('ADMIN — DEPT ISSUES & REQUESTED MEETINGS:') && out.briefing.includes('Server audit risk'), 'Executive Briefing groups Admin issues & meetings in its own section');
+  } finally {
+    sandbox.document.getElementById = prevGetById;
+  }
+});
+
+test('Resilient holiday grouping, Project Technical Lead, Dedicated Milestones lane in By Dept, Desktop PDF Save-to-Disk, and Sync Backup-to-Folder', async () => {
+  assert.ok(html.includes('id="btnBackupConnectedToFolder"'), 'Sync & Snapshots exposes Backup to Folder button');
+  assert.ok(html.includes('>Technical Lead</th>'), 'Setup -> Projects table includes Technical Lead column');
+
+  const prevGetById = sandbox.document.getElementById;
+  const elMap = new Map();
+  sandbox.document.getElementById = (id) => {
+    if (!elMap.has(id)) {
+      const classes = new Set(['hidden']);
+      const el = makeStubEl();
+      el.id = id;
+      el.clientWidth = 1440;
+      el.options = [];
+      el.dataset = {};
+      el.classList = {
+        add: (...c) => c.forEach(x => classes.add(x)),
+        remove: (...c) => c.forEach(x => classes.delete(x)),
+        toggle: (x, f) => { if (f === undefined) { if (classes.has(x)) classes.delete(x); else classes.add(x); } else if (f) classes.add(x); else classes.delete(x); },
+        contains: (x) => classes.has(x),
+      };
+      elMap.set(id, el);
+    }
+    return elMap.get(id);
+  };
+  try {
+    const out = await vm.runInContext(`(async () => {
+      liveDB = createSampleDemoDB();
+      liveDB.capacityOverrides = {};
+      ui.demoMode = false;
+      ui.whatIfMode = false;
+      ui.timeUnit = 'week';
+      ui.startWeek = '2026-W48';
+      ui.horizon = 4;
+      ui.filterDept = 'all';
+      ui.filterProj = 'all';
+      ui.matrixSearch = '';
+      ui.compactRowLabels = false;
+      window.innerWidth = 1440;
+
+      // 1. Resilient Company-Wide Holiday & Shutdown Grouping:
+      // Apply 0% shutdown on original 4 depts, then add a 0-FTE dept AND a newly added active dept (no overrides in W52!)
+      applyHolidayFactor(liveDB.departments.map(d => d.id), '2026-W52', 2, 'week', 0, liveDB);
+      liveDB.departments.push({ id: 'd_zero', name: 'Zero Cap', code: 'ZRO', color: '#64748b', defaultCapacity: 0, manager: '', dayRate: 0 });
+      liveDB.departments.push({ id: 'd_new', name: 'New Team', code: 'NEW', color: '#14b8a6', defaultCapacity: 2.0, manager: '', dayRate: 0 });
+      // Also test tiny dept rounding edge case (0.25 FTE at 90% -> rounds to 0.25 = baseFte) while other 4 depts drop to 90%
+      liveDB.departments.push({ id: 'd_tiny', name: 'Tiny Lab', code: 'TNY', color: '#f97316', defaultCapacity: 0.25, manager: '', dayRate: 0 });
+      applyHolidayFactor(liveDB.departments.map(d => d.id), '2026-W50', 1, 'week', 90, liveDB);
+      // And give d_new a boost (+1 FTE) during W52 shutdown so boosted dept stays separate while 4 depts remain grouped!
+      liveDB.capacityOverrides['d_new::2026-W52'] = 3.0;
+
+      const structured = getStructuredCapacityOverrides(liveDB, 'all');
+      const w52Group = structured.find(e => e.kind === 'company' && e.startWk === '2026-W52');
+      const w50Group = structured.find(e => e.kind === 'company' && e.startWk === '2026-W50');
+      const newBoostSeparate = structured.some(e => e.kind === 'dept' && e.deptId === 'd_new' && e.startWk === '2026-W52');
+
+      // 2. Project Technical Lead end-to-end
+      openProjectModal('p_nova');
+      const projModalHtml = document.getElementById('modalCard').innerHTML;
+      document.getElementById('mProjId').value = 'p_nova';
+      document.getElementById('mProjName').value = 'Project Nova (Core Platform)';
+      document.getElementById('mProjCode').value = 'NVA';
+      document.getElementById('mProjCategory').value = 'standard';
+      document.getElementById('mProjStatus').value = 'Active';
+      document.getElementById('mProjPriority').value = 'High';
+      document.getElementById('mProjOwner').value = 'S. Chen';
+      document.getElementById('mProjTechLead').value = 'Dr. K. Patel';
+      document.getElementById('mProjColor').value = '#4f46e5';
+      document.getElementById('mProjBudget').value = '700';
+      document.getElementById('mProjBudgetCost').value = '450000';
+      document.getElementById('mProjArchived').checked = false;
+      saveProjectModal();
+
+      const updatedNova = liveDB.projects.find(p => p.id === 'p_nova');
+      const migratedBack = normalizeAndMigrateDB(JSON.parse(JSON.stringify(liveDB)));
+      const migratedNovaLead = migratedBack.projects.find(p => p.id === 'p_nova')?.techLead;
+      renderDataTab();
+      const setupProjHtml = document.getElementById('dataProjectsBody').innerHTML;
+      ui.axis = 'project';
+      ui.matrixSearch = 'Patel';
+      renderMatrix();
+      const searchByLeadHtml = document.getElementById('matrixWrapper').innerHTML;
+      ui.matrixSearch = '';
+
+      // 3. Dedicated Milestones field in By Department view (Desktop & Mobile)
+      liveDB.milestones = [
+        { id: 'ms_test1', title: 'Alpha Freeze Gate', projectId: 'p_nova', deptId: 'd_eng', baselineDate: '2026-11-25', date: '2026-11-25', status: 'Pending', notes: '' },
+      ];
+      ui.axis = 'department';
+      renderMatrix();
+      const deptMatrixHtml = document.getElementById('matrixWrapper').innerHTML;
+      const msRowIdx = deptMatrixHtml.indexOf('data-row-id="__MILESTONES__"');
+      const engRowIdx = deptMatrixHtml.indexOf('data-row-id="d_eng"');
+      const engRowSlice = engRowIdx >= 0 ? deptMatrixHtml.slice(engRowIdx, deptMatrixHtml.indexOf('</tr>', engRowIdx)) : '';
+      const msInDedicatedRow = msRowIdx >= 0 && deptMatrixHtml.slice(msRowIdx, engRowIdx).includes('Alpha Freeze Gate');
+      const msInDeptCell = engRowSlice.includes('Alpha Freeze Gate');
+
+      // Drag milestone inside dedicated __MILESTONES__ lane to W49 -> reschedules date while preserving deptId!
+      activeDragPayload = { type: 'milestone', msId: 'ms_test1', periodKey: '2026-W48' };
+      handleCellDrop({ preventDefault: () => {}, currentTarget: { classList: { remove: () => {} } }, altKey: false }, '__MILESTONES__', '2026-W49');
+      const msAfterDrag = { ...liveDB.milestones[0] };
+
+      // Mobile By Department dedicated milestones card
+      ui.mobileSelectedPeriod = '2026-W49';
+      renderMobileMatrixCards();
+      const mobDeptHtml = document.getElementById('mobileMatrixDeck').innerHTML;
+      const mobHasDedicatedMs = mobDeptHtml.includes('data-mobile-milestones-field="1"') && mobDeptHtml.includes('Alpha Freeze Gate');
+
+      // 4. Desktop PDF Export Save-to-Disk option (no Web Share hijack on desktop)
+      let savedPdfBytes = 0;
+      let sharedCalled = false;
+      window.showSaveFilePicker = async (pickerOpts) => ({
+        name: pickerOpts.suggestedName,
+        createWritable: async () => ({
+          write: async (b) => { savedPdfBytes = b.size || String(b).length; },
+          close: async () => {},
+        }),
+      });
+      navigator.share = async () => { sharedCalled = true; };
+      navigator.canShare = () => true;
+      openExportPdfModal();
+      const pdfModalHtml = document.getElementById('modalCard').innerHTML;
+      const pdfDiskOutcome = await shareOrDownloadFile({ size: 14, type: 'application/pdf' }, 'report.pdf', 'application/pdf', 'Report', { mode: 'disk' });
+
+      // 5. Sync & Snapshots Backup Connected File to Folder
+      let backupDirPicked = false;
+      let backupFilename = '';
+      let backupWrittenText = '';
+      linkedFileHandle = {
+        name: 'company_plan.json',
+        getFile: async () => ({ text: async () => JSON.stringify(liveDB) }),
+      };
+      window.showDirectoryPicker = async () => {
+        backupDirPicked = true;
+        return {
+          name: 'PulsePlan_Backups',
+          getFileHandle: async (fname) => {
+            backupFilename = fname;
+            return {
+              createWritable: async () => ({
+                write: async (txt) => { backupWrittenText = String(txt); },
+                close: async () => {},
+              }),
+            };
+          },
+        };
+      };
+      await backupConnectedJsonToFolder();
+      const linkedStillIntact = linkedFileHandle && linkedFileHandle.name === 'company_plan.json';
+      const lastDump = liveDB.dumpHistory[0];
+
+      // Cleanup mocks
+      linkedFileHandle = null;
+      delete window.showSaveFilePicker;
+      delete window.showDirectoryPicker;
+      delete navigator.share;
+      delete navigator.canShare;
+      closeModal();
+
+      return {
+        w52Group, w50Group, newBoostSeparate,
+        projModalHtml, updatedNovaLead: updatedNova?.techLead, migratedNovaLead,
+        setupProjHtml, searchByLeadHtml,
+        msRowIdx, engRowIdx, msInDedicatedRow, msInDeptCell, msAfterDrag, mobHasDedicatedMs,
+        pdfModalHtml, pdfDiskOutcome, savedPdfBytes, sharedCalled,
+        backupDirPicked, backupFilename, backupWrittenLen: backupWrittenText.length,
+        backupHasTechLead: backupWrittenText.includes('Dr. K. Patel'),
+        linkedStillIntact, lastDump,
+      };
+    })()`, ctx);
+
+    assert.ok(out.w52Group && out.w52Group.items.length === 4 && out.w52Group.isPartial, 'W52 shutdown stays grouped even with 0-FTE dept, newly added dept, and boosted dept');
+    assert.equal(out.newBoostSeparate, true, 'Boosted dept in W52 stays separate as its own dept row alongside the grouped shutdown');
+    assert.ok(out.w50Group && out.w50Group.items.length >= 5, '90% holiday groups cleanly even when 0.25-FTE tiny dept rounds back to base');
+
+    assert.ok(out.projModalHtml.includes('id="mProjTechLead"') && out.projModalHtml.includes('Technical Lead'), 'Project modal includes Technical Lead field');
+    assert.equal(out.updatedNovaLead, 'Dr. K. Patel', 'saveProjectModal saves Technical Lead');
+    assert.equal(out.migratedNovaLead, 'Dr. K. Patel', 'normalizeAndMigrateDB preserves Technical Lead');
+    assert.ok(out.setupProjHtml.includes('Dr. K. Patel'), 'Setup -> Projects renders Technical Lead');
+    assert.ok(out.searchByLeadHtml.includes('TL: Dr. K. Patel') && out.searchByLeadHtml.includes('Project Nova'), 'Roadmap Detailed row label displays Technical Lead and search matches it');
+
+    assert.ok(out.msRowIdx >= 0 && out.msRowIdx < out.engRowIdx, 'Dedicated Milestones row renders at top of By Department matrix');
+    assert.equal(out.msInDedicatedRow, true, 'Milestone appears inside dedicated Milestones lane');
+    assert.equal(out.msInDeptCell, false, 'Milestone is no longer rendered inside individual department cell in By Department view');
+    assert.equal(out.msAfterDrag.deptId, 'd_eng', 'Dragging milestone within dedicated Milestones lane preserves its deptId');
+    assert.ok(out.msAfterDrag.date.startsWith('2026-12-'), 'Dragging milestone within dedicated Milestones lane reschedules target date to W49');
+    assert.equal(out.mobHasDedicatedMs, true, 'Mobile By Department view renders dedicated Milestones field');
+
+    assert.ok(out.pdfModalHtml.includes('id="mPdfDelivery"') && out.pdfModalHtml.includes('Save to Disk'), 'PDF Export modal exposes Desktop Save-to-Disk option');
+    assert.equal(out.pdfDiskOutcome, 'saved', 'PDF Save-to-Disk writes directly via showSaveFilePicker');
+    assert.ok(out.savedPdfBytes > 0 && out.sharedCalled === false, 'Desktop PDF save writes bytes to disk without calling Web Share');
+
+    assert.equal(out.backupDirPicked, true, 'Backup to Folder prompts via showDirectoryPicker');
+    assert.ok(out.backupFilename.startsWith('company_plan_backup_') && out.backupFilename.endsWith('.json'), 'Backup creates timestamped JSON filename based on connected file');
+    assert.ok(out.backupWrittenLen > 500 && out.backupHasTechLead, 'Backup writes full live JSON payload');
+    assert.equal(out.linkedStillIntact, true, 'Creating folder backup leaves active live sync link untouched');
+    assert.ok(out.lastDump && out.lastDump.format === 'BACKUP' && out.lastDump.filename.includes('PulsePlan_Backups/'), 'Folder backup is recorded in Rolling Dump History');
   } finally {
     sandbox.document.getElementById = prevGetById;
   }
