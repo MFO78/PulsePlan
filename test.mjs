@@ -1778,6 +1778,14 @@ test('Resilient holiday grouping, Project Technical Lead, Dedicated Milestones l
       navigator.canShare = () => true;
       openExportPdfModal();
       const pdfModalHtml = document.getElementById('modalCard').innerHTML;
+      // Verify PDF period count selector honors explicit count (e.g., 12 weeks even when screen ui.horizon is 4) and updates live preview
+      const pdfMatchPeriods = getPdfExportPeriods({ periodCount: 'match' });
+      const pdf12Periods = getPdfExportPeriods({ periodCount: 12 });
+      const pdf6Periods = getPdfExportPeriods({ periodCount: '6' });
+      document.getElementById('mPdfPeriodCount').value = '12';
+      document.getElementById('mPdfColsPerPage').value = '4';
+      syncPdfHorizonSummary();
+      const pdfPreviewTxt = document.getElementById('mPdfHorizonSummary').textContent;
       const pdfDiskOutcome = await shareOrDownloadFile({ size: 14, type: 'application/pdf' }, 'report.pdf', 'application/pdf', 'Report', { mode: 'disk' });
 
       // 5. Sync & Snapshots Backup Connected File to Folder
@@ -1820,7 +1828,8 @@ test('Resilient holiday grouping, Project Technical Lead, Dedicated Milestones l
         projModalHtml, updatedNovaLead: updatedNova?.techLead, migratedNovaLead,
         setupProjHtml, searchByLeadHtml,
         msRowIdx, engRowIdx, msInDedicatedRow, msInDeptCell, msAfterDrag, mobHasDedicatedMs,
-        pdfModalHtml, pdfDiskOutcome, savedPdfBytes, sharedCalled,
+        pdfModalHtml, pdfMatchLen: pdfMatchPeriods.length, pdf12Len: pdf12Periods.length, pdf6Len: pdf6Periods.length, pdfPreviewTxt,
+        pdfDiskOutcome, savedPdfBytes, sharedCalled,
         backupDirPicked, backupFilename, backupWrittenLen: backupWrittenText.length,
         backupHasTechLead: backupWrittenText.includes('Dr. K. Patel'),
         linkedStillIntact, lastDump,
@@ -1845,6 +1854,11 @@ test('Resilient holiday grouping, Project Technical Lead, Dedicated Milestones l
     assert.equal(out.mobHasDedicatedMs, true, 'Mobile By Department view renders dedicated Milestones field');
 
     assert.ok(out.pdfModalHtml.includes('id="mPdfDelivery"') && out.pdfModalHtml.includes('Save to Disk'), 'PDF Export modal exposes Desktop Save-to-Disk option');
+    assert.ok(out.pdfModalHtml.includes('id="mPdfPeriodCount"') && out.pdfModalHtml.includes('Periods in Report'), 'PDF Export modal exposes Periods in Report selector');
+    assert.equal(out.pdfMatchLen, 4, 'getPdfExportPeriods("match") mirrors active 4-week view');
+    assert.equal(out.pdf6Len, 6, 'getPdfExportPeriods("6") generates 6 periods even when screen horizon is 4');
+    assert.equal(out.pdf12Len, 12, 'getPdfExportPeriods(12) generates 12 periods even when screen horizon is 4');
+    assert.ok(out.pdfPreviewTxt.includes('12 weeks') && out.pdfPreviewTxt.includes('3 matrix pages') && out.pdfPreviewTxt.includes('4 cols/page'), 'Live PDF preview accurately computes periods and page split');
     assert.equal(out.pdfDiskOutcome, 'saved', 'PDF Save-to-Disk writes directly via showSaveFilePicker');
     assert.ok(out.savedPdfBytes > 0 && out.sharedCalled === false, 'Desktop PDF save writes bytes to disk without calling Web Share');
 

@@ -3603,7 +3603,7 @@ img, video { max-width: 100%; height: auto; }
       redFte: 2.5,
     };
 
-    const PULSEPLAN_BUILD_ID = '2026-11-23-v8.2';
+    const PULSEPLAN_BUILD_ID = '2026-11-23-v8.3';
     const _debugLogEntries = [];
     const MAX_DEBUG_LOG_ENTRIES = 120;
 
@@ -4260,6 +4260,7 @@ img, video { max-width: 100%; height: auto; }
       pdfOptions: {
         title: 'PulsePlan - Company Roadmap & Utilisation Report',
         colorMode: 'match',
+        periodCount: 'match',
         colsPerPage: 6,
         includeChart: true,
         includeMatrix: true,
@@ -12559,6 +12560,32 @@ img, video { max-width: 100%; height: auto; }
       openExportPdfModal();
     }
 
+    function getPdfExportPeriods(opts = {}) {
+      const raw = opts && opts.periodCount !== undefined ? opts.periodCount : (ui.pdfOptions ? ui.pdfOptions.periodCount : 'match');
+      if (!raw || raw === 'match') return getVisiblePeriods();
+      const count = Math.max(1, Math.min(24, parseInt(raw, 10) || getActiveHorizon()));
+      const out = [];
+      for (let i = 0; i < count; i++) {
+        if (ui.timeUnit === 'month') out.push(addMonthsToMonthKey(ui.startMonth, i));
+        else out.push(addWeeksToWeekKey(ui.startWeek, i));
+      }
+      return out;
+    }
+
+    function syncPdfHorizonSummary() {
+      const outEl = document.getElementById('mPdfHorizonSummary');
+      if (!outEl) return;
+      const rawCount = document.getElementById('mPdfPeriodCount')?.value || 'match';
+      const cols = Math.max(3, Math.min(6, parseInt(document.getElementById('mPdfColsPerPage')?.value, 10) || 6));
+      const periods = getPdfExportPeriods({ periodCount: rawCount });
+      const unitPlural = ui.timeUnit === 'month' ? (periods.length === 1 ? 'month' : 'months') : (periods.length === 1 ? 'week' : 'weeks');
+      const pages = Math.max(1, Math.ceil(periods.length / cols));
+      const firstLbl = periods.length ? formatPeriodHeader(periods[0], ui.timeUnit).shortTitle : '';
+      const lastLbl = periods.length ? formatPeriodHeader(periods[periods.length - 1], ui.timeUnit).shortTitle : '';
+      const rangeStr = periods.length > 1 ? `${firstLbl} → ${lastLbl}` : firstLbl;
+      outEl.textContent = `${periods.length} ${unitPlural} (${rangeStr}) • ${pages} matrix ${pages === 1 ? 'page' : 'pages'} (${Math.min(cols, periods.length)} cols/page)`;
+    }
+
     function syncPdfDeliveryButtonLabel() {
       const sel = document.getElementById('mPdfDelivery');
       const btn = document.getElementById('btnGeneratePdfSubmit');
@@ -12576,7 +12603,7 @@ img, video { max-width: 100%; height: auto; }
       const canWebShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
       const isMobileNow = isMobileViewport();
       const defaultDelivery = isMobileNow ? (canWebShare ? 'share' : 'download') : (canSavePicker ? 'disk' : 'download');
-      const opts = { colorMode: 'match', colsPerPage: 6, delivery: defaultDelivery, ...(ui.pdfOptions || {}) };
+      const opts = { colorMode: 'match', periodCount: 'match', colsPerPage: 6, delivery: defaultDelivery, ...(ui.pdfOptions || {}) };
       if (opts.delivery === 'disk' && !canSavePicker) opts.delivery = 'download';
       const defaultSnapId = ui.compareSnapshotId || (db.snapshots[0] ? db.snapshots[0].id : '');
       const activeModeLabelMap = {
@@ -12586,6 +12613,17 @@ img, video { max-width: 100%; height: auto; }
         fte3: '3-Level Green/Yellow/Red',
       };
       const curModeLabel = activeModeLabelMap[getActiveCellColorMode()] || 'Accent Border';
+      const curHorizon = getActiveHorizon();
+      const unitPlural = ui.timeUnit === 'month' ? 'months' : 'weeks';
+      const periodCountChoices = [2, 3, 4, 5, 6, 8, 12, 18, 24];
+      const selPeriodCount = String(opts.periodCount || 'match');
+      const selCols = Math.max(3, Math.min(6, Number(opts.colsPerPage) || 6));
+      const initPeriods = getPdfExportPeriods({ periodCount: selPeriodCount });
+      const initPages = Math.max(1, Math.ceil(initPeriods.length / selCols));
+      const initRange = initPeriods.length > 1
+        ? `${formatPeriodHeader(initPeriods[0], ui.timeUnit).shortTitle} → ${formatPeriodHeader(initPeriods[initPeriods.length - 1], ui.timeUnit).shortTitle}`
+        : (initPeriods[0] ? formatPeriodHeader(initPeriods[0], ui.timeUnit).shortTitle : '');
+      const initSummaryTxt = `${initPeriods.length} ${initPeriods.length === 1 ? (ui.timeUnit === 'month' ? 'month' : 'week') : unitPlural} (${initRange}) • ${initPages} matrix ${initPages === 1 ? 'page' : 'pages'} (${Math.min(selCols, initPeriods.length)} cols/page)`;
       const submitBtnLabel = opts.delivery === 'disk'
         ? 'Save PDF to Disk…'
         : (opts.delivery === 'download' ? 'Download PDF to Disk' : (opts.delivery === 'share' ? 'Share PDF Report' : 'Generate PDF Report'));
@@ -12616,25 +12654,39 @@ img, video { max-width: 100%; height: auto; }
             </div>
           </div>
 
-          <fieldset class="p-3 rounded-xl bg-indigo-50/60 border border-indigo-200 grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <legend class="sr-only">Matrix PDF visual style and column density</legend>
-            <div>
-              <label for="mPdfColorMode" class="block font-semibold text-indigo-950 mb-1">Matrix Card Colour Style</label>
-              <select id="mPdfColorMode" class="w-full px-2.5 py-2 rounded-xl border border-indigo-200 bg-white font-semibold text-slate-800">
-                <option value="match" ${opts.colorMode === 'match' ? 'selected' : ''}>Match Active View (${escapeHtml(curModeLabel)})</option>
-                <option value="fill" ${opts.colorMode === 'fill' ? 'selected' : ''}>Full Color Fill (Project / Dept Colours)</option>
-                <option value="fte3" ${opts.colorMode === 'fte3' ? 'selected' : ''}>3-Level Demand (Green / Yellow / Red)</option>
-                <option value="fte" ${opts.colorMode === 'fte' ? 'selected' : ''}>6-Tier FTE Heat Scale</option>
-                <option value="accent" ${opts.colorMode === 'accent' ? 'selected' : ''}>Accent Left-Stripe Cards</option>
-              </select>
+          <fieldset class="p-3 rounded-xl bg-indigo-50/60 border border-indigo-200 space-y-2.5">
+            <legend class="sr-only">Matrix PDF period range, visual style, and column density</legend>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div>
+                <label for="mPdfPeriodCount" class="block font-semibold text-indigo-950 mb-1">Periods in Report</label>
+                <select id="mPdfPeriodCount" onchange="syncPdfHorizonSummary()" class="w-full px-2.5 py-2 rounded-xl border border-indigo-200 bg-white font-semibold text-slate-800">
+                  <option value="match" ${selPeriodCount === 'match' ? 'selected' : ''}>Match Active View (${curHorizon} ${unitPlural})</option>
+                  ${periodCountChoices.map(n => `<option value="${n}" ${selPeriodCount === String(n) ? 'selected' : ''}>${n} ${unitPlural}</option>`).join('')}
+                </select>
+              </div>
+              <div>
+                <label for="mPdfColsPerPage" class="block font-semibold text-indigo-950 mb-1">Columns per Page</label>
+                <select id="mPdfColsPerPage" onchange="syncPdfHorizonSummary()" class="w-full px-2.5 py-2 rounded-xl border border-indigo-200 bg-white font-semibold text-slate-800">
+                  <option value="6" ${selCols === 6 ? 'selected' : ''}>6 cols / page (38 mm)</option>
+                  <option value="5" ${selCols === 5 ? 'selected' : ''}>5 cols / page (46 mm)</option>
+                  <option value="4" ${selCols === 4 ? 'selected' : ''}>4 cols / page (57 mm)</option>
+                  <option value="3" ${selCols === 3 ? 'selected' : ''}>3 cols / page (76 mm)</option>
+                </select>
+              </div>
+              <div>
+                <label for="mPdfColorMode" class="block font-semibold text-indigo-950 mb-1">Card Colour Style</label>
+                <select id="mPdfColorMode" class="w-full px-2.5 py-2 rounded-xl border border-indigo-200 bg-white font-semibold text-slate-800">
+                  <option value="match" ${opts.colorMode === 'match' ? 'selected' : ''}>Match Active (${escapeHtml(curModeLabel)})</option>
+                  <option value="fill" ${opts.colorMode === 'fill' ? 'selected' : ''}>Full Color Fill</option>
+                  <option value="fte3" ${opts.colorMode === 'fte3' ? 'selected' : ''}>3-Level (Green/Yel/Red)</option>
+                  <option value="fte" ${opts.colorMode === 'fte' ? 'selected' : ''}>6-Tier FTE Heat Scale</option>
+                  <option value="accent" ${opts.colorMode === 'accent' ? 'selected' : ''}>Accent Left-Stripe</option>
+                </select>
+              </div>
             </div>
-            <div>
-              <label for="mPdfColsPerPage" class="block font-semibold text-indigo-950 mb-1">Periods per Page (Breathing Room)</label>
-              <select id="mPdfColsPerPage" class="w-full px-2.5 py-2 rounded-xl border border-indigo-200 bg-white font-semibold text-slate-800">
-                <option value="6" ${Number(opts.colsPerPage || 6) === 6 ? 'selected' : ''}>6 periods / page (Balanced — 38 mm cols)</option>
-                <option value="5" ${Number(opts.colsPerPage) === 5 ? 'selected' : ''}>5 periods / page (Spacious — 46 mm cols)</option>
-                <option value="4" ${Number(opts.colsPerPage) === 4 ? 'selected' : ''}>4 periods / page (Extra Large — 57 mm cols)</option>
-              </select>
+            <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white border border-indigo-200 text-[11px]">
+              <span class="font-bold text-indigo-700 shrink-0">PDF Preview</span>
+              <span id="mPdfHorizonSummary" class="font-mono font-semibold text-slate-700 truncate">${escapeHtml(initSummaryTxt)}</span>
             </div>
           </fieldset>
 
@@ -12701,10 +12753,13 @@ img, video { max-width: 100%; height: auto; }
 
     async function runPdfExportFromModal() {
       const delivery = document.getElementById('mPdfDelivery')?.value || (isMobileViewport() ? 'auto' : 'download');
+      const rawPeriodCount = document.getElementById('mPdfPeriodCount')?.value || 'match';
+      const periodCount = rawPeriodCount === 'match' ? 'match' : Math.max(1, Math.min(24, parseInt(rawPeriodCount, 10) || getActiveHorizon()));
       ui.pdfOptions = {
         title: (document.getElementById('mPdfTitle')?.value || 'PulsePlan - Company Roadmap & Utilisation Report').trim(),
         colorMode: document.getElementById('mPdfColorMode')?.value || 'match',
-        colsPerPage: Math.max(4, Math.min(6, parseInt(document.getElementById('mPdfColsPerPage')?.value, 10) || 6)),
+        periodCount,
+        colsPerPage: Math.max(3, Math.min(6, parseInt(document.getElementById('mPdfColsPerPage')?.value, 10) || 6)),
         delivery,
         includeChart: Boolean(document.getElementById('pdfIncChart')?.checked),
         includeMatrix: Boolean(document.getElementById('pdfIncMatrix')?.checked),
@@ -13601,7 +13656,7 @@ img, video { max-width: 100%; height: auto; }
 
     async function generateRoadmapPDF(opts = {}) {
       const db = getActiveDB();
-      const periods = getVisiblePeriods();
+      const periods = getPdfExportPeriods(opts);
 
       if (!window.jspdf || !window.jspdf.jsPDF) {
         showToast('Offline PDF fallback: opening print dialog (select "Save as PDF")...', 'info');
@@ -13630,7 +13685,7 @@ img, video { max-width: 100%; height: auto; }
         const colorMode = (!opts.colorMode || opts.colorMode === 'match')
           ? getActiveCellColorMode()
           : opts.colorMode;
-        const colsPerPage = Math.max(4, Math.min(6, parseInt(opts.colsPerPage, 10) || 6));
+        const colsPerPage = Math.max(3, Math.min(6, parseInt(opts.colsPerPage, 10) || 6));
 
         const visibleDepts = db.departments.filter(d => ui.filterDept === 'all' || d.id === ui.filterDept);
         const visibleProjs = getSortedProjects(db).filter(p => (!p.archived || ui.filterProj === p.id) && (ui.filterProj === 'all' || p.id === ui.filterProj));
@@ -16891,6 +16946,7 @@ img, video { max-width: 100%; height: auto; }
           parsedWelcomeSeen = parsedUI.welcomeSeen;
           const mergedPdfOpts = {
             colorMode: 'match',
+            periodCount: 'match',
             colsPerPage: 6,
             ...ui.pdfOptions,
             ...(parsedUI.pdfOptions || {}),
@@ -16920,7 +16976,7 @@ img, video { max-width: 100%; height: auto; }
           if (!Array.isArray(ui.expandedOverrideGroups)) ui.expandedOverrideGroups = [];
           if (!ui.linkedFilePaths || typeof ui.linkedFilePaths !== 'object' || Array.isArray(ui.linkedFilePaths)) ui.linkedFilePaths = {};
         } else {
-          ui.pdfOptions = { colorMode: 'match', colsPerPage: 6, ...ui.pdfOptions };
+          ui.pdfOptions = { colorMode: 'match', periodCount: 'match', colsPerPage: 6, ...ui.pdfOptions };
         }
       } catch (e) {}
 
