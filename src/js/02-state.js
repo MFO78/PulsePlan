@@ -77,10 +77,14 @@
     let deferredPwaPrompt = null;
 
     // Shared File Sync runtime state
+    const SESSION_CLIENT_ID = `cli_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     let linkedFileHandle = null;
     let linkedFileDetectedPath = '';
     let rememberedFileHandle = null;
     let lastKnownFileModified = 0;
+    let lastWrittenId = '';
+    let lastSyncedSnapshot = null; // Clean clone of last disk-synced DB for 3-way buffered auto-merge
+    let saveQueued = false;        // Serialized write-buffer flag when edits arrive while a save is in flight
     let pollTimerId = null;
     let saveDebounceTimer = null;
     let isSavingToFile = false;
@@ -133,6 +137,8 @@
           revision: 1,
           lastModifiedAt: new Date().toISOString(),
           lastModifiedBy: ui.userName || 'Project Mgr',
+          lastWriteId: '',
+          lastClientId: '',
         },
         settings: {
           daysPerWeek: 5,
@@ -401,6 +407,8 @@
           revision: Number(src.meta.revision) || 1,
           lastModifiedAt: src.meta.lastModifiedAt || src.meta.updatedAt || new Date().toISOString(),
           lastModifiedBy: src.meta.lastModifiedBy || src.meta.updatedBy || ui.userName || 'Project Mgr',
+          lastWriteId: String(src.meta.lastWriteId || ''),
+          lastClientId: String(src.meta.lastClientId || ''),
         };
       }
 
@@ -466,11 +474,13 @@
           const priority = String(p.priority || 'Medium');
           const owner = String(p.owner || p.lead || p.manager || '').trim();
           const color = p.color || PALETTE[(idx + 2) % PALETTE.length];
-          const budgetDays = Math.max(0, Number(p.budgetDays ?? p.targetDays ?? 0) || 0);
-          const budgetCost = Math.max(0, Number(p.budgetCost ?? p.costBudget ?? 0) || 0);
-          const tentative = Boolean(p.tentative);
+          const nonFte = Boolean(p.nonFte || p.category === 'admin');
+          const budgetDays = nonFte ? 0 : Math.max(0, Number(p.budgetDays ?? p.targetDays ?? 0) || 0);
+          const budgetCost = nonFte ? 0 : Math.max(0, Number(p.budgetCost ?? p.costBudget ?? 0) || 0);
+          const tentative = nonFte ? false : Boolean(p.tentative);
           const archived = Boolean(p.archived);
-          return { id, name, code, color, status, priority, owner, budgetDays, budgetCost, tentative, archived };
+          const category = nonFte ? 'admin' : (tentative ? 'tentative' : 'standard');
+          return { id, name, code, color, status, priority, owner, budgetDays, budgetCost, tentative, nonFte, category, archived };
         }),
       });
 

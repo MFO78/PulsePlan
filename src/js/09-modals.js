@@ -137,20 +137,28 @@
         } catch (diffErr) {}
       }
 
+      const isSameUserOtherTab = Boolean(extMeta && extMeta.lastModifiedBy && ui.userName && String(extMeta.lastModifiedBy).trim().toLowerCase() === String(ui.userName).trim().toLowerCase());
+      const sourceSubtitle = isSameUserOtherTab
+        ? 'Another tab or device signed in with your name modified the same cell(s).'
+        : 'Auto-save was paused because the same cell(s) were edited elsewhere.';
+      const reloadLabel = isSameUserOtherTab
+        ? 'Reload Disk Version (Recommended)'
+        : 'Reload Teammate&rsquo;s Version (Recommended)';
+
       showModal(`
         <div class="p-5 space-y-4 text-xs">
           <div class="w-10 h-1.5 rounded-full bg-slate-300 mx-auto sm:hidden" aria-hidden="true"></div>
           <div class="flex items-start justify-between gap-2">
             <div>
               <h3 id="modalTitle" class="text-base font-bold text-rose-700">Sync Conflict Detected</h3>
-              <p class="text-[11px] text-slate-500 mt-0.5">Auto-save was paused to protect your teammate&rsquo;s edits.</p>
+              <p class="text-[11px] text-slate-500 mt-0.5">${sourceSubtitle}</p>
             </div>
             <button type="button" aria-label="Close dialog" onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none">&times;</button>
           </div>
 
           <div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 leading-relaxed space-y-1">
-            <div><strong>${who}</strong> updated <code class="px-1 rounded bg-white/70 font-mono break-all">${fname}</code> at <strong>${escapeHtml(when)}</strong> (Rev ${rev}) while you had unsaved local changes.</div>
-            <div class="text-[11px]">Review the changes below and choose how to resolve this conflict:</div>
+            <div><strong>${who}</strong> updated <code class="px-1 rounded bg-white/70 font-mono break-all">${fname}</code> at <strong>${escapeHtml(when)}</strong> (Rev ${rev}) while you had conflicting local changes on the same cell(s).</div>
+            <div class="text-[11px]">Non-overlapping edits are auto-merged automatically. Review the remaining collision below:</div>
           </div>
 
           ${diffPreviewHtml}
@@ -158,7 +166,7 @@
           <div class="grid grid-cols-1 gap-2">
             <button type="button" onclick="closeModal(); reloadFromLinkedFile();"
               class="w-full px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs text-left flex items-center justify-between gap-2 transition">
-              <span>Reload Teammate&rsquo;s Version (Recommended)</span>
+              <span>${reloadLabel}</span>
               <span class="text-[10px] opacity-80 shrink-0">Discard my unsaved edit</span>
             </button>
             <button type="button" onclick="forceOverwriteLinkedFile()"
@@ -432,6 +440,8 @@
         isOverallocatedSlot = pct > overT;
         const badgeCls = pct > overT ? 'bg-rose-100 text-rose-700' : pct >= warnT ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
         summaryBadgeHtml = `<span class="px-2 py-0.5 rounded-lg text-[11px] font-bold ${badgeCls}">${formatValue(fteToDisplayValue(alloc, periodKey, ui.timeUnit))} / ${formatValue(fteToDisplayValue(cap, periodKey, ui.timeUnit))} (${pct > 990 ? '&infin;' : pct + '%'})</span>`;
+      } else if (isNonFteProject(primaryRow)) {
+        summaryBadgeHtml = `<span class="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-sky-50 text-sky-700 border border-sky-200">Admin &middot; Non-FTE (Issues &amp; Meetings)</span>`;
       } else {
         const tot = getProjTotalAllocatedFte(rowId, periodKey, ui.timeUnit, db);
         summaryBadgeHtml = `<span class="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-indigo-50 text-indigo-700">Total Effort: ${formatValue(fteToDisplayValue(tot, periodKey, ui.timeUnit))}</span>`;
@@ -449,18 +459,40 @@
       });
 
       const buildCommentCardHtml = (item, deptId, projId, alloc, cmt) => {
+        const pairProj = isDeptAxis ? item : primaryRow;
+        const isAdminPair = isNonFteProject(pairProj);
         const valStr = alloc && alloc.hasData
           ? formatValue(fteToDisplayValue(alloc.avgFte, periodKey, ui.timeUnit))
           : '0 ' + unitShortLabel();
         const weekNotesHtml = (cmt && cmt.weekEntries && cmt.weekEntries.length > 0)
           ? `<div class="mt-1.5 p-2 rounded-lg bg-indigo-50/70 border border-indigo-200 text-[11px] text-indigo-900 space-y-1">
-               <div class="font-bold text-[10px] uppercase tracking-wider text-indigo-700">Weekly Comments inside ${escapeHtml(hdr.title)}:</div>
+               <div class="font-bold text-[10px] uppercase tracking-wider text-indigo-700">Weekly Notes inside ${escapeHtml(hdr.title)}:</div>
                ${cmt.weekEntries.map(we => `<div><span class="font-mono font-bold">${escapeHtml(we.weekShort)}:</span> ${escapeHtml(we.text)}</div>`).join('')}
              </div>`
           : '';
         const monthNoteRefHtml = (cmt && cmt.monthNote)
           ? `<div class="mt-1 text-[11px] text-slate-500 italic">Month note (${escapeHtml(getWeekOwningMonth(periodKey))}): ${escapeHtml(cmt.monthNote)}</div>`
           : '';
+        const rightControlsHtml = isAdminPair
+          ? `<div class="flex items-center gap-1.5 shrink-0">
+               <span class="px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-bold uppercase">Admin &middot; Non-FTE</span>
+               <button type="button" onclick="openAllocationModal('${deptId}', '${projId}', '${periodKey}')"
+                 class="px-2.5 py-1.5 sm:px-2 sm:py-0.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-indigo-700 text-[11px] font-semibold transition">Edit</button>
+             </div>`
+          : `<div class="flex items-center gap-1.5 shrink-0">
+               <div class="inline-flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
+                 <button type="button" aria-label="Decrease ${escapeHtml(item.name)} allocation" onclick="stepAllocationInCellModal('${rowId}', '${deptId}', '${projId}', '${periodKey}', -1)" title="Decrease allocation"
+                   class="px-2.5 py-1.5 sm:px-2 sm:py-0.5 hover:bg-rose-50 hover:text-rose-700 text-slate-700 font-bold transition">&minus;</button>
+                 <span class="text-xs font-bold text-slate-800 tabular-nums px-2 border-x border-slate-200">${valStr}</span>
+                 <button type="button" aria-label="Increase ${escapeHtml(item.name)} allocation" onclick="stepAllocationInCellModal('${rowId}', '${deptId}', '${projId}', '${periodKey}', 1)" title="Increase allocation"
+                   class="px-2.5 py-1.5 sm:px-2 sm:py-0.5 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-bold transition">+</button>
+               </div>
+               <button type="button" onclick="openAllocationModal('${deptId}', '${projId}', '${periodKey}')"
+                 class="px-2.5 py-1.5 sm:px-2 sm:py-0.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-indigo-700 text-[11px] font-semibold transition">Edit</button>
+             </div>`;
+        const placeholderTxt = isAdminPair
+          ? `Log expected departmental issues or requested meetings for ${escapeHtml(hdr.title)}...`
+          : `Add a few lines of comments for [${escapeHtml(item.code)}] in ${escapeHtml(hdr.title)}...`;
 
         return `
           <div class="accent-card p-3 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2" style="--accent-color:${item.color}; --accent-w:4px; border-left: 4px solid ${item.color};">
@@ -469,22 +501,12 @@
                 <span class="font-mono font-bold text-[11px] px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700 shrink-0">${escapeHtml(item.code)}</span>
                 <span class="font-bold text-xs text-slate-900 truncate">${escapeHtml(item.name)}</span>
               </div>
-              <div class="flex items-center gap-1.5 shrink-0">
-                <div class="inline-flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
-                  <button type="button" aria-label="Decrease ${escapeHtml(item.name)} allocation" onclick="stepAllocationInCellModal('${rowId}', '${deptId}', '${projId}', '${periodKey}', -1)" title="Decrease allocation"
-                    class="px-2.5 py-1.5 sm:px-2 sm:py-0.5 hover:bg-rose-50 hover:text-rose-700 text-slate-700 font-bold transition">&minus;</button>
-                  <span class="text-xs font-bold text-slate-800 tabular-nums px-2 border-x border-slate-200">${valStr}</span>
-                  <button type="button" aria-label="Increase ${escapeHtml(item.name)} allocation" onclick="stepAllocationInCellModal('${rowId}', '${deptId}', '${projId}', '${periodKey}', 1)" title="Increase allocation"
-                    class="px-2.5 py-1.5 sm:px-2 sm:py-0.5 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-bold transition">+</button>
-                </div>
-                <button type="button" onclick="openAllocationModal('${deptId}', '${projId}', '${periodKey}')"
-                  class="px-2.5 py-1.5 sm:px-2 sm:py-0.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-indigo-700 text-[11px] font-semibold transition">Edit</button>
-              </div>
+              ${rightControlsHtml}
             </div>
             <textarea rows="3"
               aria-label="Comments for ${escapeHtml(item.name)} in ${escapeHtml(hdr.title)}"
               data-comment-dept="${deptId}" data-comment-proj="${projId}"
-              placeholder="Add a few lines of comments for [${escapeHtml(item.code)}] in ${escapeHtml(hdr.title)}..."
+              placeholder="${placeholderTxt}"
               class="cell-comment-input w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/30">${escapeHtml(cmt ? cmt.direct : '')}</textarea>
             ${weekNotesHtml}
             ${monthNoteRefHtml}
@@ -528,7 +550,7 @@
 
           <div class="flex flex-wrap items-center gap-2 pb-2 border-b border-slate-100">
             <button type="button" onclick="openAllocationModal('${isDeptAxis ? rowId : ''}', '${isDeptAxis ? '' : rowId}', '${periodKey}')"
-              class="px-3 py-2 sm:py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-semibold transition">+ Allocate Manpower</button>
+              class="px-3 py-2 sm:py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-semibold transition">${!isDeptAxis && isNonFteProject(primaryRow) ? '+ Add Issue / Meeting Note' : '+ Allocate Manpower'}</button>
             ${isDeptAxis ? `<button type="button" onclick="openCapacityModal('${rowId}', '${periodKey}')" class="px-3 py-2 sm:py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 font-semibold transition">Variable Capacity</button>` : ''}
             ${isOverallocatedSlot ? `<button type="button" onclick="openBottleneckResolverModal('${rowId}', '${periodKey}')" class="px-3 py-2 sm:py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition">&#9888; Fix Overallocation</button>` : ''}
             <button type="button" onclick="openMilestoneModal('', '${isDeptAxis ? '' : rowId}', '${getPeriodMidDateISO(periodKey, ui.timeUnit)}', '${isDeptAxis ? rowId : ''}')"
@@ -685,12 +707,14 @@
         ? Math.round(fteToDisplayValue(existing.avgFte, selPeriod, ui.timeUnit) * 100) / 100
         : '';
       const existingComment = (db.comments && db.comments[getCommentKey(selDept, selProj, selPeriod)]) || '';
+      const selProjObj = db.projects.find(p => p.id === selProj);
+      const initIsAdmin = isNonFteProject(selProjObj);
 
       showModal(`
         <div class="p-5 space-y-4 text-xs">
           <div class="w-10 h-1.5 rounded-full bg-slate-300 mx-auto sm:hidden" aria-hidden="true"></div>
           <div class="flex items-center justify-between">
-            <h3 id="modalTitle" class="text-base font-bold text-slate-900">Allocate Manpower</h3>
+            <h3 id="modalTitle" class="text-base font-bold text-slate-900">${initIsAdmin ? 'Admin — Issues &amp; Meetings' : 'Allocate Manpower'}</h3>
             <button type="button" aria-label="Close dialog" onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none">&times;</button>
           </div>
 
@@ -716,10 +740,10 @@
             <div>
               <label for="mAllocPeriod" class="block font-semibold text-slate-700 mb-1">${ui.timeUnit === 'month' ? 'Month' : 'ISO Week'}</label>
               <select id="mAllocPeriod" onchange="onAllocModalContextChange()" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium">
-                ${modalPeriods.map(pk => `<option value="${pk}" ${pk === selPeriod ? 'selected' : ''}>${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).title)} (${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).sub)})</option>`).join('')}
+                ${modalPeriods.map(pk => `<option value="${pk}" ${pk === selPeriod ? 'selected' : ''}>${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).title)} (${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).dateRange || formatPeriodHeader(pk, ui.timeUnit).sub)})</option>`).join('')}
               </select>
             </div>
-            <div>
+            <div id="mAllocFteFieldWrap" class="${initIsAdmin ? 'hidden' : ''}">
               <label for="mAllocValue" class="block font-semibold text-slate-700 mb-1">Allocation (${unitShortLabel()})</label>
               <div class="flex items-center gap-1.5">
                 <button type="button" aria-label="Decrease allocation" onclick="stepAllocModalValue(-1)" title="Decrease allocation"
@@ -730,11 +754,17 @@
                   class="w-10 h-10 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-base transition shrink-0">+</button>
               </div>
             </div>
+            <div id="mAllocAdminBadgeWrap" class="${initIsAdmin ? 'flex' : 'hidden'} flex-col justify-end">
+              <div class="px-3 py-2.5 sm:py-2 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 font-semibold text-[11px] leading-snug">
+                <span class="font-extrabold text-sky-700 uppercase text-[10px]">Admin &middot; Non-FTE</span>
+                <div class="mt-0.5">No FTE required &mdash; zero impact on utilisation or cost.</div>
+              </div>
+            </div>
           </div>
 
           <div>
-            <label for="mAllocComment" class="block font-semibold text-slate-700 mb-1">Cell Comments / Notes (optional, shown inside cell)</label>
-            <textarea id="mAllocComment" rows="2" placeholder="Add context, blockers, or key deliverables for this period..."
+            <label id="mAllocCommentLabel" for="mAllocComment" class="block font-semibold text-slate-700 mb-1">${initIsAdmin ? 'Expected Departmental Issues &amp; Requested Meetings (shown inside cell)' : 'Cell Comments / Notes (optional, shown inside cell)'}</label>
+            <textarea id="mAllocComment" rows="${initIsAdmin ? '3' : '2'}" placeholder="${initIsAdmin ? 'List expected departmental issues, risks, or requested meetings for this period...' : 'Add context, blockers, or key deliverables for this period...'}"
               class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs leading-relaxed">${escapeHtml(existingComment)}</textarea>
           </div>
 
@@ -758,10 +788,10 @@
           <div id="mAllocConversionPreview" class="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 text-indigo-950 space-y-1"></div>
 
           <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-            <button type="button" onclick="deleteAllocationFromModal()" class="px-3 py-2.5 sm:py-2 rounded-xl text-rose-600 hover:bg-rose-50 font-semibold transition">Remove</button>
+            <button id="mAllocDeleteBtn" type="button" onclick="deleteAllocationFromModal()" class="px-3 py-2.5 sm:py-2 rounded-xl text-rose-600 hover:bg-rose-50 font-semibold transition">${initIsAdmin ? 'Remove Note' : 'Remove'}</button>
             <div class="flex items-center gap-2">
               <button type="button" onclick="closeModal()" class="px-3.5 py-2.5 sm:py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold transition">Cancel</button>
-              <button type="button" onclick="saveAllocationModal()" class="px-4 py-2.5 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition">Save</button>
+              <button id="mAllocSaveBtn" type="button" onclick="saveAllocationModal()" class="px-4 py-2.5 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition">${initIsAdmin ? 'Save Admin Note' : 'Save'}</button>
             </div>
           </div>
         </div>`);
@@ -839,14 +869,44 @@
       const codeBadge = document.getElementById('mAllocProjCodeBadge');
 
       const proj = db.projects.find(p => p.id === projId);
+      const isAdminProj = isNonFteProject(proj);
+
+      const titleEl = document.getElementById('modalTitle');
+      const fteWrap = document.getElementById('mAllocFteFieldWrap');
+      const adminWrap = document.getElementById('mAllocAdminBadgeWrap');
+      const cmtLbl = document.getElementById('mAllocCommentLabel');
+      const cmtEl = document.getElementById('mAllocComment');
+      const delBtn = document.getElementById('mAllocDeleteBtn');
+      const saveBtn = document.getElementById('mAllocSaveBtn');
+      if (titleEl) titleEl.textContent = isAdminProj ? 'Admin — Issues & Meetings' : 'Allocate Manpower';
+      if (fteWrap) fteWrap.classList.toggle('hidden', isAdminProj);
+      if (adminWrap) {
+        adminWrap.classList.toggle('hidden', !isAdminProj);
+        adminWrap.classList.toggle('flex', isAdminProj);
+      }
+      if (cmtLbl) cmtLbl.textContent = isAdminProj ? 'Expected Departmental Issues & Requested Meetings (shown inside cell)' : 'Cell Comments / Notes (optional, shown inside cell)';
+      if (cmtEl) cmtEl.placeholder = isAdminProj ? 'List expected departmental issues, risks, or requested meetings for this period...' : 'Add context, blockers, or key deliverables for this period...';
+      if (delBtn) delBtn.textContent = isAdminProj ? 'Remove Note' : 'Remove';
+      if (saveBtn) saveBtn.textContent = isAdminProj ? 'Save Admin Note' : 'Save';
+
       if (codeBadge && proj) {
-        codeBadge.textContent = `Code: ${proj.code}`;
+        codeBadge.textContent = isAdminProj ? `Admin: ${proj.code}` : `Code: ${proj.code}`;
         codeBadge.classList.add('accent-card');
         codeBadge.style.setProperty('--accent-color', proj.color);
         codeBadge.style.setProperty('--accent-w', '3px');
         codeBadge.style.borderLeft = `3px solid ${proj.color}`;
       }
       if (!box || !pk) return;
+
+      if (isAdminProj) {
+        box.innerHTML = `
+          <div class="flex flex-wrap items-center justify-between gap-2 font-semibold">
+            <span>Admin (Non-FTE) Entry${proj ? ` (${escapeHtml(proj.code)})` : ''}:</span>
+            <span class="font-mono text-sky-700">0 FTE &bull; Notes Only</span>
+          </div>
+          <div class="text-[11px] text-indigo-800/80">Appears directly in this department&rsquo;s cell(s) without affecting FTE utilisation %, bottlenecks, or project cost burn.</div>`;
+        return;
+      }
 
       const fte = isNaN(rawVal) ? 0 : displayValueToFte(rawVal, pk, ui.timeUnit, ui.manpowerUnit);
       const days = fteToDisplayValue(fte, pk, ui.timeUnit, 'days');
@@ -871,13 +931,36 @@
       const commentTxt = document.getElementById('mAllocComment')?.value || '';
       const repeat = Math.max(1, Math.min(24, parseInt(document.getElementById('mAllocRepeat').value, 10) || 1));
 
+      const proj = db.projects.find(p => p.id === projId);
+      const dCode = db.departments.find(d => d.id === deptId)?.code || deptId;
+      const pCode = proj?.code || projId;
+
+      if (isNonFteProject(proj)) {
+        const cleanNote = commentTxt.trim();
+        if (!cleanNote) {
+          showToast('Enter departmental issues or requested meetings, or click Remove Note.', 'warning');
+          return;
+        }
+        pushUndoState(`Update Admin note [${dCode} -> ${pCode}]`);
+        let curPk = startPk;
+        for (let i = 0; i < repeat; i++) {
+          setAllocationForPeriod(deptId, projId, curPk, ui.timeUnit, 0, db);
+          setCellProjectComment(deptId, projId, curPk, cleanNote, db);
+          curPk = ui.timeUnit === 'month' ? addMonthsToMonthKey(curPk, 1) : addWeeksToWeekKey(curPk, 1);
+        }
+        recordChange('Comment', `Updated Admin (Non-FTE) note [${dCode} -> ${pCode}] in ${startPk}${repeat > 1 ? ` (+${repeat - 1} more)` : ''}`);
+        triggerHaptic(10);
+        closeModal();
+        renderAll();
+        showToast('Admin note saved', 'success', { undoable: true });
+        return;
+      }
+
       if (isNaN(rawVal) || rawVal < 0) {
         showToast('Enter a valid non-negative allocation number.', 'warning');
         return;
       }
 
-      const dCode = db.departments.find(d => d.id === deptId)?.code || deptId;
-      const pCode = db.projects.find(p => p.id === projId)?.code || projId;
       pushUndoState(`Set [${dCode} -> ${pCode}]`);
 
       let curPk = startPk;
@@ -901,10 +984,20 @@
       const deptId = document.getElementById('mAllocDept').value;
       const projId = document.getElementById('mAllocProj').value;
       const pk = document.getElementById('mAllocPeriod').value;
+      const proj = db.projects.find(p => p.id === projId);
       const dCode = db.departments.find(d => d.id === deptId)?.code || deptId;
-      const pCode = db.projects.find(p => p.id === projId)?.code || projId;
+      const pCode = proj?.code || projId;
       pushUndoState(`Remove [${dCode} -> ${pCode}]`);
       setAllocationForPeriod(deptId, projId, pk, ui.timeUnit, 0, db);
+      if (isNonFteProject(proj)) {
+        setCellProjectComment(deptId, projId, pk, '', db);
+        recordChange('Comment', `Removed Admin (Non-FTE) note [${dCode} -> ${pCode}] in ${pk}`);
+        triggerHaptic(10);
+        closeModal();
+        renderAll();
+        showToast('Admin note removed', 'info', { undoable: true });
+        return;
+      }
       recordChange('Allocation', `Removed [${dCode} -> ${pCode}] allocation in ${pk}`);
       triggerHaptic(10);
       closeModal();
@@ -1282,10 +1375,21 @@
 
     /* ---------- Project Modal & Cleanup ---------- */
 
+    function syncProjectModalCategory() {
+      const cat = document.getElementById('mProjCategory')?.value || 'standard';
+      const isAdmin = cat === 'admin';
+      const budRow = document.getElementById('mProjBudgetRow');
+      const admInfo = document.getElementById('mProjAdminInfo');
+      if (budRow) budRow.classList.toggle('hidden', isAdmin);
+      if (admInfo) admInfo.classList.toggle('hidden', !isAdmin);
+    }
+
     function openProjectModal(projId = '') {
       const db = getActiveDB();
       const p = db.projects.find(x => x.id === projId);
       const color = p ? p.color : PALETTE[(db.projects.length + 2) % PALETTE.length];
+      const curCategory = isNonFteProject(p) ? 'admin' : (p?.tentative ? 'tentative' : 'standard');
+      const isAdmin = curCategory === 'admin';
 
       showModal(`
         <div class="p-5 space-y-4 text-xs">
@@ -1298,14 +1402,22 @@
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div class="sm:col-span-2">
               <label for="mProjName" class="block font-semibold text-slate-700 mb-1">Project Name</label>
-              <input id="mProjName" type="text" value="${escapeHtml(p?.name || '')}" placeholder="e.g. Project Nova" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
+              <input id="mProjName" type="text" value="${escapeHtml(p?.name || '')}" placeholder="e.g. Project Nova or Dept Admin / Meetings" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
             </div>
             <div>
               <label for="mProjCode" class="block font-semibold text-slate-700 mb-1">Project Code</label>
               <input id="mProjCode" type="text" maxlength="8" value="${escapeHtml(p?.code || '')}" placeholder="NVA" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-mono uppercase font-bold" />
             </div>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label for="mProjCategory" class="block font-semibold text-slate-700 mb-1">Category</label>
+              <select id="mProjCategory" onchange="syncProjectModalCategory()" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold">
+                <option value="standard" ${curCategory === 'standard' ? 'selected' : ''}>Committed (FTE)</option>
+                <option value="tentative" ${curCategory === 'tentative' ? 'selected' : ''}>Pipeline / Tentative</option>
+                <option value="admin" ${curCategory === 'admin' ? 'selected' : ''}>Admin (Non-FTE)</option>
+              </select>
+            </div>
             <div>
               <label for="mProjStatus" class="block font-semibold text-slate-700 mb-1">Status</label>
               <select id="mProjStatus" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium">
@@ -1319,6 +1431,9 @@
               </select>
             </div>
           </div>
+          <div id="mProjAdminInfo" class="${isAdmin ? '' : 'hidden'} p-3 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 text-[11px] leading-relaxed">
+            <strong>Admin (Non-FTE) Category:</strong> Requires no FTE input and never affects department utilisation %, bottlenecks, or cost burn. Ideal for logging expected departmental issues, risks, and requested meetings inside each period.
+          </div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div class="sm:col-span-2">
               <label for="mProjOwner" class="block font-semibold text-slate-700 mb-1">Project Owner</label>
@@ -1329,7 +1444,7 @@
               <input id="mProjColor" type="color" value="${color}" class="w-full h-10 rounded-xl border border-slate-200 cursor-pointer" />
             </div>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div id="mProjBudgetRow" class="${isAdmin ? 'hidden' : ''} grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label for="mProjBudget" class="block font-semibold text-slate-700 mb-1">Effort Budget (Person-Days, optional)</label>
               <input id="mProjBudget" type="number" inputmode="decimal" min="0" step="5" value="${Number(p?.budgetDays) > 0 ? p.budgetDays : ''}" placeholder="e.g. 120" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
@@ -1339,16 +1454,10 @@
               <input id="mProjBudgetCost" type="number" inputmode="decimal" min="0" step="1000" value="${Number(p?.budgetCost) > 0 ? p.budgetCost : ''}" placeholder="e.g. 150000" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
             </div>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <label class="inline-flex items-center gap-2 px-3 py-2.5 sm:py-2 rounded-xl border border-violet-200 bg-violet-50/70 cursor-pointer select-none">
-              <input id="mProjTentative" type="checkbox" ${p?.tentative ? 'checked' : ''} class="rounded text-indigo-600" />
-              <span class="font-semibold text-violet-900">Tentative / Pipeline (uncommitted)</span>
-            </label>
-            <label class="inline-flex items-center gap-2 px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer select-none">
-              <input id="mProjArchived" type="checkbox" ${p?.archived ? 'checked' : ''} class="rounded text-indigo-600" />
-              <span class="font-semibold text-slate-700">Archive (hide from active Roadmap)</span>
-            </label>
-          </div>
+          <label class="inline-flex items-center gap-2 px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer select-none w-full">
+            <input id="mProjArchived" type="checkbox" ${p?.archived ? 'checked' : ''} class="rounded text-indigo-600" />
+            <span class="font-semibold text-slate-700">Archive (hide from active Roadmap)</span>
+          </label>
           <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
             <button type="button" onclick="closeModal()" class="px-4 py-2.5 sm:py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold">Cancel</button>
             <button type="button" onclick="saveProjectModal()" class="px-4 py-2.5 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">Save Project</button>
@@ -1361,13 +1470,16 @@
       const id = document.getElementById('mProjId').value;
       const name = document.getElementById('mProjName').value.trim();
       const code = (document.getElementById('mProjCode').value.trim() || name.slice(0, 3)).toUpperCase();
+      const categoryVal = document.getElementById('mProjCategory')?.value || 'standard';
+      const nonFte = categoryVal === 'admin';
+      const tentative = categoryVal === 'tentative';
+      const category = nonFte ? 'admin' : (tentative ? 'tentative' : 'standard');
       const status = document.getElementById('mProjStatus').value;
       const priority = document.getElementById('mProjPriority').value;
       const owner = document.getElementById('mProjOwner').value.trim();
       const color = document.getElementById('mProjColor').value || '#4f46e5';
-      const budgetDays = Math.max(0, parseFloat(document.getElementById('mProjBudget')?.value) || 0);
-      const budgetCost = Math.max(0, parseFloat(document.getElementById('mProjBudgetCost')?.value) || 0);
-      const tentative = Boolean(document.getElementById('mProjTentative')?.checked);
+      const budgetDays = nonFte ? 0 : Math.max(0, parseFloat(document.getElementById('mProjBudget')?.value) || 0);
+      const budgetCost = nonFte ? 0 : Math.max(0, parseFloat(document.getElementById('mProjBudgetCost')?.value) || 0);
       const archived = Boolean(document.getElementById('mProjArchived')?.checked);
 
       if (!name) { showToast('Project name is required.', 'warning'); return; }
@@ -1375,15 +1487,18 @@
       pushUndoState(`${id ? 'Update' : 'Add'} project [${code}]`);
       if (id) {
         const p = db.projects.find(x => x.id === id);
-        if (p) Object.assign(p, { name, code, status, priority, owner, color, budgetDays, budgetCost, tentative, archived });
+        if (p) Object.assign(p, { name, code, status, priority, owner, color, budgetDays, budgetCost, tentative, nonFte, category, archived });
+        if (nonFte) {
+          Object.keys(db.allocations || {}).forEach(k => { if (k.split('::')[1] === id) delete db.allocations[k]; });
+        }
         db.projects = getSortedProjects(db);
         if (archived && ui.filterProj === id) ui.filterProj = 'all';
         if (archived && ui.spotlightProjId === id) ui.spotlightProjId = '';
-        recordChange('Project', `Updated project [${code}] ${name} (${status}${tentative ? ', pipeline' : ''}${budgetDays > 0 ? `, budget ${budgetDays}d` : ''}${archived ? ', archived' : ''})`);
+        recordChange('Project', `Updated project [${code}] ${name} (${status}${nonFte ? ', Admin Non-FTE' : tentative ? ', pipeline' : ''}${budgetDays > 0 ? `, budget ${budgetDays}d` : ''}${archived ? ', archived' : ''})`);
       } else {
-        db.projects.push({ id: uid('p'), name, code, status, priority, owner, color, budgetDays, budgetCost, tentative, archived });
+        db.projects.push({ id: uid('p'), name, code, status, priority, owner, color, budgetDays, budgetCost, tentative, nonFte, category, archived });
         db.projects = getSortedProjects(db);
-        recordChange('Project', `Added project [${code}] ${name}${tentative ? ' (pipeline)' : ''}${budgetDays > 0 ? ` (budget ${budgetDays}d)` : ''}`);
+        recordChange('Project', `Added project [${code}] ${name}${nonFte ? ' (Admin Non-FTE)' : tentative ? ' (pipeline)' : ''}${budgetDays > 0 ? ` (budget ${budgetDays}d)` : ''}`);
       }
       closeModal();
       renderAll();

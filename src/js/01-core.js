@@ -32,7 +32,7 @@
       redFte: 2.5,
     };
 
-    const PULSEPLAN_BUILD_ID = '2026-11-22-v7.3';
+    const PULSEPLAN_BUILD_ID = '2026-11-23-v8';
     const _debugLogEntries = [];
     const MAX_DEBUG_LOG_ENTRIES = 120;
 
@@ -390,10 +390,17 @@
       });
     }
 
+    function isNonFteProject(p) {
+      return Boolean(p && (p.nonFte || p.category === 'admin'));
+    }
+
     function formatProjectOptionLabel(p) {
       const code = String(p?.code || '').trim();
       const name = String(p?.name || '').trim();
-      return code ? `[${code}] ${name}` : name;
+      const base = code ? `[${code}] ${name}` : name;
+      if (isNonFteProject(p)) return `${base} (Admin · Non-FTE)`;
+      if (p?.tentative) return `${base} (Pipeline)`;
+      return base;
     }
 
     function getManpowerStep(unit = ui.manpowerUnit) {

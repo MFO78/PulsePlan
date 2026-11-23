@@ -118,16 +118,19 @@
           const plannedCost = hasRates ? getProjectTotalPlannedCost(p.id, db) : 0;
           const budgetCost = Number(p.budgetCost) || 0;
           const costPct = budgetCost > 0 ? Math.round((plannedCost / budgetCost) * 100) : 0;
-          const effortPart = budgetDays > 0
-            ? `<div class="space-y-1 min-w-[110px]">
-                 <div class="flex items-center justify-between text-[11px] font-bold tabular-nums">
-                   <span class="${pct > 100 ? 'text-rose-600' : pct >= 85 ? 'text-amber-700' : 'text-slate-700'}">${plannedDays} / ${budgetDays}d</span>
-                   <span class="${pct > 100 ? 'text-rose-600' : 'text-slate-500'}">${pct}%</span>
-                 </div>
-                 <div class="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full rounded-full ${pct > 100 ? 'bg-rose-500' : pct >= 85 ? 'bg-amber-500' : 'bg-indigo-500'}" style="width:${Math.min(100, pct)}%"></div></div>
-               </div>`
-            : `<span class="text-slate-400 tabular-nums">${plannedDays > 0 ? `${plannedDays}d planned` : '—'}</span>`;
-          const costPart = (hasRates && (plannedCost > 0 || budgetCost > 0))
+          const isAdminProj = isNonFteProject(p);
+          const effortPart = isAdminProj
+            ? `<span class="px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-bold">Non-FTE (Issues &amp; Meetings)</span>`
+            : (budgetDays > 0
+                ? `<div class="space-y-1 min-w-[110px]">
+                     <div class="flex items-center justify-between text-[11px] font-bold tabular-nums">
+                       <span class="${pct > 100 ? 'text-rose-600' : pct >= 85 ? 'text-amber-700' : 'text-slate-700'}">${plannedDays} / ${budgetDays}d</span>
+                       <span class="${pct > 100 ? 'text-rose-600' : 'text-slate-500'}">${pct}%</span>
+                     </div>
+                     <div class="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full rounded-full ${pct > 100 ? 'bg-rose-500' : pct >= 85 ? 'bg-amber-500' : 'bg-indigo-500'}" style="width:${Math.min(100, pct)}%"></div></div>
+                   </div>`
+                : `<span class="text-slate-400 tabular-nums">${plannedDays > 0 ? `${plannedDays}d planned` : '—'}</span>`);
+          const costPart = (!isAdminProj && hasRates && (plannedCost > 0 || budgetCost > 0))
             ? `<div class="text-[10px] font-bold tabular-nums mt-1 ${budgetCost > 0 && costPct > 100 ? 'text-rose-600' : 'text-emerald-700'}">${formatCurrency(plannedCost, db)}${budgetCost > 0 ? ` / ${formatCurrency(budgetCost, db)} (${costPct}%)` : ' est.'}</div>`
             : '';
           return `
@@ -136,6 +139,7 @@
                 <div class="flex flex-wrap items-center gap-1.5">
                   <span class="w-3 h-3 rounded-full shrink-0" style="background:${p.color}" aria-hidden="true"></span>
                   <span>${escapeHtml(p.name)}</span>
+                  ${isAdminProj ? '<span class="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-bold uppercase">Admin</span>' : ''}
                   ${p.tentative ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold uppercase">Pipeline</span>' : ''}
                   ${p.archived ? '<span class="px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 text-[10px] font-bold uppercase">Archived</span>' : ''}
                 </div>
@@ -1128,6 +1132,9 @@
               : '');
           rememberedFileHandle = handle;
           lastKnownFileModified = file.lastModified;
+          lastWrittenId = String(liveDB.meta?.lastWriteId || '');
+          lastSyncedSnapshot = cloneSyncSnapshot(liveDB);
+          saveQueued = false;
           pendingAutoReload = false;
           syncWarningState = { type: null, fileName: '', dismissed: false };
           document.getElementById('externalUpdateBanner')?.classList.add('hidden');
@@ -1172,6 +1179,9 @@
       linkedFileDetectedPath = '';
       rememberedFileHandle = null;
       lastKnownFileModified = 0;
+      lastWrittenId = '';
+      lastSyncedSnapshot = null;
+      saveQueued = false;
       pendingAutoReload = false;
       stopFilePolling();
       clearRememberedHandle();
@@ -1182,8 +1192,197 @@
       showToast('Unlinked shared file — continuing in browser storage', 'info');
     }
 
+    /* ---------- Serialized Write Queue & 3-Way Buffered Auto-Merge Helpers ---------- */
+
+    function cloneSyncSnapshot(db) {
+      if (!db || typeof db !== 'object') return null;
+      try {
+        return JSON.parse(JSON.stringify({
+          meta: db.meta || {},
+          settings: db.settings || {},
+          departments: db.departments || [],
+          projects: db.projects || [],
+          allocations: db.allocations || {},
+          capacityOverrides: db.capacityOverrides || {},
+          comments: db.comments || {},
+          milestones: db.milestones || [],
+          snapshots: db.snapshots || [],
+          changeLog: db.changeLog || [],
+          dumpHistory: db.dumpHistory || [],
+        }));
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function syncValuesEqual(a, b) {
+      if (a === b) return true;
+      if (a === undefined || b === undefined || a === null || b === null) return false;
+      if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) < 0.0005;
+      if (typeof a === 'object' && typeof b === 'object') {
+        try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return false; }
+      }
+      return false;
+    }
+
+    function areDBDataEqual(a, b) {
+      if (!a || !b) return false;
+      const fields = ['settings', 'departments', 'projects', 'allocations', 'capacityOverrides', 'comments', 'milestones', 'snapshots'];
+      for (const f of fields) {
+        if (!syncValuesEqual(a[f], b[f])) return false;
+      }
+      return true;
+    }
+
+    function mergeMapThreeWay(baseMap = {}, localMap = {}, diskMap = {}, sectionName = 'map') {
+      const merged = {};
+      const conflicts = [];
+      let localApplied = 0;
+      let diskApplied = 0;
+      const keys = new Set([...Object.keys(baseMap || {}), ...Object.keys(localMap || {}), ...Object.keys(diskMap || {})]);
+      keys.forEach(k => {
+        const bVal = baseMap ? baseMap[k] : undefined;
+        const lVal = localMap ? localMap[k] : undefined;
+        const dVal = diskMap ? diskMap[k] : undefined;
+        const localChanged = !syncValuesEqual(bVal, lVal);
+        const diskChanged = !syncValuesEqual(bVal, dVal);
+        if (!localChanged && !diskChanged) {
+          if (dVal !== undefined) merged[k] = dVal;
+        } else if (localChanged && !diskChanged) {
+          if (lVal !== undefined) merged[k] = lVal;
+          localApplied++;
+        } else if (!localChanged && diskChanged) {
+          if (dVal !== undefined) merged[k] = dVal;
+          diskApplied++;
+        } else {
+          if (syncValuesEqual(lVal, dVal)) {
+            if (dVal !== undefined) merged[k] = dVal;
+          } else {
+            conflicts.push({ section: sectionName, key: k, base: bVal, local: lVal, disk: dVal });
+          }
+        }
+      });
+      return { merged, conflicts, localApplied, diskApplied };
+    }
+
+    function mergeArrayByIdThreeWay(baseArr = [], localArr = [], diskArr = [], sectionName = 'list') {
+      const baseById = new Map((baseArr || []).filter(Boolean).map(x => [x.id, x]));
+      const localById = new Map((localArr || []).filter(Boolean).map(x => [x.id, x]));
+      const diskById = new Map((diskArr || []).filter(Boolean).map(x => [x.id, x]));
+      const orderedIds = [];
+      const seen = new Set();
+      [...(diskArr || []), ...(localArr || [])].forEach(x => {
+        if (x && x.id && !seen.has(x.id)) {
+          seen.add(x.id);
+          orderedIds.push(x.id);
+        }
+      });
+
+      const merged = [];
+      const conflicts = [];
+      let localApplied = 0;
+      let diskApplied = 0;
+
+      orderedIds.forEach(id => {
+        const bVal = baseById.get(id);
+        const lVal = localById.get(id);
+        const dVal = diskById.get(id);
+        const localChanged = !syncValuesEqual(bVal, lVal);
+        const diskChanged = !syncValuesEqual(bVal, dVal);
+        if (!localChanged && !diskChanged) {
+          if (dVal !== undefined) merged.push(JSON.parse(JSON.stringify(dVal)));
+        } else if (localChanged && !diskChanged) {
+          if (lVal !== undefined) merged.push(JSON.parse(JSON.stringify(lVal)));
+          localApplied++;
+        } else if (!localChanged && diskChanged) {
+          if (dVal !== undefined) merged.push(JSON.parse(JSON.stringify(dVal)));
+          diskApplied++;
+        } else {
+          if (syncValuesEqual(lVal, dVal)) {
+            if (dVal !== undefined) merged.push(JSON.parse(JSON.stringify(dVal)));
+          } else {
+            conflicts.push({ section: sectionName, key: id, base: bVal, local: lVal, disk: dVal });
+          }
+        }
+      });
+
+      return { merged, conflicts, localApplied, diskApplied };
+    }
+
+    function mergeLogEntriesById(localList = [], diskList = [], limit = 200) {
+      const seen = new Map();
+      [...(localList || []), ...(diskList || [])].forEach(item => {
+        if (!item) return;
+        const key = item.id || `${item.timestamp || ''}::${item.summary || item.filename || ''}`;
+        if (!seen.has(key)) seen.set(key, item);
+      });
+      return [...seen.values()]
+        .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')))
+        .slice(0, limit);
+    }
+
+    function tryThreeWayAutoMerge(baseDB, localDB, diskDB) {
+      if (!baseDB || !localDB || !diskDB) {
+        return { ok: false, reason: 'no-base', conflicts: [] };
+      }
+
+      const mAlloc = mergeMapThreeWay(baseDB.allocations, localDB.allocations, diskDB.allocations, 'allocations');
+      const mCap = mergeMapThreeWay(baseDB.capacityOverrides, localDB.capacityOverrides, diskDB.capacityOverrides, 'capacityOverrides');
+      const mCmt = mergeMapThreeWay(baseDB.comments, localDB.comments, diskDB.comments, 'comments');
+      const mSet = mergeMapThreeWay(baseDB.settings, localDB.settings, diskDB.settings, 'settings');
+      const mDept = mergeArrayByIdThreeWay(baseDB.departments, localDB.departments, diskDB.departments, 'departments');
+      const mProj = mergeArrayByIdThreeWay(baseDB.projects, localDB.projects, diskDB.projects, 'projects');
+      const mMs = mergeArrayByIdThreeWay(baseDB.milestones, localDB.milestones, diskDB.milestones, 'milestones');
+      const mSnap = mergeArrayByIdThreeWay(baseDB.snapshots, localDB.snapshots, diskDB.snapshots, 'snapshots');
+
+      const allConflicts = [
+        ...mAlloc.conflicts,
+        ...mCap.conflicts,
+        ...mCmt.conflicts,
+        ...mSet.conflicts,
+        ...mDept.conflicts,
+        ...mProj.conflicts,
+        ...mMs.conflicts,
+        ...mSnap.conflicts,
+      ];
+      if (allConflicts.length > 0) {
+        return { ok: false, reason: 'collision', conflicts: allConflicts };
+      }
+
+      const mergedDB = {
+        meta: {
+          version: 3,
+          revision: Math.max(Number(diskDB.meta?.revision) || 1, Number(localDB.meta?.revision) || 1) + 1,
+          lastModifiedAt: new Date().toISOString(),
+          lastModifiedBy: ui.userName || 'Project Mgr',
+          lastWriteId: '',
+          lastClientId: SESSION_CLIENT_ID,
+        },
+        settings: mSet.merged,
+        departments: mDept.merged,
+        projects: getSortedProjects({ projects: mProj.merged }),
+        allocations: mAlloc.merged,
+        capacityOverrides: mCap.merged,
+        comments: mCmt.merged,
+        milestones: mMs.merged,
+        snapshots: mSnap.merged,
+        changeLog: mergeLogEntriesById(localDB.changeLog, diskDB.changeLog, 500),
+        dumpHistory: mergeLogEntriesById(localDB.dumpHistory, diskDB.dumpHistory, 100),
+      };
+
+      const localAppliedCount = mAlloc.localApplied + mCap.localApplied + mCmt.localApplied + mSet.localApplied + mDept.localApplied + mProj.localApplied + mMs.localApplied + mSnap.localApplied;
+      const diskAppliedCount = mAlloc.diskApplied + mCap.diskApplied + mCmt.diskApplied + mSet.diskApplied + mDept.diskApplied + mProj.diskApplied + mMs.diskApplied + mSnap.diskApplied;
+      return { ok: true, mergedDB, localAppliedCount, diskAppliedCount, conflicts: [] };
+    }
+
     function scheduleAutoSaveToFile() {
       if (!linkedFileHandle || !ui.autoSaveToFile || ui.demoMode) return;
+      // Serialized write-buffer: if a write is already in flight, queue one coalesced follow-up write instead of racing
+      if (isSavingToFile) {
+        saveQueued = true;
+        updateSyncStatusUI('saving');
+        return;
+      }
       if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
       updateSyncStatusUI('saving');
       saveDebounceTimer = setTimeout(() => {
@@ -1194,39 +1393,101 @@
 
     async function writeDBToLinkedFile({ forceOverwrite = false } = {}) {
       if (!linkedFileHandle || ui.demoMode) return;
+      if (isSavingToFile) {
+        saveQueued = true;
+        return;
+      }
       isSavingToFile = true;
+      let didConflict = false;
+      let autoMergedFrom = null;
       try {
-        // Pre-write conflict guard: detect external teammate edits before overwriting
+        // Pre-write guard: ignore our own cloud-drive timestamp drift, auto-merge disjoint edits, and only halt on real collisions
         if (!forceOverwrite && lastKnownFileModified) {
           const diskFile = await linkedFileHandle.getFile();
           if (diskFile.lastModified > lastKnownFileModified + 500) {
             let extMeta = { lastModifiedBy: 'a teammate', revision: '?' };
             let diskDB = null;
+            let parsed = null;
             try {
-              const parsed = JSON.parse((await diskFile.text()).replace(/^\uFEFF/, ''));
+              parsed = JSON.parse((await diskFile.text()).replace(/^\uFEFF/, ''));
               if (parsed && parsed.meta) extMeta = parsed.meta;
               diskDB = normalizeAndMigrateDB(parsed);
             } catch (parseErr) {}
-            updateSyncStatusUI('conflict');
-            openSyncConflictModal(extMeta, diskFile.lastModified, diskDB);
-            return;
+
+            const isOurOwnWrite = Boolean(parsed?.meta?.lastWriteId && lastWrittenId && parsed.meta.lastWriteId === lastWrittenId);
+            const isIdenticalToBase = Boolean(!isOurOwnWrite && diskDB && lastSyncedSnapshot && areDBDataEqual(diskDB, lastSyncedSnapshot));
+
+            if (isOurOwnWrite || isIdenticalToBase) {
+              ppDebug('INFO', isOurOwnWrite ? 'Absorbed self-write cloud timestamp drift before save' : 'Absorbed unchanged disk timestamp before save', {
+                lastWriteId: lastWrittenId,
+                diskLastModified: diskFile.lastModified,
+              });
+              lastKnownFileModified = diskFile.lastModified;
+            } else {
+              const mergeRes = (diskDB && lastSyncedSnapshot)
+                ? tryThreeWayAutoMerge(lastSyncedSnapshot, liveDB, diskDB)
+                : { ok: false, reason: 'no-base', conflicts: [] };
+
+              if (mergeRes.ok) {
+                ppDebug('INFO', 'Auto-merged buffered local edits with external disk update', {
+                  localApplied: mergeRes.localAppliedCount,
+                  diskApplied: mergeRes.diskAppliedCount,
+                  diskRev: extMeta.revision,
+                  by: extMeta.lastModifiedBy,
+                });
+                liveDB = mergeRes.mergedDB;
+                safeSetStorage(STORAGE_KEYS.LIVE_DB, JSON.stringify(liveDB));
+                lastKnownFileModified = diskFile.lastModified;
+                autoMergedFrom = {
+                  by: extMeta.lastModifiedBy || 'shared file',
+                  rev: extMeta.revision || '?',
+                };
+              } else {
+                ppDebug('WARN', 'True sync collision detected — pausing auto-save', {
+                  reason: mergeRes.reason,
+                  collisionCount: (mergeRes.conflicts || []).length,
+                  diskRev: extMeta.revision,
+                  by: extMeta.lastModifiedBy,
+                });
+                didConflict = true;
+                saveQueued = false;
+                updateSyncStatusUI('conflict');
+                openSyncConflictModal(extMeta, diskFile.lastModified, diskDB);
+                return;
+              }
+            }
           }
         }
         if (getRetentionSettings(liveDB).autoPruneOnSave) {
           enforceRollingHistory(liveDB);
         }
+        const writeId = uid('w');
+        liveDB.meta = liveDB.meta || { version: 3, revision: 1 };
+        liveDB.meta.lastWriteId = writeId;
+        liveDB.meta.lastClientId = SESSION_CLIENT_ID;
+
         const writable = await linkedFileHandle.createWritable();
         await writable.write(JSON.stringify(liveDB, null, 2));
         await writable.close();
         const file = await linkedFileHandle.getFile();
         lastKnownFileModified = file.lastModified;
+        lastWrittenId = writeId;
+        lastSyncedSnapshot = cloneSyncSnapshot(liveDB);
+        pendingAutoReload = false;
+        document.getElementById('externalUpdateBanner')?.classList.add('hidden');
         updateSyncStatusUI('synced');
-        if (ui.activeTab === 'sync') renderSyncTab();
+        if (autoMergedFrom) {
+          renderAll();
+          showToast(`Auto-merged your edit with latest update from ${autoMergedFrom.by} (Rev ${autoMergedFrom.rev})`, 'info');
+        } else if (ui.activeTab === 'sync') {
+          renderSyncTab();
+        }
       } catch (e) {
         console.warn('Auto-save failed:', e);
         if (e && (e.name === 'NotFoundError' || e.name === 'NotReadableError')) {
           const missingName = linkedFileHandle.name;
           linkedFileHandle = null;
+          saveQueued = false;
           stopFilePolling();
           setSyncWarning('missing', missingName);
           showToast(`Sync file "${missingName}" is no longer reachable! Saved locally only.`, 'error');
@@ -1236,6 +1497,14 @@
         showToast('Auto-save to linked file failed. Check file permissions.', 'error');
       } finally {
         isSavingToFile = false;
+        if (!didConflict && saveQueued && linkedFileHandle && ui.autoSaveToFile && !ui.demoMode) {
+          saveQueued = false;
+          if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+          saveDebounceTimer = setTimeout(() => {
+            saveDebounceTimer = null;
+            writeDBToLinkedFile();
+          }, 150);
+        }
       }
     }
 
@@ -1264,15 +1533,34 @@
     }
 
     async function checkExternalFileUpdates() {
-      if (!linkedFileHandle || ui.demoMode || isSavingToFile || isReloadingFromFile || saveDebounceTimer) return;
+      if (!linkedFileHandle || ui.demoMode || isSavingToFile || isReloadingFromFile || saveDebounceTimer || saveQueued) return;
       try {
         const file = await linkedFileHandle.getFile();
         if (lastKnownFileModified && file.lastModified > lastKnownFileModified + 500) {
+          let parsed = null;
+          let diskDB = null;
+          try {
+            const text = await file.text();
+            parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
+            diskDB = normalizeAndMigrateDB(parsed);
+          } catch (parseErr) {
+            return;
+          }
+
+          // Ignore our own write when OneDrive / Google Drive Desktop touches the local mtime after upload
+          if (parsed?.meta?.lastWriteId && lastWrittenId && parsed.meta.lastWriteId === lastWrittenId) {
+            ppDebug('INFO', 'Poll absorbed self-write cloud timestamp drift', { lastWriteId: lastWrittenId, mtime: file.lastModified });
+            lastKnownFileModified = file.lastModified;
+            return;
+          }
+          if (diskDB && lastSyncedSnapshot && areDBDataEqual(diskDB, lastSyncedSnapshot)) {
+            lastKnownFileModified = file.lastModified;
+            return;
+          }
+
           if (ui.autoReloadFromFile) {
             if (isModalOpen()) {
               pendingAutoReload = true;
-              const text = await file.text();
-              const parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
               const who = parsed.meta?.lastModifiedBy || 'a teammate';
               document.getElementById('externalUpdateMsg').textContent =
                 `New update from ${who} will auto-load when you close this dialog.`;
@@ -1281,8 +1569,6 @@
             }
             await attachAndLoadFileHandle(linkedFileHandle, false, true);
           } else {
-            const text = await file.text();
-            const parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
             const who = parsed.meta?.lastModifiedBy || 'a teammate';
             const when = new Date(file.lastModified).toLocaleTimeString();
             document.getElementById('externalUpdateMsg').textContent =

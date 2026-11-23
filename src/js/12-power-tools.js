@@ -1376,13 +1376,19 @@
       });
 
       const notes = [];
+      const adminNotes = [];
       periods.forEach(pk => {
         const pTitle = formatPeriodHeader(pk, ui.timeUnit).title;
         visibleDepts.forEach(d => {
           visibleProjs.forEach(p => {
-            if (notes.length >= 8) return;
             const c = getCellProjectComments(d.id, p.id, pk, ui.timeUnit, db);
-            if (c.direct) notes.push(`- ${pTitle} | ${d.code} -> [${p.code}]: ${c.direct.replace(/\s+/g, ' ').slice(0, 140)}`);
+            if (!c.direct) return;
+            const line = `- ${pTitle} | ${d.code} -> [${p.code}]: ${c.direct.replace(/\s+/g, ' ').slice(0, 140)}`;
+            if (isNonFteProject(p)) {
+              if (adminNotes.length < 12) adminNotes.push(line);
+            } else if (notes.length < 8) {
+              notes.push(line);
+            }
           });
         });
       });
@@ -1411,6 +1417,12 @@
         lines.push('');
         lines.push('BUDGET WATCHLIST:');
         lines.push(...budgetWarnings);
+      }
+
+      if (adminNotes.length > 0) {
+        lines.push('');
+        lines.push('ADMIN — DEPT ISSUES & REQUESTED MEETINGS:');
+        lines.push(...adminNotes);
       }
 
       if (notes.length > 0) {

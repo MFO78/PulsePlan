@@ -487,19 +487,28 @@
 
             const spotCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
             const tentCls = p.tentative ? (useColorFill ? 'tentative-card-filled' : 'tentative-card') : '';
-            const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.hasData ? a.avgFte : 0, capFte, p.color);
+            const isAdminProj = isNonFteProject(p);
+            const resolvedStyle = isAdminProj
+              ? { fillHex: p.color, tier3: null, showIdentityDot: false }
+              : resolveCardStyle(a.hasData ? a.avgFte : 0, capFte, p.color);
+            const { fillHex, tier3, showIdentityDot } = resolvedStyle;
             const filledTheme = useColorFill ? getFilledCardTheme(fillHex) : null;
             const cmtHtml = renderMobileCommentBlock(cmtObj, filledTheme);
-            const valStr = a.hasData ? formatValue(fteToDisplayValue(a.avgFte, selectedPk, ui.timeUnit)) : 'Note';
+            const valStr = a.hasData ? formatValue(fteToDisplayValue(a.avgFte, selectedPk, ui.timeUnit)) : (isAdminProj ? 'Admin' : 'Note');
             const tierBadge = tier3
               ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};" aria-label="${escapeHtml(tier3.ariaLabel)}">${tier3.symbol}</span>`
               : '';
-            const pipeTagFilled = p.tentative
-              ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">Pipeline</span>`
-              : '';
-            const pipeTagAccent = p.tentative
-              ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[9px] font-extrabold uppercase shrink-0">Pipeline</span>'
-              : '';
+            const pipeTagFilled = isAdminProj
+              ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">Admin</span>`
+              : (p.tentative
+                  ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">Pipeline</span>`
+                  : '');
+            const pipeTagAccent = isAdminProj
+              ? '<span class="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 text-[9px] font-extrabold uppercase shrink-0">Admin</span>'
+              : (p.tentative
+                  ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[9px] font-extrabold uppercase shrink-0">Pipeline</span>'
+                  : '');
+            const noteOnlyLabel = isAdminProj ? 'Admin &middot; Non-FTE' : 'Note Only';
 
             if (useColorFill) {
               return `
@@ -525,7 +534,7 @@
                         <span class="min-w-[56px] text-center text-xs font-extrabold tabular-nums">${valStr}</span>
                         <button type="button" aria-label="Increase ${escapeHtml(p.name)}" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${selectedPk}', 1)"
                           class="w-9 h-8 rounded-lg font-extrabold text-base flex items-center justify-center" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">+</button>
-                      ` : `<span class="px-2 py-1 rounded-lg text-[11px] font-bold" style="background-color:${filledTheme.chipBg};">Note Only</span>`}
+                      ` : `<span class="px-2 py-1 rounded-lg text-[11px] font-bold" style="background-color:${filledTheme.chipBg};">${noteOnlyLabel}</span>`}
                     </div>
                     <button type="button" aria-label="More actions for ${escapeHtml(p.name)}" onclick="openMobileCardActionSheet('${row.id}', '${p.id}', '${selectedPk}')"
                       class="h-8 px-2.5 rounded-lg font-extrabold text-xs flex items-center justify-center gap-1" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">Actions &#8943;</button>
@@ -553,7 +562,7 @@
                       <span class="min-w-[56px] text-center text-xs font-extrabold text-slate-900 tabular-nums">${valStr}</span>
                       <button type="button" aria-label="Increase ${escapeHtml(p.name)}" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${selectedPk}', 1)"
                         class="w-9 h-8 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-800 font-extrabold text-base flex items-center justify-center">+</button>
-                    ` : `<span class="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[11px] font-bold">Note Only</span>`}
+                    ` : `<span class="px-2 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-700 text-[11px] font-bold">${noteOnlyLabel}</span>`}
                   </div>
                   <button type="button" aria-label="More actions for ${escapeHtml(p.name)}" onclick="openMobileCardActionSheet('${row.id}', '${p.id}', '${selectedPk}')"
                     class="h-8 px-2.5 rounded-lg bg-slate-100 text-slate-700 font-extrabold text-xs flex items-center justify-center gap-1">Actions &#8943;</button>
@@ -625,8 +634,9 @@
             </details>`;
         } else {
           // Mobile Project Accordion Card
+          const isAdminRow = isNonFteProject(row);
           const totFte = getProjTotalAllocatedFte(row.id, selectedPk, ui.timeUnit, db);
-          const totStr = totFte > 0 ? formatValue(fteToDisplayValue(totFte, selectedPk, ui.timeUnit)) : '0 ' + unitShortLabel();
+          const totStr = isAdminRow ? 'Admin' : (totFte > 0 ? formatValue(fteToDisplayValue(totFte, selectedPk, ui.timeUnit)) : '0 ' + unitShortLabel());
           const statusCls = row.status === 'At Risk' ? 'bg-rose-100 text-rose-700' : row.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600';
           const rowSpotCls = spotlightId ? (spotlightId === row.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
           const tentProjCls = row.tentative ? 'tentative-card border-dashed' : '';
@@ -638,10 +648,13 @@
             if (searchQ && !(`${d.name} ${d.code} ${row.name} ${row.code} ${cmtObj.direct || ''}`).toLowerCase().includes(searchQ)) return '';
 
             const deptCap = getDeptCapacityForPeriod(d.id, selectedPk, ui.timeUnit, db).avgFte;
-            const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.hasData ? a.avgFte : 0, deptCap, d.color);
+            const { fillHex, tier3, showIdentityDot } = isAdminRow
+              ? { fillHex: d.color, tier3: null, showIdentityDot: false }
+              : resolveCardStyle(a.hasData ? a.avgFte : 0, deptCap, d.color);
             const filledTheme = useColorFill ? getFilledCardTheme(fillHex) : null;
             const cmtHtml = renderMobileCommentBlock(cmtObj, filledTheme);
-            const valStr = a.hasData ? formatValue(fteToDisplayValue(a.avgFte, selectedPk, ui.timeUnit)) : 'Note';
+            const valStr = a.hasData ? formatValue(fteToDisplayValue(a.avgFte, selectedPk, ui.timeUnit)) : (isAdminRow ? 'Admin' : 'Note');
+            const noteOnlyLabel = isAdminRow ? 'Admin &middot; Non-FTE' : 'Note Only';
             const tierBadge = tier3
               ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">${tier3.symbol}</span>`
               : '';
@@ -666,7 +679,7 @@
                         <span class="min-w-[56px] text-center text-xs font-extrabold tabular-nums">${valStr}</span>
                         <button type="button" aria-label="Increase ${escapeHtml(d.name)}" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${selectedPk}', 1)"
                           class="w-9 h-8 rounded-lg font-extrabold text-base flex items-center justify-center" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">+</button>
-                      ` : `<span class="px-2 py-1 rounded-lg text-[11px] font-bold" style="background-color:${filledTheme.chipBg};">Note Only</span>`}
+                      ` : `<span class="px-2 py-1 rounded-lg text-[11px] font-bold" style="background-color:${filledTheme.chipBg};">${noteOnlyLabel}</span>`}
                     </div>
                     <button type="button" aria-label="More actions for ${escapeHtml(d.name)}" onclick="openMobileCardActionSheet('${d.id}', '${row.id}', '${selectedPk}')"
                       class="h-8 px-2.5 rounded-lg font-extrabold text-xs flex items-center justify-center gap-1" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">Actions &#8943;</button>
@@ -690,7 +703,7 @@
                       <span class="min-w-[56px] text-center text-xs font-extrabold text-slate-900 tabular-nums">${valStr}</span>
                       <button type="button" aria-label="Increase ${escapeHtml(d.name)}" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${selectedPk}', 1)"
                         class="w-9 h-8 rounded-lg bg-slate-100 text-slate-800 font-extrabold text-base flex items-center justify-center">+</button>
-                    ` : `<span class="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[11px] font-bold">Note Only</span>`}
+                    ` : `<span class="px-2 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-700 text-[11px] font-bold">${noteOnlyLabel}</span>`}
                   </div>
                   <button type="button" aria-label="More actions for ${escapeHtml(d.name)}" onclick="openMobileCardActionSheet('${d.id}', '${row.id}', '${selectedPk}')"
                     class="h-8 px-2.5 rounded-lg bg-slate-100 text-slate-700 font-extrabold text-xs flex items-center justify-center gap-1">Actions &#8943;</button>
@@ -720,6 +733,7 @@
                       <div class="text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
                         <span class="font-mono font-bold text-indigo-700">[${escapeHtml(row.code)}]</span>
                         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${statusCls}">${escapeHtml(row.status)}</span>
+                        ${isAdminRow ? '<span class="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-bold">Admin &middot; Non-FTE</span>' : ''}
                         ${row.tentative ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold">Pipeline</span>' : ''}
                       </div>
                     </div>
@@ -1443,24 +1457,26 @@
             </div>
           </th>`;
         }
-        const budgetDays = Number(row.budgetDays) || 0;
+        const isAdminRow = isNonFteProject(row);
+        const budgetDays = isAdminRow ? 0 : (Number(row.budgetDays) || 0);
         const allTimeDays = budgetDays > 0 ? getProjectTotalPlannedDays(row.id, db) : 0;
         const budgetPct = budgetDays > 0 ? Math.round((allTimeDays / budgetDays) * 100) : 0;
         const budgetBarCls = budgetPct > 100 ? 'bg-rose-500' : budgetPct >= 85 ? 'bg-amber-500' : 'bg-indigo-500';
         const budgetTextCls = budgetPct > 100 ? 'text-rose-700 font-bold' : budgetPct >= 85 ? 'text-amber-700 font-bold' : 'text-slate-600 font-semibold';
-        const plannedCost = showCost ? getProjectTotalPlannedCost(row.id, db) : 0;
-        const budgetCost = Number(row.budgetCost) || 0;
+        const plannedCost = (!isAdminRow && showCost) ? getProjectTotalPlannedCost(row.id, db) : 0;
+        const budgetCost = isAdminRow ? 0 : (Number(row.budgetCost) || 0);
         const costPct = budgetCost > 0 ? Math.round((plannedCost / budgetCost) * 100) : 0;
         const prio = String(row.priority || '').trim();
         const prioCls = prio === 'Critical' ? 'bg-rose-100 text-rose-700' : prio === 'High' ? 'bg-amber-100 text-amber-800' : prio === 'Medium' ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-600';
         const prioBadgeHtml = prio
           ? `<span class="px-1 py-0.5 rounded text-[9px] font-bold shrink-0 ${prioCls}" title="Priority: ${escapeHtml(prio)}">${escapeHtml(prio)}</span>`
           : '';
+        const adminTagHtml = isAdminRow ? '<span class="px-1 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 text-[9px] font-bold shrink-0">Admin &middot; Non-FTE</span>' : '';
         const tentTagHtml = row.tentative ? '<span class="px-1 py-0.5 rounded bg-violet-100 text-violet-800 text-[9px] font-bold shrink-0">Pipeline</span>' : '';
-        const bottleneckBadgeHtml = bottleneckCount > 0
+        const bottleneckBadgeHtml = (!isAdminRow && bottleneckCount > 0)
           ? `<span title="${bottleneckCount} overallocated slot(s) (&gt;${overT}%)" class="px-1 py-0.5 rounded bg-rose-100 text-rose-700 text-[9px] font-extrabold shrink-0">&#9888; ${bottleneckCount} Over</span>`
           : '';
-        const costBadgeHtml = (showCost && (plannedCost > 0 || budgetCost > 0))
+        const costBadgeHtml = (!isAdminRow && showCost && (plannedCost > 0 || budgetCost > 0))
           ? `<span title="Est. cost ${formatCurrency(plannedCost, db)}${budgetCost > 0 ? ' vs ' + formatCurrency(budgetCost, db) + ' budget (' + costPct + '%)' : ''}" class="px-1 py-0.5 rounded text-[9px] font-bold shrink-0 ${budgetCost > 0 && costPct > 100 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-50 text-emerald-700'}">${formatCurrency(plannedCost, db)}${budgetCost > 0 ? '/' + formatCurrency(budgetCost, db) : ''}</span>`
           : '';
         const shiftBtnHtml = !isPresent
@@ -1480,12 +1496,15 @@
                <div class="w-full h-1 rounded-full bg-slate-200/80 overflow-hidden"><div class="h-full ${budgetBarCls} rounded-full" style="width:${Math.min(100, budgetPct)}%"></div></div>
              </div>`
           : '';
-        const ownerLineHtml = (row.owner || tentTagHtml || bottleneckBadgeHtml || costBadgeHtml)
+        const ownerLineHtml = (row.owner || adminTagHtml || tentTagHtml || bottleneckBadgeHtml || costBadgeHtml)
           ? `<div class="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
                ${row.owner ? `<span class="truncate max-w-[110px]" title="Owner: ${escapeHtml(row.owner)}">${escapeHtml(row.owner)}</span>` : ''}
-               ${tentTagHtml}${bottleneckBadgeHtml}${costBadgeHtml}
+               ${adminTagHtml}${tentTagHtml}${bottleneckBadgeHtml}${costBadgeHtml}
              </div>`
           : '';
+        const effortMetaHtml = isAdminRow
+          ? `<span class="text-sky-700 font-semibold">Issues &amp; Meetings</span>`
+          : `<span class="tabular-nums">${Math.round(totalDays)}d</span><span>&bull;</span><span class="tabular-nums">${activeDeptCount} dept${activeDeptCount === 1 ? '' : 's'}</span>`;
         return `
           <th scope="row" ${clickAttr} class="${rowSpotCls} sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left ${clickAttr ? 'cursor-pointer' : ''}">
             <div class="flex items-stretch gap-2 min-w-0">
@@ -1500,9 +1519,7 @@
                   <div class="flex items-center gap-1 min-w-0 truncate">
                     <span class="font-mono font-bold text-slate-700">${escapeHtml(row.code)}</span>
                     <span>&bull;</span>
-                    <span class="tabular-nums">${Math.round(totalDays)}d</span>
-                    <span>&bull;</span>
-                    <span class="tabular-nums">${activeDeptCount} dept${activeDeptCount === 1 ? '' : 's'}</span>
+                    ${effortMetaHtml}
                     ${prioBadgeHtml}
                   </div>
                   ${shiftBtnHtml}
@@ -1578,9 +1595,21 @@
             if (isOverview) {
               const ovChips = visibleProjs.map(p => {
                 const a = getAllocationForPeriod(row.id, p.id, pk, ui.timeUnit, db.allocations);
-                if (!a.hasData) return '';
+                const cmtObj = getCellProjectComments(row.id, p.id, pk, ui.timeUnit, db);
+                const isAdminProj = isNonFteProject(p);
+                if (!a.hasData && !(isAdminProj && cmtObj.hasAny)) return '';
                 if (searchQ && !matchesSearchForPair(row, p, pk)) return '';
                 const spotlightCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
+                if (!a.hasData && isAdminProj && cmtObj.hasAny) {
+                  const notePreview = (cmtObj.direct || (cmtObj.weekEntries[0]?.text) || '').replace(/\s+/g, ' ');
+                  const tipTxt = `[${p.code}] ${p.name} (Admin · Non-FTE)\n${notePreview}`;
+                  return `<div onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')" title="${escapeHtml(tipTxt)}"
+                    class="accent-card ${spotlightCls} px-1 py-0.5 rounded bg-sky-50 border border-dashed border-sky-200 text-[9px] font-bold text-sky-800 flex items-center justify-between gap-0.5 leading-tight truncate cursor-pointer"
+                    style="--accent-color:${p.color}; --accent-w:3px; border-left:3px solid ${p.color};">
+                    <span class="font-mono truncate">${escapeHtml(p.code)}</span>
+                    <span class="shrink-0" aria-hidden="true">&#9998;</span>
+                  </div>`;
+                }
                 const valNum = formatValue(fteToDisplayValue(a.avgFte, pk, ui.timeUnit), ui.manpowerUnit, false);
                 const valFull = formatValue(fteToDisplayValue(a.avgFte, pk, ui.timeUnit));
                 const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.avgFte, capFte, p.color);
@@ -1637,7 +1666,10 @@
               const spotlightCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
               const tentClsFilled = p.tentative ? 'tentative-card-filled' : '';
               const tentClsAccent = p.tentative ? 'tentative-card' : '';
-              const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.hasData ? a.avgFte : 0, capFte, p.color);
+              const isAdminProj = isNonFteProject(p);
+              const { fillHex, tier3, showIdentityDot } = isAdminProj
+                ? { fillHex: p.color, tier3: null, showIdentityDot: false }
+                : resolveCardStyle(a.hasData ? a.avgFte : 0, capFte, p.color);
               const filledTheme = useColorFill ? getFilledCardTheme(fillHex) : null;
               const cmtHtml = renderInlineCommentHtml(cmtObj, filledTheme);
               const fullTooltipNote = cmtObj.direct ? `\nNote: ${cmtObj.direct}` : '';
@@ -1659,10 +1691,13 @@
                      class="${spotVisCls} ${spotlightId === p.id ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-700'} ${spotSizeCls} rounded font-bold flex items-center justify-center transition shrink-0">&#9678;</button>`;
 
               if (!a.hasData && cmtObj.hasAny) {
+                const noteClickFn = isAdminProj ? `openAllocationModal('${row.id}', '${p.id}', '${pk}')` : `openCellDetailModal('${row.id}', '${pk}')`;
+                const noteKindLbl = isAdminProj ? 'Admin' : 'Note';
+                const noteTipKind = isAdminProj ? 'Admin (Non-FTE) — Issues & Meetings' : 'Comment Only';
                 if (useColorFill) {
                   return `
-                    <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
-                      title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — Comment Only${escapeHtml(fullTooltipNote)}"
+                    <div onclick="event.stopPropagation(); ${noteClickFn}"
+                      title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${noteTipKind}${escapeHtml(fullTooltipNote)}"
                       class="matrix-card group/pill ${spotlightCls} ${s.pillBox} rounded-xl cursor-pointer shadow-2xs"
                       style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1.5px dashed ${filledTheme.border};">
                       <div class="flex items-center justify-between gap-1.5">
@@ -1673,15 +1708,15 @@
                         </div>
                         <div class="flex items-center gap-1 shrink-0">
                           ${spotlightBtn}
-                          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style="background-color:${filledTheme.chipBg};">Note</span>
+                          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style="background-color:${filledTheme.chipBg};">${noteKindLbl}</span>
                         </div>
                       </div>
                       ${cmtHtml}
                     </div>`;
                 }
                 return `
-                  <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
-                    title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — Comment Only${escapeHtml(fullTooltipNote)}"
+                  <div onclick="event.stopPropagation(); ${noteClickFn}"
+                    title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${noteTipKind}${escapeHtml(fullTooltipNote)}"
                     class="matrix-card accent-card group/pill ${spotlightCls} ${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer"
                     style="--accent-color:${p.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${p.color};">
                     <div class="flex items-center justify-between gap-1.5">
@@ -1691,7 +1726,7 @@
                       </div>
                       <div class="flex items-center gap-1 shrink-0">
                         ${spotlightBtn}
-                        <span class="text-[10px] font-semibold text-indigo-600 shrink-0">Note</span>
+                        <span class="text-[10px] font-bold ${isAdminProj ? 'px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700' : 'text-indigo-600'} shrink-0">${noteKindLbl}</span>
                       </div>
                     </div>
                     ${cmtHtml}
@@ -1919,27 +1954,36 @@
         } else if (ui.axis === 'timeline') {
           // Executive Timeline / Gantt Row View (one project per row, continuous effort bars + milestones)
           const rowSpotCls = spotlightId ? (spotlightId === row.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
+          const isAdminTlRow = isNonFteProject(row);
           const activeDeptIds = new Set();
           const perData = periods.map(pk => {
             const totFte = getProjTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
             const activeDeptEntries = [];
+            const noteDeptEntries = [];
             visibleDepts.forEach(d => {
               const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
-              if (a.hasData) {
+              if (a.hasData && !isAdminTlRow) {
                 activeDeptEntries.push({ dept: d, avgFte: a.avgFte });
                 activeDeptIds.add(d.id);
+              }
+              if (isAdminTlRow) {
+                const cObj = getCellProjectComments(d.id, row.id, pk, ui.timeUnit, db);
+                if (cObj.hasAny) {
+                  noteDeptEntries.push({ dept: d, text: (cObj.direct || cObj.weekEntries[0]?.text || '').trim() });
+                  activeDeptIds.add(d.id);
+                }
               }
             });
             const activeDepts = activeDeptEntries.map(e => e.dept);
             const activeCapFte = activeDepts.reduce((acc, d) => acc + getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte, 0)
               || visibleDepts.reduce((acc, d) => acc + getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte, 0);
-            const hasOverDept = activeDepts.some(d => {
+            const hasOverDept = !isAdminTlRow && activeDepts.some(d => {
               const dc = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
               const dt = getDeptTotalAllocatedFte(d.id, pk, ui.timeUnit, db);
               return dc > 0 ? Math.round((dt / dc) * 100) > overT : dt > 0;
             });
             const msInPeriod = getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => m.projectId === row.id);
-            return { pk, fte: totFte, activeDepts, activeDeptEntries, activeCapFte, hasOverDept, msInPeriod };
+            return { pk, fte: totFte, activeDepts, activeDeptEntries, noteDeptEntries, activeCapFte, hasOverDept, msInPeriod };
           });
           const peakFte = Math.max(0.1, ...perData.map(x => x.fte));
           let totalDays = 0;
@@ -1968,7 +2012,31 @@
             let barHtml = isOverview
               ? `<div class="min-h-[2.2rem] flex items-center justify-center text-[10px] text-slate-300 opacity-0 group-hover/cell:opacity-100 transition">+</div>`
               : `<div class="min-h-[3.35rem] flex items-center justify-center text-xs text-slate-300 opacity-0 group-hover/cell:opacity-100 transition">+</div>`;
-            if (hasBar) {
+            if (isAdminTlRow && x.noteDeptEntries.length > 0) {
+              const noteCodes = x.noteDeptEntries.map(n => n.dept.code).join(', ');
+              const firstLine = (x.noteDeptEntries[0].text || '').split('\n')[0].slice(0, 70);
+              const tipTxt = `[${row.code}] ${row.name} (Admin · Non-FTE)\n${x.noteDeptEntries.map(n => `${n.dept.code}: ${n.text}`).join('\n')}`;
+              if (isOverview) {
+                barHtml = `
+                  <div class="timeline-bar timeline-bar-overview timeline-bar-accent timeline-bar-single ${rowSpotCls}"
+                    title="${escapeHtml(tipTxt)}"
+                    style="--accent-color:${row.color}; border-style:dashed;">
+                    <span class="truncate font-bold text-[10px] text-sky-700">&#9998; ${ovShowBarLabel ? escapeHtml(noteCodes) : x.noteDeptEntries.length}</span>
+                  </div>`;
+              } else {
+                const deptPills = x.noteDeptEntries.map(n => `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-800 font-mono text-[11px] font-bold leading-none shrink-0"><span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${n.dept.color}"></span>${escapeHtml(n.dept.code)}</span>`).join('');
+                barHtml = `
+                  <div class="timeline-bar timeline-bar-std timeline-bar-accent timeline-bar-single ${rowSpotCls}"
+                    title="${escapeHtml(tipTxt)}"
+                    style="--accent-color:${row.color}; border-style:dashed;">
+                    <div class="flex items-center justify-between gap-1.5 w-full">
+                      <span class="truncate text-xs font-bold text-slate-800">&#9998; ${escapeHtml(firstLine || 'Admin Notes')}</span>
+                      <span class="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 text-[9px] font-extrabold uppercase shrink-0">Admin</span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-1">${deptPills}</div>
+                  </div>`;
+              }
+            } else if (hasBar) {
               const { fillHex, tier3, showIdentityDot } = resolveCardStyle(x.fte, x.activeCapFte, row.color);
               const capSharePct = x.activeCapFte > 0 ? Math.round((x.fte / x.activeCapFte) * 100) : 999;
               const tierTip = tier3 ? ` • ${tier3.ariaLabel}` : (colorMode === 'fte' ? ` • ${capSharePct > 990 ? '>100%' : capSharePct + '%'} cap` : '');
@@ -2120,10 +2188,21 @@
 
             if (isOverview) {
               let hasPeriodOver = false;
+              const isAdminProjRow = isNonFteProject(row);
               const ovDeptChips = visibleDepts.map(d => {
                 const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
-                if (!a.hasData) return '';
+                const cmtObj = getCellProjectComments(d.id, row.id, pk, ui.timeUnit, db);
+                if (!a.hasData && !(isAdminProjRow && cmtObj.hasAny)) return '';
                 if (searchQ && !matchesSearchForPair(d, row, pk)) return '';
+                if (!a.hasData && isAdminProjRow && cmtObj.hasAny) {
+                  const notePreview = (cmtObj.direct || (cmtObj.weekEntries[0]?.text) || '').replace(/\s+/g, ' ');
+                  return `<div onclick="event.stopPropagation(); openAllocationModal('${d.id}', '${row.id}', '${pk}')" title="${escapeHtml('[' + d.code + '] ' + d.name + ' (Admin)\n' + notePreview)}"
+                    class="accent-card ${rowSpotCls} px-1 py-0.5 rounded bg-sky-50 border border-dashed border-sky-200 text-[9px] font-bold text-sky-800 flex items-center justify-between gap-0.5 leading-tight truncate cursor-pointer"
+                    style="--accent-color:${d.color}; --accent-w:3px; border-left:3px solid ${d.color};">
+                    <span class="font-mono truncate">${escapeHtml(d.code)}</span>
+                    <span class="shrink-0" aria-hidden="true">&#9998;</span>
+                  </div>`;
+                }
                 const deptCap = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
                 const deptTot = getDeptTotalAllocatedFte(d.id, pk, ui.timeUnit, db);
                 const deptPct = deptCap > 0 ? Math.round((deptTot / deptCap) * 100) : 0;
@@ -2161,10 +2240,10 @@
               const hInfo = formatPeriodHeader(pk, ui.timeUnit);
               return `
                 <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 matrix-cell-normal transition cursor-pointer"
-                  title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)} — ${escapeHtml(hInfo.title)}: ${totStr} • Click for full cell details"
+                  title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)} — ${escapeHtml(hInfo.title)}: ${isAdminProjRow ? (cmtCount + ' Admin note(s)') : totStr} • Click for full cell details"
                   onclick="openCellDetailModal('${row.id}', '${pk}')">
                   <div class="flex items-center justify-between gap-0.5 mb-1">
-                    <span class="text-[10px] font-extrabold tabular-nums ${totFte > 0 ? 'text-slate-800' : 'text-slate-300'}">${totCompact}</span>
+                    <span class="text-[10px] font-extrabold tabular-nums ${isAdminProjRow ? (cmtCount > 0 ? 'text-sky-700' : 'text-slate-300') : (totFte > 0 ? 'text-slate-800' : 'text-slate-300')}">${isAdminProjRow ? (cmtCount > 0 ? '&#9998; ' + cmtCount : '—') : totCompact}</span>
                     <span class="inline-flex items-center gap-0.5">
                       ${hasPeriodOver ? '<span class="text-[9px] font-extrabold text-rose-600" title="Overallocated department">&#9888;</span>' : ''}
                       ${ovMsBadge}
@@ -2174,6 +2253,7 @@
                 </td>`;
             }
 
+            const isAdminProjRow = isNonFteProject(row);
             const pills = visibleDepts.map(d => {
               const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
               const cmtObj = getCellProjectComments(d.id, row.id, pk, ui.timeUnit, db);
@@ -2181,15 +2261,19 @@
               if (searchQ && !matchesSearchForPair(d, row, pk)) return '';
 
               const deptCap = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
-              const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.hasData ? a.avgFte : 0, deptCap, d.color);
+              const { fillHex, tier3, showIdentityDot } = isAdminProjRow
+                ? { fillHex: d.color, tier3: null, showIdentityDot: false }
+                : resolveCardStyle(a.hasData ? a.avgFte : 0, deptCap, d.color);
               const filledTheme = useColorFill ? getFilledCardTheme(fillHex) : null;
               const cmtHtml = renderInlineCommentHtml(cmtObj, filledTheme);
               const fullTooltipNote = cmtObj.direct ? `\nNote: ${cmtObj.direct}` : '';
 
               if (!a.hasData && cmtObj.hasAny) {
+                const noteClickFn = isAdminProjRow ? `openAllocationModal('${d.id}', '${row.id}', '${pk}')` : `openCellDetailModal('${row.id}', '${pk}')`;
+                const noteKindLbl = isAdminProjRow ? 'Admin' : 'Note';
                 if (useColorFill) {
                   return `
-                    <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
+                    <div onclick="event.stopPropagation(); ${noteClickFn}"
                       class="matrix-card ${rowSpotCls} ${s.pillBox} rounded-xl cursor-pointer shadow-2xs"
                       style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1.5px dashed ${filledTheme.border};">
                       <div class="flex items-center justify-between gap-1.5">
@@ -2197,18 +2281,18 @@
                           ${showIdentityDot ? `<span class="w-2 h-2 rounded-full ring-1 ring-white/70 shrink-0" style="background:${d.color}"></span>` : ''}
                           <span class="truncate font-bold">${escapeHtml(d.name)}</span>
                         </div>
-                        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style="background-color:${filledTheme.chipBg};">Note</span>
+                        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style="background-color:${filledTheme.chipBg};">${noteKindLbl}</span>
                       </div>
                       ${cmtHtml}
                     </div>`;
                 }
                 return `
-                  <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
+                  <div onclick="event.stopPropagation(); ${noteClickFn}"
                     class="matrix-card accent-card ${rowSpotCls} ${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer"
                     style="--accent-color:${d.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${d.color};">
                     <div class="flex items-center justify-between gap-1.5">
                       <span class="truncate font-semibold text-slate-700">${escapeHtml(d.name)}</span>
-                      <span class="text-[10px] font-semibold text-indigo-600 shrink-0">Note</span>
+                      <span class="text-[10px] font-bold ${isAdminProjRow ? 'px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700' : 'text-indigo-600'} shrink-0">${noteKindLbl}</span>
                     </div>
                     ${cmtHtml}
                   </div>`;
@@ -2304,23 +2388,25 @@
                 </div>`).join('');
 
             const cellHeaderHtml = isPresent
-              ? (totFte > 0 ? `<div class="flex items-center justify-end mb-2"><span class="${s.pctText} text-slate-700 tabular-nums">${totStr}</span></div>` : '')
+              ? (isAdminProjRow ? '' : (totFte > 0 ? `<div class="flex items-center justify-end mb-2"><span class="${s.pctText} text-slate-700 tabular-nums">${totStr}</span></div>` : ''))
               : `<div class="flex items-center justify-between ${s.capText} text-slate-500 mb-1.5">
-                   <span>Effort</span>
+                   <span>${isAdminProjRow ? 'Admin Notes' : 'Effort'}</span>
                    <div class="flex items-center gap-1.5">
                      <button type="button" onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
                        class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md transition ${cmtCount > 0 ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-[10px]' : 'opacity-0 group-hover/cell:opacity-100 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 text-[10px]'}">
                        <svg class="w-3 h-3" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>
                        ${cmtCount > 0 ? `<span>${cmtCount}</span>` : ''}
                      </button>
-                     <span class="text-slate-800 font-bold tabular-nums">${totStr}</span>
+                     ${isAdminProjRow
+                       ? `<span class="text-sky-700 font-bold tabular-nums">${cmtCount > 0 ? `${cmtCount} note${cmtCount === 1 ? '' : 's'}` : '—'}</span>`
+                       : `<span class="text-slate-800 font-bold tabular-nums">${totStr}</span>`}
                    </div>
                  </div>`;
 
             const addBtnHtml = !isPresent
               ? `<button type="button" onclick="event.stopPropagation(); openAllocationModal('', '${row.id}', '${pk}')"
                    class="mt-1.5 w-full py-1 rounded-lg border border-dashed border-slate-300/90 hover:border-indigo-400 hover:bg-indigo-50/70 text-[10px] font-semibold text-slate-400 hover:text-indigo-700 opacity-70 sm:opacity-0 group-hover/cell:opacity-100 transition flex items-center justify-center gap-1">
-                   <span>+ Add</span>
+                   <span>${isAdminProjRow ? '+ Add Note' : '+ Add'}</span>
                  </button>`
               : '';
 
