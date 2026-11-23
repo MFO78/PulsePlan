@@ -3416,7 +3416,7 @@ img, video { max-width: 100%; height: auto; }
       redFte: 2.5,
     };
 
-    const PULSEPLAN_BUILD_ID = '2026-11-22-v7.3';
+    const PULSEPLAN_BUILD_ID = '2026-11-23-v8';
     const _debugLogEntries = [];
     const MAX_DEBUG_LOG_ENTRIES = 120;
 
@@ -3774,10 +3774,17 @@ img, video { max-width: 100%; height: auto; }
       });
     }
 
+    function isNonFteProject(p) {
+      return Boolean(p && (p.nonFte || p.category === 'admin'));
+    }
+
     function formatProjectOptionLabel(p) {
       const code = String(p?.code || '').trim();
       const name = String(p?.name || '').trim();
-      return code ? `[${code}] ${name}` : name;
+      const base = code ? `[${code}] ${name}` : name;
+      if (isNonFteProject(p)) return `${base} (Admin · Non-FTE)`;
+      if (p?.tentative) return `${base} (Pipeline)`;
+      return base;
     }
 
     function getManpowerStep(unit = ui.manpowerUnit) {
@@ -4054,10 +4061,14 @@ img, video { max-width: 100%; height: auto; }
     let deferredPwaPrompt = null;
 
     // Shared File Sync runtime state
+    const SESSION_CLIENT_ID = `cli_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     let linkedFileHandle = null;
     let linkedFileDetectedPath = '';
     let rememberedFileHandle = null;
     let lastKnownFileModified = 0;
+    let lastWrittenId = '';
+    let lastSyncedSnapshot = null; // Clean clone of last disk-synced DB for 3-way buffered auto-merge
+    let saveQueued = false;        // Serialized write-buffer flag when edits arrive while a save is in flight
     let pollTimerId = null;
     let saveDebounceTimer = null;
     let isSavingToFile = false;
@@ -4110,6 +4121,8 @@ img, video { max-width: 100%; height: auto; }
           revision: 1,
           lastModifiedAt: new Date().toISOString(),
           lastModifiedBy: ui.userName || 'Project Mgr',
+          lastWriteId: '',
+          lastClientId: '',
         },
         settings: {
           daysPerWeek: 5,
@@ -4378,6 +4391,8 @@ img, video { max-width: 100%; height: auto; }
           revision: Number(src.meta.revision) || 1,
           lastModifiedAt: src.meta.lastModifiedAt || src.meta.updatedAt || new Date().toISOString(),
           lastModifiedBy: src.meta.lastModifiedBy || src.meta.updatedBy || ui.userName || 'Project Mgr',
+          lastWriteId: String(src.meta.lastWriteId || ''),
+          lastClientId: String(src.meta.lastClientId || ''),
         };
       }
 
@@ -4443,11 +4458,13 @@ img, video { max-width: 100%; height: auto; }
           const priority = String(p.priority || 'Medium');
           const owner = String(p.owner || p.lead || p.manager || '').trim();
           const color = p.color || PALETTE[(idx + 2) % PALETTE.length];
-          const budgetDays = Math.max(0, Number(p.budgetDays ?? p.targetDays ?? 0) || 0);
-          const budgetCost = Math.max(0, Number(p.budgetCost ?? p.costBudget ?? 0) || 0);
-          const tentative = Boolean(p.tentative);
+          const nonFte = Boolean(p.nonFte || p.category === 'admin');
+          const budgetDays = nonFte ? 0 : Math.max(0, Number(p.budgetDays ?? p.targetDays ?? 0) || 0);
+          const budgetCost = nonFte ? 0 : Math.max(0, Number(p.budgetCost ?? p.costBudget ?? 0) || 0);
+          const tentative = nonFte ? false : Boolean(p.tentative);
           const archived = Boolean(p.archived);
-          return { id, name, code, color, status, priority, owner, budgetDays, budgetCost, tentative, archived };
+          const category = nonFte ? 'admin' : (tentative ? 'tentative' : 'standard');
+          return { id, name, code, color, status, priority, owner, budgetDays, budgetCost, tentative, nonFte, category, archived };
         }),
       });
 
@@ -5373,6 +5390,7 @@ img, video { max-width: 100%; height: auto; }
       const includeTentative = opts && opts.includeTentative !== undefined ? Boolean(opts.includeTentative) : Boolean(ui.includeTentative);
       let total = 0;
       db.projects.forEach(p => {
+        if (isNonFteProject(p)) return;
         if (ui.filterProj !== 'all' && p.id !== ui.filterProj) return;
         if (!includeTentative && p.tentative && ui.filterProj !== p.id) return;
         total += getAllocationForPeriod(deptId, p.id, periodKey, timeUnit, db.allocations).avgFte;
@@ -5384,6 +5402,7 @@ img, video { max-width: 100%; height: auto; }
       let committed = 0;
       let tentative = 0;
       db.projects.forEach(p => {
+        if (isNonFteProject(p)) return;
         if (ui.filterProj !== 'all' && p.id !== ui.filterProj) return;
         const val = getAllocationForPeriod(deptId, p.id, periodKey, timeUnit, db.allocations).avgFte;
         if (val <= 0.0001) return;
@@ -5397,6 +5416,8 @@ img, video { max-width: 100%; height: auto; }
     }
 
     function getProjTotalAllocatedFte(projId, periodKey, timeUnit, db = getActiveDB()) {
+      const proj = (db.projects || []).find(p => p.id === projId);
+      if (isNonFteProject(proj)) return 0;
       let total = 0;
       db.departments.forEach(d => {
         if (ui.filterDept !== 'all' && d.id !== ui.filterDept) return;
@@ -6460,19 +6481,28 @@ img, video { max-width: 100%; height: auto; }
 
             const spotCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
             const tentCls = p.tentative ? (useColorFill ? 'tentative-card-filled' : 'tentative-card') : '';
-            const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.hasData ? a.avgFte : 0, capFte, p.color);
+            const isAdminProj = isNonFteProject(p);
+            const resolvedStyle = isAdminProj
+              ? { fillHex: p.color, tier3: null, showIdentityDot: false }
+              : resolveCardStyle(a.hasData ? a.avgFte : 0, capFte, p.color);
+            const { fillHex, tier3, showIdentityDot } = resolvedStyle;
             const filledTheme = useColorFill ? getFilledCardTheme(fillHex) : null;
             const cmtHtml = renderMobileCommentBlock(cmtObj, filledTheme);
-            const valStr = a.hasData ? formatValue(fteToDisplayValue(a.avgFte, selectedPk, ui.timeUnit)) : 'Note';
+            const valStr = a.hasData ? formatValue(fteToDisplayValue(a.avgFte, selectedPk, ui.timeUnit)) : (isAdminProj ? 'Admin' : 'Note');
             const tierBadge = tier3
               ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};" aria-label="${escapeHtml(tier3.ariaLabel)}">${tier3.symbol}</span>`
               : '';
-            const pipeTagFilled = p.tentative
-              ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">Pipeline</span>`
-              : '';
-            const pipeTagAccent = p.tentative
-              ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[9px] font-extrabold uppercase shrink-0">Pipeline</span>'
-              : '';
+            const pipeTagFilled = isAdminProj
+              ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">Admin</span>`
+              : (p.tentative
+                  ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">Pipeline</span>`
+                  : '');
+            const pipeTagAccent = isAdminProj
+              ? '<span class="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 text-[9px] font-extrabold uppercase shrink-0">Admin</span>'
+              : (p.tentative
+                  ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[9px] font-extrabold uppercase shrink-0">Pipeline</span>'
+                  : '');
+            const noteOnlyLabel = isAdminProj ? 'Admin &middot; Non-FTE' : 'Note Only';
 
             if (useColorFill) {
               return `
@@ -6498,7 +6528,7 @@ img, video { max-width: 100%; height: auto; }
                         <span class="min-w-[56px] text-center text-xs font-extrabold tabular-nums">${valStr}</span>
                         <button type="button" aria-label="Increase ${escapeHtml(p.name)}" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${selectedPk}', 1)"
                           class="w-9 h-8 rounded-lg font-extrabold text-base flex items-center justify-center" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">+</button>
-                      ` : `<span class="px-2 py-1 rounded-lg text-[11px] font-bold" style="background-color:${filledTheme.chipBg};">Note Only</span>`}
+                      ` : `<span class="px-2 py-1 rounded-lg text-[11px] font-bold" style="background-color:${filledTheme.chipBg};">${noteOnlyLabel}</span>`}
                     </div>
                     <button type="button" aria-label="More actions for ${escapeHtml(p.name)}" onclick="openMobileCardActionSheet('${row.id}', '${p.id}', '${selectedPk}')"
                       class="h-8 px-2.5 rounded-lg font-extrabold text-xs flex items-center justify-center gap-1" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">Actions &#8943;</button>
@@ -6526,7 +6556,7 @@ img, video { max-width: 100%; height: auto; }
                       <span class="min-w-[56px] text-center text-xs font-extrabold text-slate-900 tabular-nums">${valStr}</span>
                       <button type="button" aria-label="Increase ${escapeHtml(p.name)}" onclick="quickStepAllocation(event, '${row.id}', '${p.id}', '${selectedPk}', 1)"
                         class="w-9 h-8 rounded-lg bg-slate-100 hover:bg-emerald-100 text-slate-800 font-extrabold text-base flex items-center justify-center">+</button>
-                    ` : `<span class="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[11px] font-bold">Note Only</span>`}
+                    ` : `<span class="px-2 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-700 text-[11px] font-bold">${noteOnlyLabel}</span>`}
                   </div>
                   <button type="button" aria-label="More actions for ${escapeHtml(p.name)}" onclick="openMobileCardActionSheet('${row.id}', '${p.id}', '${selectedPk}')"
                     class="h-8 px-2.5 rounded-lg bg-slate-100 text-slate-700 font-extrabold text-xs flex items-center justify-center gap-1">Actions &#8943;</button>
@@ -6598,8 +6628,9 @@ img, video { max-width: 100%; height: auto; }
             </details>`;
         } else {
           // Mobile Project Accordion Card
+          const isAdminRow = isNonFteProject(row);
           const totFte = getProjTotalAllocatedFte(row.id, selectedPk, ui.timeUnit, db);
-          const totStr = totFte > 0 ? formatValue(fteToDisplayValue(totFte, selectedPk, ui.timeUnit)) : '0 ' + unitShortLabel();
+          const totStr = isAdminRow ? 'Admin' : (totFte > 0 ? formatValue(fteToDisplayValue(totFte, selectedPk, ui.timeUnit)) : '0 ' + unitShortLabel());
           const statusCls = row.status === 'At Risk' ? 'bg-rose-100 text-rose-700' : row.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600';
           const rowSpotCls = spotlightId ? (spotlightId === row.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
           const tentProjCls = row.tentative ? 'tentative-card border-dashed' : '';
@@ -6611,10 +6642,13 @@ img, video { max-width: 100%; height: auto; }
             if (searchQ && !(`${d.name} ${d.code} ${row.name} ${row.code} ${cmtObj.direct || ''}`).toLowerCase().includes(searchQ)) return '';
 
             const deptCap = getDeptCapacityForPeriod(d.id, selectedPk, ui.timeUnit, db).avgFte;
-            const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.hasData ? a.avgFte : 0, deptCap, d.color);
+            const { fillHex, tier3, showIdentityDot } = isAdminRow
+              ? { fillHex: d.color, tier3: null, showIdentityDot: false }
+              : resolveCardStyle(a.hasData ? a.avgFte : 0, deptCap, d.color);
             const filledTheme = useColorFill ? getFilledCardTheme(fillHex) : null;
             const cmtHtml = renderMobileCommentBlock(cmtObj, filledTheme);
-            const valStr = a.hasData ? formatValue(fteToDisplayValue(a.avgFte, selectedPk, ui.timeUnit)) : 'Note';
+            const valStr = a.hasData ? formatValue(fteToDisplayValue(a.avgFte, selectedPk, ui.timeUnit)) : (isAdminRow ? 'Admin' : 'Note');
+            const noteOnlyLabel = isAdminRow ? 'Admin &middot; Non-FTE' : 'Note Only';
             const tierBadge = tier3
               ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-extrabold shrink-0" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">${tier3.symbol}</span>`
               : '';
@@ -6639,7 +6673,7 @@ img, video { max-width: 100%; height: auto; }
                         <span class="min-w-[56px] text-center text-xs font-extrabold tabular-nums">${valStr}</span>
                         <button type="button" aria-label="Increase ${escapeHtml(d.name)}" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${selectedPk}', 1)"
                           class="w-9 h-8 rounded-lg font-extrabold text-base flex items-center justify-center" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">+</button>
-                      ` : `<span class="px-2 py-1 rounded-lg text-[11px] font-bold" style="background-color:${filledTheme.chipBg};">Note Only</span>`}
+                      ` : `<span class="px-2 py-1 rounded-lg text-[11px] font-bold" style="background-color:${filledTheme.chipBg};">${noteOnlyLabel}</span>`}
                     </div>
                     <button type="button" aria-label="More actions for ${escapeHtml(d.name)}" onclick="openMobileCardActionSheet('${d.id}', '${row.id}', '${selectedPk}')"
                       class="h-8 px-2.5 rounded-lg font-extrabold text-xs flex items-center justify-center gap-1" style="background-color:${filledTheme.chipBg}; color:${filledTheme.text};">Actions &#8943;</button>
@@ -6663,7 +6697,7 @@ img, video { max-width: 100%; height: auto; }
                       <span class="min-w-[56px] text-center text-xs font-extrabold text-slate-900 tabular-nums">${valStr}</span>
                       <button type="button" aria-label="Increase ${escapeHtml(d.name)}" onclick="quickStepAllocation(event, '${d.id}', '${row.id}', '${selectedPk}', 1)"
                         class="w-9 h-8 rounded-lg bg-slate-100 text-slate-800 font-extrabold text-base flex items-center justify-center">+</button>
-                    ` : `<span class="px-2 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[11px] font-bold">Note Only</span>`}
+                    ` : `<span class="px-2 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-700 text-[11px] font-bold">${noteOnlyLabel}</span>`}
                   </div>
                   <button type="button" aria-label="More actions for ${escapeHtml(d.name)}" onclick="openMobileCardActionSheet('${d.id}', '${row.id}', '${selectedPk}')"
                     class="h-8 px-2.5 rounded-lg bg-slate-100 text-slate-700 font-extrabold text-xs flex items-center justify-center gap-1">Actions &#8943;</button>
@@ -6693,6 +6727,7 @@ img, video { max-width: 100%; height: auto; }
                       <div class="text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
                         <span class="font-mono font-bold text-indigo-700">[${escapeHtml(row.code)}]</span>
                         <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${statusCls}">${escapeHtml(row.status)}</span>
+                        ${isAdminRow ? '<span class="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-bold">Admin &middot; Non-FTE</span>' : ''}
                         ${row.tentative ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold">Pipeline</span>' : ''}
                       </div>
                     </div>
@@ -7416,24 +7451,26 @@ img, video { max-width: 100%; height: auto; }
             </div>
           </th>`;
         }
-        const budgetDays = Number(row.budgetDays) || 0;
+        const isAdminRow = isNonFteProject(row);
+        const budgetDays = isAdminRow ? 0 : (Number(row.budgetDays) || 0);
         const allTimeDays = budgetDays > 0 ? getProjectTotalPlannedDays(row.id, db) : 0;
         const budgetPct = budgetDays > 0 ? Math.round((allTimeDays / budgetDays) * 100) : 0;
         const budgetBarCls = budgetPct > 100 ? 'bg-rose-500' : budgetPct >= 85 ? 'bg-amber-500' : 'bg-indigo-500';
         const budgetTextCls = budgetPct > 100 ? 'text-rose-700 font-bold' : budgetPct >= 85 ? 'text-amber-700 font-bold' : 'text-slate-600 font-semibold';
-        const plannedCost = showCost ? getProjectTotalPlannedCost(row.id, db) : 0;
-        const budgetCost = Number(row.budgetCost) || 0;
+        const plannedCost = (!isAdminRow && showCost) ? getProjectTotalPlannedCost(row.id, db) : 0;
+        const budgetCost = isAdminRow ? 0 : (Number(row.budgetCost) || 0);
         const costPct = budgetCost > 0 ? Math.round((plannedCost / budgetCost) * 100) : 0;
         const prio = String(row.priority || '').trim();
         const prioCls = prio === 'Critical' ? 'bg-rose-100 text-rose-700' : prio === 'High' ? 'bg-amber-100 text-amber-800' : prio === 'Medium' ? 'bg-sky-50 text-sky-700' : 'bg-slate-100 text-slate-600';
         const prioBadgeHtml = prio
           ? `<span class="px-1 py-0.5 rounded text-[9px] font-bold shrink-0 ${prioCls}" title="Priority: ${escapeHtml(prio)}">${escapeHtml(prio)}</span>`
           : '';
+        const adminTagHtml = isAdminRow ? '<span class="px-1 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 text-[9px] font-bold shrink-0">Admin &middot; Non-FTE</span>' : '';
         const tentTagHtml = row.tentative ? '<span class="px-1 py-0.5 rounded bg-violet-100 text-violet-800 text-[9px] font-bold shrink-0">Pipeline</span>' : '';
-        const bottleneckBadgeHtml = bottleneckCount > 0
+        const bottleneckBadgeHtml = (!isAdminRow && bottleneckCount > 0)
           ? `<span title="${bottleneckCount} overallocated slot(s) (&gt;${overT}%)" class="px-1 py-0.5 rounded bg-rose-100 text-rose-700 text-[9px] font-extrabold shrink-0">&#9888; ${bottleneckCount} Over</span>`
           : '';
-        const costBadgeHtml = (showCost && (plannedCost > 0 || budgetCost > 0))
+        const costBadgeHtml = (!isAdminRow && showCost && (plannedCost > 0 || budgetCost > 0))
           ? `<span title="Est. cost ${formatCurrency(plannedCost, db)}${budgetCost > 0 ? ' vs ' + formatCurrency(budgetCost, db) + ' budget (' + costPct + '%)' : ''}" class="px-1 py-0.5 rounded text-[9px] font-bold shrink-0 ${budgetCost > 0 && costPct > 100 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-50 text-emerald-700'}">${formatCurrency(plannedCost, db)}${budgetCost > 0 ? '/' + formatCurrency(budgetCost, db) : ''}</span>`
           : '';
         const shiftBtnHtml = !isPresent
@@ -7453,12 +7490,15 @@ img, video { max-width: 100%; height: auto; }
                <div class="w-full h-1 rounded-full bg-slate-200/80 overflow-hidden"><div class="h-full ${budgetBarCls} rounded-full" style="width:${Math.min(100, budgetPct)}%"></div></div>
              </div>`
           : '';
-        const ownerLineHtml = (row.owner || tentTagHtml || bottleneckBadgeHtml || costBadgeHtml)
+        const ownerLineHtml = (row.owner || adminTagHtml || tentTagHtml || bottleneckBadgeHtml || costBadgeHtml)
           ? `<div class="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
                ${row.owner ? `<span class="truncate max-w-[110px]" title="Owner: ${escapeHtml(row.owner)}">${escapeHtml(row.owner)}</span>` : ''}
-               ${tentTagHtml}${bottleneckBadgeHtml}${costBadgeHtml}
+               ${adminTagHtml}${tentTagHtml}${bottleneckBadgeHtml}${costBadgeHtml}
              </div>`
           : '';
+        const effortMetaHtml = isAdminRow
+          ? `<span class="text-sky-700 font-semibold">Issues &amp; Meetings</span>`
+          : `<span class="tabular-nums">${Math.round(totalDays)}d</span><span>&bull;</span><span class="tabular-nums">${activeDeptCount} dept${activeDeptCount === 1 ? '' : 's'}</span>`;
         return `
           <th scope="row" ${clickAttr} class="${rowSpotCls} sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left ${clickAttr ? 'cursor-pointer' : ''}">
             <div class="flex items-stretch gap-2 min-w-0">
@@ -7473,9 +7513,7 @@ img, video { max-width: 100%; height: auto; }
                   <div class="flex items-center gap-1 min-w-0 truncate">
                     <span class="font-mono font-bold text-slate-700">${escapeHtml(row.code)}</span>
                     <span>&bull;</span>
-                    <span class="tabular-nums">${Math.round(totalDays)}d</span>
-                    <span>&bull;</span>
-                    <span class="tabular-nums">${activeDeptCount} dept${activeDeptCount === 1 ? '' : 's'}</span>
+                    ${effortMetaHtml}
                     ${prioBadgeHtml}
                   </div>
                   ${shiftBtnHtml}
@@ -7551,9 +7589,21 @@ img, video { max-width: 100%; height: auto; }
             if (isOverview) {
               const ovChips = visibleProjs.map(p => {
                 const a = getAllocationForPeriod(row.id, p.id, pk, ui.timeUnit, db.allocations);
-                if (!a.hasData) return '';
+                const cmtObj = getCellProjectComments(row.id, p.id, pk, ui.timeUnit, db);
+                const isAdminProj = isNonFteProject(p);
+                if (!a.hasData && !(isAdminProj && cmtObj.hasAny)) return '';
                 if (searchQ && !matchesSearchForPair(row, p, pk)) return '';
                 const spotlightCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
+                if (!a.hasData && isAdminProj && cmtObj.hasAny) {
+                  const notePreview = (cmtObj.direct || (cmtObj.weekEntries[0]?.text) || '').replace(/\s+/g, ' ');
+                  const tipTxt = `[${p.code}] ${p.name} (Admin · Non-FTE)\n${notePreview}`;
+                  return `<div onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')" title="${escapeHtml(tipTxt)}"
+                    class="accent-card ${spotlightCls} px-1 py-0.5 rounded bg-sky-50 border border-dashed border-sky-200 text-[9px] font-bold text-sky-800 flex items-center justify-between gap-0.5 leading-tight truncate cursor-pointer"
+                    style="--accent-color:${p.color}; --accent-w:3px; border-left:3px solid ${p.color};">
+                    <span class="font-mono truncate">${escapeHtml(p.code)}</span>
+                    <span class="shrink-0" aria-hidden="true">&#9998;</span>
+                  </div>`;
+                }
                 const valNum = formatValue(fteToDisplayValue(a.avgFte, pk, ui.timeUnit), ui.manpowerUnit, false);
                 const valFull = formatValue(fteToDisplayValue(a.avgFte, pk, ui.timeUnit));
                 const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.avgFte, capFte, p.color);
@@ -7610,7 +7660,10 @@ img, video { max-width: 100%; height: auto; }
               const spotlightCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
               const tentClsFilled = p.tentative ? 'tentative-card-filled' : '';
               const tentClsAccent = p.tentative ? 'tentative-card' : '';
-              const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.hasData ? a.avgFte : 0, capFte, p.color);
+              const isAdminProj = isNonFteProject(p);
+              const { fillHex, tier3, showIdentityDot } = isAdminProj
+                ? { fillHex: p.color, tier3: null, showIdentityDot: false }
+                : resolveCardStyle(a.hasData ? a.avgFte : 0, capFte, p.color);
               const filledTheme = useColorFill ? getFilledCardTheme(fillHex) : null;
               const cmtHtml = renderInlineCommentHtml(cmtObj, filledTheme);
               const fullTooltipNote = cmtObj.direct ? `\nNote: ${cmtObj.direct}` : '';
@@ -7632,10 +7685,13 @@ img, video { max-width: 100%; height: auto; }
                      class="${spotVisCls} ${spotlightId === p.id ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-700'} ${spotSizeCls} rounded font-bold flex items-center justify-center transition shrink-0">&#9678;</button>`;
 
               if (!a.hasData && cmtObj.hasAny) {
+                const noteClickFn = isAdminProj ? `openAllocationModal('${row.id}', '${p.id}', '${pk}')` : `openCellDetailModal('${row.id}', '${pk}')`;
+                const noteKindLbl = isAdminProj ? 'Admin' : 'Note';
+                const noteTipKind = isAdminProj ? 'Admin (Non-FTE) — Issues & Meetings' : 'Comment Only';
                 if (useColorFill) {
                   return `
-                    <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
-                      title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — Comment Only${escapeHtml(fullTooltipNote)}"
+                    <div onclick="event.stopPropagation(); ${noteClickFn}"
+                      title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${noteTipKind}${escapeHtml(fullTooltipNote)}"
                       class="matrix-card group/pill ${spotlightCls} ${s.pillBox} rounded-xl cursor-pointer shadow-2xs"
                       style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1.5px dashed ${filledTheme.border};">
                       <div class="flex items-center justify-between gap-1.5">
@@ -7646,15 +7702,15 @@ img, video { max-width: 100%; height: auto; }
                         </div>
                         <div class="flex items-center gap-1 shrink-0">
                           ${spotlightBtn}
-                          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style="background-color:${filledTheme.chipBg};">Note</span>
+                          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style="background-color:${filledTheme.chipBg};">${noteKindLbl}</span>
                         </div>
                       </div>
                       ${cmtHtml}
                     </div>`;
                 }
                 return `
-                  <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
-                    title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — Comment Only${escapeHtml(fullTooltipNote)}"
+                  <div onclick="event.stopPropagation(); ${noteClickFn}"
+                    title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${noteTipKind}${escapeHtml(fullTooltipNote)}"
                     class="matrix-card accent-card group/pill ${spotlightCls} ${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer"
                     style="--accent-color:${p.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${p.color};">
                     <div class="flex items-center justify-between gap-1.5">
@@ -7664,7 +7720,7 @@ img, video { max-width: 100%; height: auto; }
                       </div>
                       <div class="flex items-center gap-1 shrink-0">
                         ${spotlightBtn}
-                        <span class="text-[10px] font-semibold text-indigo-600 shrink-0">Note</span>
+                        <span class="text-[10px] font-bold ${isAdminProj ? 'px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700' : 'text-indigo-600'} shrink-0">${noteKindLbl}</span>
                       </div>
                     </div>
                     ${cmtHtml}
@@ -7892,27 +7948,36 @@ img, video { max-width: 100%; height: auto; }
         } else if (ui.axis === 'timeline') {
           // Executive Timeline / Gantt Row View (one project per row, continuous effort bars + milestones)
           const rowSpotCls = spotlightId ? (spotlightId === row.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
+          const isAdminTlRow = isNonFteProject(row);
           const activeDeptIds = new Set();
           const perData = periods.map(pk => {
             const totFte = getProjTotalAllocatedFte(row.id, pk, ui.timeUnit, db);
             const activeDeptEntries = [];
+            const noteDeptEntries = [];
             visibleDepts.forEach(d => {
               const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
-              if (a.hasData) {
+              if (a.hasData && !isAdminTlRow) {
                 activeDeptEntries.push({ dept: d, avgFte: a.avgFte });
                 activeDeptIds.add(d.id);
+              }
+              if (isAdminTlRow) {
+                const cObj = getCellProjectComments(d.id, row.id, pk, ui.timeUnit, db);
+                if (cObj.hasAny) {
+                  noteDeptEntries.push({ dept: d, text: (cObj.direct || cObj.weekEntries[0]?.text || '').trim() });
+                  activeDeptIds.add(d.id);
+                }
               }
             });
             const activeDepts = activeDeptEntries.map(e => e.dept);
             const activeCapFte = activeDepts.reduce((acc, d) => acc + getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte, 0)
               || visibleDepts.reduce((acc, d) => acc + getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte, 0);
-            const hasOverDept = activeDepts.some(d => {
+            const hasOverDept = !isAdminTlRow && activeDepts.some(d => {
               const dc = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
               const dt = getDeptTotalAllocatedFte(d.id, pk, ui.timeUnit, db);
               return dc > 0 ? Math.round((dt / dc) * 100) > overT : dt > 0;
             });
             const msInPeriod = getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).filter(m => m.projectId === row.id);
-            return { pk, fte: totFte, activeDepts, activeDeptEntries, activeCapFte, hasOverDept, msInPeriod };
+            return { pk, fte: totFte, activeDepts, activeDeptEntries, noteDeptEntries, activeCapFte, hasOverDept, msInPeriod };
           });
           const peakFte = Math.max(0.1, ...perData.map(x => x.fte));
           let totalDays = 0;
@@ -7941,7 +8006,31 @@ img, video { max-width: 100%; height: auto; }
             let barHtml = isOverview
               ? `<div class="min-h-[2.2rem] flex items-center justify-center text-[10px] text-slate-300 opacity-0 group-hover/cell:opacity-100 transition">+</div>`
               : `<div class="min-h-[3.35rem] flex items-center justify-center text-xs text-slate-300 opacity-0 group-hover/cell:opacity-100 transition">+</div>`;
-            if (hasBar) {
+            if (isAdminTlRow && x.noteDeptEntries.length > 0) {
+              const noteCodes = x.noteDeptEntries.map(n => n.dept.code).join(', ');
+              const firstLine = (x.noteDeptEntries[0].text || '').split('\n')[0].slice(0, 70);
+              const tipTxt = `[${row.code}] ${row.name} (Admin · Non-FTE)\n${x.noteDeptEntries.map(n => `${n.dept.code}: ${n.text}`).join('\n')}`;
+              if (isOverview) {
+                barHtml = `
+                  <div class="timeline-bar timeline-bar-overview timeline-bar-accent timeline-bar-single ${rowSpotCls}"
+                    title="${escapeHtml(tipTxt)}"
+                    style="--accent-color:${row.color}; border-style:dashed;">
+                    <span class="truncate font-bold text-[10px] text-sky-700">&#9998; ${ovShowBarLabel ? escapeHtml(noteCodes) : x.noteDeptEntries.length}</span>
+                  </div>`;
+              } else {
+                const deptPills = x.noteDeptEntries.map(n => `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-800 font-mono text-[11px] font-bold leading-none shrink-0"><span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${n.dept.color}"></span>${escapeHtml(n.dept.code)}</span>`).join('');
+                barHtml = `
+                  <div class="timeline-bar timeline-bar-std timeline-bar-accent timeline-bar-single ${rowSpotCls}"
+                    title="${escapeHtml(tipTxt)}"
+                    style="--accent-color:${row.color}; border-style:dashed;">
+                    <div class="flex items-center justify-between gap-1.5 w-full">
+                      <span class="truncate text-xs font-bold text-slate-800">&#9998; ${escapeHtml(firstLine || 'Admin Notes')}</span>
+                      <span class="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 text-[9px] font-extrabold uppercase shrink-0">Admin</span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-1">${deptPills}</div>
+                  </div>`;
+              }
+            } else if (hasBar) {
               const { fillHex, tier3, showIdentityDot } = resolveCardStyle(x.fte, x.activeCapFte, row.color);
               const capSharePct = x.activeCapFte > 0 ? Math.round((x.fte / x.activeCapFte) * 100) : 999;
               const tierTip = tier3 ? ` • ${tier3.ariaLabel}` : (colorMode === 'fte' ? ` • ${capSharePct > 990 ? '>100%' : capSharePct + '%'} cap` : '');
@@ -8093,10 +8182,21 @@ img, video { max-width: 100%; height: auto; }
 
             if (isOverview) {
               let hasPeriodOver = false;
+              const isAdminProjRow = isNonFteProject(row);
               const ovDeptChips = visibleDepts.map(d => {
                 const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
-                if (!a.hasData) return '';
+                const cmtObj = getCellProjectComments(d.id, row.id, pk, ui.timeUnit, db);
+                if (!a.hasData && !(isAdminProjRow && cmtObj.hasAny)) return '';
                 if (searchQ && !matchesSearchForPair(d, row, pk)) return '';
+                if (!a.hasData && isAdminProjRow && cmtObj.hasAny) {
+                  const notePreview = (cmtObj.direct || (cmtObj.weekEntries[0]?.text) || '').replace(/\s+/g, ' ');
+                  return `<div onclick="event.stopPropagation(); openAllocationModal('${d.id}', '${row.id}', '${pk}')" title="${escapeHtml('[' + d.code + '] ' + d.name + ' (Admin)\n' + notePreview)}"
+                    class="accent-card ${rowSpotCls} px-1 py-0.5 rounded bg-sky-50 border border-dashed border-sky-200 text-[9px] font-bold text-sky-800 flex items-center justify-between gap-0.5 leading-tight truncate cursor-pointer"
+                    style="--accent-color:${d.color}; --accent-w:3px; border-left:3px solid ${d.color};">
+                    <span class="font-mono truncate">${escapeHtml(d.code)}</span>
+                    <span class="shrink-0" aria-hidden="true">&#9998;</span>
+                  </div>`;
+                }
                 const deptCap = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
                 const deptTot = getDeptTotalAllocatedFte(d.id, pk, ui.timeUnit, db);
                 const deptPct = deptCap > 0 ? Math.round((deptTot / deptCap) * 100) : 0;
@@ -8134,10 +8234,10 @@ img, video { max-width: 100%; height: auto; }
               const hInfo = formatPeriodHeader(pk, ui.timeUnit);
               return `
                 <td class="group/cell align-top ${s.cellPad} border-b border-l border-slate-200 matrix-cell-normal transition cursor-pointer"
-                  title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)} — ${escapeHtml(hInfo.title)}: ${totStr} • Click for full cell details"
+                  title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)} — ${escapeHtml(hInfo.title)}: ${isAdminProjRow ? (cmtCount + ' Admin note(s)') : totStr} • Click for full cell details"
                   onclick="openCellDetailModal('${row.id}', '${pk}')">
                   <div class="flex items-center justify-between gap-0.5 mb-1">
-                    <span class="text-[10px] font-extrabold tabular-nums ${totFte > 0 ? 'text-slate-800' : 'text-slate-300'}">${totCompact}</span>
+                    <span class="text-[10px] font-extrabold tabular-nums ${isAdminProjRow ? (cmtCount > 0 ? 'text-sky-700' : 'text-slate-300') : (totFte > 0 ? 'text-slate-800' : 'text-slate-300')}">${isAdminProjRow ? (cmtCount > 0 ? '&#9998; ' + cmtCount : '—') : totCompact}</span>
                     <span class="inline-flex items-center gap-0.5">
                       ${hasPeriodOver ? '<span class="text-[9px] font-extrabold text-rose-600" title="Overallocated department">&#9888;</span>' : ''}
                       ${ovMsBadge}
@@ -8147,6 +8247,7 @@ img, video { max-width: 100%; height: auto; }
                 </td>`;
             }
 
+            const isAdminProjRow = isNonFteProject(row);
             const pills = visibleDepts.map(d => {
               const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
               const cmtObj = getCellProjectComments(d.id, row.id, pk, ui.timeUnit, db);
@@ -8154,15 +8255,19 @@ img, video { max-width: 100%; height: auto; }
               if (searchQ && !matchesSearchForPair(d, row, pk)) return '';
 
               const deptCap = getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte;
-              const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.hasData ? a.avgFte : 0, deptCap, d.color);
+              const { fillHex, tier3, showIdentityDot } = isAdminProjRow
+                ? { fillHex: d.color, tier3: null, showIdentityDot: false }
+                : resolveCardStyle(a.hasData ? a.avgFte : 0, deptCap, d.color);
               const filledTheme = useColorFill ? getFilledCardTheme(fillHex) : null;
               const cmtHtml = renderInlineCommentHtml(cmtObj, filledTheme);
               const fullTooltipNote = cmtObj.direct ? `\nNote: ${cmtObj.direct}` : '';
 
               if (!a.hasData && cmtObj.hasAny) {
+                const noteClickFn = isAdminProjRow ? `openAllocationModal('${d.id}', '${row.id}', '${pk}')` : `openCellDetailModal('${row.id}', '${pk}')`;
+                const noteKindLbl = isAdminProjRow ? 'Admin' : 'Note';
                 if (useColorFill) {
                   return `
-                    <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
+                    <div onclick="event.stopPropagation(); ${noteClickFn}"
                       class="matrix-card ${rowSpotCls} ${s.pillBox} rounded-xl cursor-pointer shadow-2xs"
                       style="background-color:${filledTheme.bg}; color:${filledTheme.text}; border: 1.5px dashed ${filledTheme.border};">
                       <div class="flex items-center justify-between gap-1.5">
@@ -8170,18 +8275,18 @@ img, video { max-width: 100%; height: auto; }
                           ${showIdentityDot ? `<span class="w-2 h-2 rounded-full ring-1 ring-white/70 shrink-0" style="background:${d.color}"></span>` : ''}
                           <span class="truncate font-bold">${escapeHtml(d.name)}</span>
                         </div>
-                        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style="background-color:${filledTheme.chipBg};">Note</span>
+                        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style="background-color:${filledTheme.chipBg};">${noteKindLbl}</span>
                       </div>
                       ${cmtHtml}
                     </div>`;
                 }
                 return `
-                  <div onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
+                  <div onclick="event.stopPropagation(); ${noteClickFn}"
                     class="matrix-card accent-card ${rowSpotCls} ${s.pillBox} rounded-lg bg-white/90 border border-dashed border-slate-300 hover:border-indigo-400 cursor-pointer"
                     style="--accent-color:${d.color}; --accent-w:${s.pillBorderW}; border-left: ${s.pillBorderW} solid ${d.color};">
                     <div class="flex items-center justify-between gap-1.5">
                       <span class="truncate font-semibold text-slate-700">${escapeHtml(d.name)}</span>
-                      <span class="text-[10px] font-semibold text-indigo-600 shrink-0">Note</span>
+                      <span class="text-[10px] font-bold ${isAdminProjRow ? 'px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700' : 'text-indigo-600'} shrink-0">${noteKindLbl}</span>
                     </div>
                     ${cmtHtml}
                   </div>`;
@@ -8277,23 +8382,25 @@ img, video { max-width: 100%; height: auto; }
                 </div>`).join('');
 
             const cellHeaderHtml = isPresent
-              ? (totFte > 0 ? `<div class="flex items-center justify-end mb-2"><span class="${s.pctText} text-slate-700 tabular-nums">${totStr}</span></div>` : '')
+              ? (isAdminProjRow ? '' : (totFte > 0 ? `<div class="flex items-center justify-end mb-2"><span class="${s.pctText} text-slate-700 tabular-nums">${totStr}</span></div>` : ''))
               : `<div class="flex items-center justify-between ${s.capText} text-slate-500 mb-1.5">
-                   <span>Effort</span>
+                   <span>${isAdminProjRow ? 'Admin Notes' : 'Effort'}</span>
                    <div class="flex items-center gap-1.5">
                      <button type="button" onclick="event.stopPropagation(); openCellDetailModal('${row.id}', '${pk}')"
                        class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md transition ${cmtCount > 0 ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 font-bold text-[10px]' : 'opacity-0 group-hover/cell:opacity-100 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 text-[10px]'}">
                        <svg class="w-3 h-3" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>
                        ${cmtCount > 0 ? `<span>${cmtCount}</span>` : ''}
                      </button>
-                     <span class="text-slate-800 font-bold tabular-nums">${totStr}</span>
+                     ${isAdminProjRow
+                       ? `<span class="text-sky-700 font-bold tabular-nums">${cmtCount > 0 ? `${cmtCount} note${cmtCount === 1 ? '' : 's'}` : '—'}</span>`
+                       : `<span class="text-slate-800 font-bold tabular-nums">${totStr}</span>`}
                    </div>
                  </div>`;
 
             const addBtnHtml = !isPresent
               ? `<button type="button" onclick="event.stopPropagation(); openAllocationModal('', '${row.id}', '${pk}')"
                    class="mt-1.5 w-full py-1 rounded-lg border border-dashed border-slate-300/90 hover:border-indigo-400 hover:bg-indigo-50/70 text-[10px] font-semibold text-slate-400 hover:text-indigo-700 opacity-70 sm:opacity-0 group-hover/cell:opacity-100 transition flex items-center justify-center gap-1">
-                   <span>+ Add</span>
+                   <span>${isAdminProjRow ? '+ Add Note' : '+ Add'}</span>
                  </button>`
               : '';
 
@@ -9736,16 +9843,19 @@ img, video { max-width: 100%; height: auto; }
           const plannedCost = hasRates ? getProjectTotalPlannedCost(p.id, db) : 0;
           const budgetCost = Number(p.budgetCost) || 0;
           const costPct = budgetCost > 0 ? Math.round((plannedCost / budgetCost) * 100) : 0;
-          const effortPart = budgetDays > 0
-            ? `<div class="space-y-1 min-w-[110px]">
-                 <div class="flex items-center justify-between text-[11px] font-bold tabular-nums">
-                   <span class="${pct > 100 ? 'text-rose-600' : pct >= 85 ? 'text-amber-700' : 'text-slate-700'}">${plannedDays} / ${budgetDays}d</span>
-                   <span class="${pct > 100 ? 'text-rose-600' : 'text-slate-500'}">${pct}%</span>
-                 </div>
-                 <div class="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full rounded-full ${pct > 100 ? 'bg-rose-500' : pct >= 85 ? 'bg-amber-500' : 'bg-indigo-500'}" style="width:${Math.min(100, pct)}%"></div></div>
-               </div>`
-            : `<span class="text-slate-400 tabular-nums">${plannedDays > 0 ? `${plannedDays}d planned` : '—'}</span>`;
-          const costPart = (hasRates && (plannedCost > 0 || budgetCost > 0))
+          const isAdminProj = isNonFteProject(p);
+          const effortPart = isAdminProj
+            ? `<span class="px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-bold">Non-FTE (Issues &amp; Meetings)</span>`
+            : (budgetDays > 0
+                ? `<div class="space-y-1 min-w-[110px]">
+                     <div class="flex items-center justify-between text-[11px] font-bold tabular-nums">
+                       <span class="${pct > 100 ? 'text-rose-600' : pct >= 85 ? 'text-amber-700' : 'text-slate-700'}">${plannedDays} / ${budgetDays}d</span>
+                       <span class="${pct > 100 ? 'text-rose-600' : 'text-slate-500'}">${pct}%</span>
+                     </div>
+                     <div class="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden"><div class="h-full rounded-full ${pct > 100 ? 'bg-rose-500' : pct >= 85 ? 'bg-amber-500' : 'bg-indigo-500'}" style="width:${Math.min(100, pct)}%"></div></div>
+                   </div>`
+                : `<span class="text-slate-400 tabular-nums">${plannedDays > 0 ? `${plannedDays}d planned` : '—'}</span>`);
+          const costPart = (!isAdminProj && hasRates && (plannedCost > 0 || budgetCost > 0))
             ? `<div class="text-[10px] font-bold tabular-nums mt-1 ${budgetCost > 0 && costPct > 100 ? 'text-rose-600' : 'text-emerald-700'}">${formatCurrency(plannedCost, db)}${budgetCost > 0 ? ` / ${formatCurrency(budgetCost, db)} (${costPct}%)` : ' est.'}</div>`
             : '';
           return `
@@ -9754,6 +9864,7 @@ img, video { max-width: 100%; height: auto; }
                 <div class="flex flex-wrap items-center gap-1.5">
                   <span class="w-3 h-3 rounded-full shrink-0" style="background:${p.color}" aria-hidden="true"></span>
                   <span>${escapeHtml(p.name)}</span>
+                  ${isAdminProj ? '<span class="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-bold uppercase">Admin</span>' : ''}
                   ${p.tentative ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold uppercase">Pipeline</span>' : ''}
                   ${p.archived ? '<span class="px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 text-[10px] font-bold uppercase">Archived</span>' : ''}
                 </div>
@@ -10746,6 +10857,9 @@ img, video { max-width: 100%; height: auto; }
               : '');
           rememberedFileHandle = handle;
           lastKnownFileModified = file.lastModified;
+          lastWrittenId = String(liveDB.meta?.lastWriteId || '');
+          lastSyncedSnapshot = cloneSyncSnapshot(liveDB);
+          saveQueued = false;
           pendingAutoReload = false;
           syncWarningState = { type: null, fileName: '', dismissed: false };
           document.getElementById('externalUpdateBanner')?.classList.add('hidden');
@@ -10790,6 +10904,9 @@ img, video { max-width: 100%; height: auto; }
       linkedFileDetectedPath = '';
       rememberedFileHandle = null;
       lastKnownFileModified = 0;
+      lastWrittenId = '';
+      lastSyncedSnapshot = null;
+      saveQueued = false;
       pendingAutoReload = false;
       stopFilePolling();
       clearRememberedHandle();
@@ -10800,8 +10917,197 @@ img, video { max-width: 100%; height: auto; }
       showToast('Unlinked shared file — continuing in browser storage', 'info');
     }
 
+    /* ---------- Serialized Write Queue & 3-Way Buffered Auto-Merge Helpers ---------- */
+
+    function cloneSyncSnapshot(db) {
+      if (!db || typeof db !== 'object') return null;
+      try {
+        return JSON.parse(JSON.stringify({
+          meta: db.meta || {},
+          settings: db.settings || {},
+          departments: db.departments || [],
+          projects: db.projects || [],
+          allocations: db.allocations || {},
+          capacityOverrides: db.capacityOverrides || {},
+          comments: db.comments || {},
+          milestones: db.milestones || [],
+          snapshots: db.snapshots || [],
+          changeLog: db.changeLog || [],
+          dumpHistory: db.dumpHistory || [],
+        }));
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function syncValuesEqual(a, b) {
+      if (a === b) return true;
+      if (a === undefined || b === undefined || a === null || b === null) return false;
+      if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) < 0.0005;
+      if (typeof a === 'object' && typeof b === 'object') {
+        try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return false; }
+      }
+      return false;
+    }
+
+    function areDBDataEqual(a, b) {
+      if (!a || !b) return false;
+      const fields = ['settings', 'departments', 'projects', 'allocations', 'capacityOverrides', 'comments', 'milestones', 'snapshots'];
+      for (const f of fields) {
+        if (!syncValuesEqual(a[f], b[f])) return false;
+      }
+      return true;
+    }
+
+    function mergeMapThreeWay(baseMap = {}, localMap = {}, diskMap = {}, sectionName = 'map') {
+      const merged = {};
+      const conflicts = [];
+      let localApplied = 0;
+      let diskApplied = 0;
+      const keys = new Set([...Object.keys(baseMap || {}), ...Object.keys(localMap || {}), ...Object.keys(diskMap || {})]);
+      keys.forEach(k => {
+        const bVal = baseMap ? baseMap[k] : undefined;
+        const lVal = localMap ? localMap[k] : undefined;
+        const dVal = diskMap ? diskMap[k] : undefined;
+        const localChanged = !syncValuesEqual(bVal, lVal);
+        const diskChanged = !syncValuesEqual(bVal, dVal);
+        if (!localChanged && !diskChanged) {
+          if (dVal !== undefined) merged[k] = dVal;
+        } else if (localChanged && !diskChanged) {
+          if (lVal !== undefined) merged[k] = lVal;
+          localApplied++;
+        } else if (!localChanged && diskChanged) {
+          if (dVal !== undefined) merged[k] = dVal;
+          diskApplied++;
+        } else {
+          if (syncValuesEqual(lVal, dVal)) {
+            if (dVal !== undefined) merged[k] = dVal;
+          } else {
+            conflicts.push({ section: sectionName, key: k, base: bVal, local: lVal, disk: dVal });
+          }
+        }
+      });
+      return { merged, conflicts, localApplied, diskApplied };
+    }
+
+    function mergeArrayByIdThreeWay(baseArr = [], localArr = [], diskArr = [], sectionName = 'list') {
+      const baseById = new Map((baseArr || []).filter(Boolean).map(x => [x.id, x]));
+      const localById = new Map((localArr || []).filter(Boolean).map(x => [x.id, x]));
+      const diskById = new Map((diskArr || []).filter(Boolean).map(x => [x.id, x]));
+      const orderedIds = [];
+      const seen = new Set();
+      [...(diskArr || []), ...(localArr || [])].forEach(x => {
+        if (x && x.id && !seen.has(x.id)) {
+          seen.add(x.id);
+          orderedIds.push(x.id);
+        }
+      });
+
+      const merged = [];
+      const conflicts = [];
+      let localApplied = 0;
+      let diskApplied = 0;
+
+      orderedIds.forEach(id => {
+        const bVal = baseById.get(id);
+        const lVal = localById.get(id);
+        const dVal = diskById.get(id);
+        const localChanged = !syncValuesEqual(bVal, lVal);
+        const diskChanged = !syncValuesEqual(bVal, dVal);
+        if (!localChanged && !diskChanged) {
+          if (dVal !== undefined) merged.push(JSON.parse(JSON.stringify(dVal)));
+        } else if (localChanged && !diskChanged) {
+          if (lVal !== undefined) merged.push(JSON.parse(JSON.stringify(lVal)));
+          localApplied++;
+        } else if (!localChanged && diskChanged) {
+          if (dVal !== undefined) merged.push(JSON.parse(JSON.stringify(dVal)));
+          diskApplied++;
+        } else {
+          if (syncValuesEqual(lVal, dVal)) {
+            if (dVal !== undefined) merged.push(JSON.parse(JSON.stringify(dVal)));
+          } else {
+            conflicts.push({ section: sectionName, key: id, base: bVal, local: lVal, disk: dVal });
+          }
+        }
+      });
+
+      return { merged, conflicts, localApplied, diskApplied };
+    }
+
+    function mergeLogEntriesById(localList = [], diskList = [], limit = 200) {
+      const seen = new Map();
+      [...(localList || []), ...(diskList || [])].forEach(item => {
+        if (!item) return;
+        const key = item.id || `${item.timestamp || ''}::${item.summary || item.filename || ''}`;
+        if (!seen.has(key)) seen.set(key, item);
+      });
+      return [...seen.values()]
+        .sort((a, b) => String(b.timestamp || '').localeCompare(String(a.timestamp || '')))
+        .slice(0, limit);
+    }
+
+    function tryThreeWayAutoMerge(baseDB, localDB, diskDB) {
+      if (!baseDB || !localDB || !diskDB) {
+        return { ok: false, reason: 'no-base', conflicts: [] };
+      }
+
+      const mAlloc = mergeMapThreeWay(baseDB.allocations, localDB.allocations, diskDB.allocations, 'allocations');
+      const mCap = mergeMapThreeWay(baseDB.capacityOverrides, localDB.capacityOverrides, diskDB.capacityOverrides, 'capacityOverrides');
+      const mCmt = mergeMapThreeWay(baseDB.comments, localDB.comments, diskDB.comments, 'comments');
+      const mSet = mergeMapThreeWay(baseDB.settings, localDB.settings, diskDB.settings, 'settings');
+      const mDept = mergeArrayByIdThreeWay(baseDB.departments, localDB.departments, diskDB.departments, 'departments');
+      const mProj = mergeArrayByIdThreeWay(baseDB.projects, localDB.projects, diskDB.projects, 'projects');
+      const mMs = mergeArrayByIdThreeWay(baseDB.milestones, localDB.milestones, diskDB.milestones, 'milestones');
+      const mSnap = mergeArrayByIdThreeWay(baseDB.snapshots, localDB.snapshots, diskDB.snapshots, 'snapshots');
+
+      const allConflicts = [
+        ...mAlloc.conflicts,
+        ...mCap.conflicts,
+        ...mCmt.conflicts,
+        ...mSet.conflicts,
+        ...mDept.conflicts,
+        ...mProj.conflicts,
+        ...mMs.conflicts,
+        ...mSnap.conflicts,
+      ];
+      if (allConflicts.length > 0) {
+        return { ok: false, reason: 'collision', conflicts: allConflicts };
+      }
+
+      const mergedDB = {
+        meta: {
+          version: 3,
+          revision: Math.max(Number(diskDB.meta?.revision) || 1, Number(localDB.meta?.revision) || 1) + 1,
+          lastModifiedAt: new Date().toISOString(),
+          lastModifiedBy: ui.userName || 'Project Mgr',
+          lastWriteId: '',
+          lastClientId: SESSION_CLIENT_ID,
+        },
+        settings: mSet.merged,
+        departments: mDept.merged,
+        projects: getSortedProjects({ projects: mProj.merged }),
+        allocations: mAlloc.merged,
+        capacityOverrides: mCap.merged,
+        comments: mCmt.merged,
+        milestones: mMs.merged,
+        snapshots: mSnap.merged,
+        changeLog: mergeLogEntriesById(localDB.changeLog, diskDB.changeLog, 500),
+        dumpHistory: mergeLogEntriesById(localDB.dumpHistory, diskDB.dumpHistory, 100),
+      };
+
+      const localAppliedCount = mAlloc.localApplied + mCap.localApplied + mCmt.localApplied + mSet.localApplied + mDept.localApplied + mProj.localApplied + mMs.localApplied + mSnap.localApplied;
+      const diskAppliedCount = mAlloc.diskApplied + mCap.diskApplied + mCmt.diskApplied + mSet.diskApplied + mDept.diskApplied + mProj.diskApplied + mMs.diskApplied + mSnap.diskApplied;
+      return { ok: true, mergedDB, localAppliedCount, diskAppliedCount, conflicts: [] };
+    }
+
     function scheduleAutoSaveToFile() {
       if (!linkedFileHandle || !ui.autoSaveToFile || ui.demoMode) return;
+      // Serialized write-buffer: if a write is already in flight, queue one coalesced follow-up write instead of racing
+      if (isSavingToFile) {
+        saveQueued = true;
+        updateSyncStatusUI('saving');
+        return;
+      }
       if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
       updateSyncStatusUI('saving');
       saveDebounceTimer = setTimeout(() => {
@@ -10812,39 +11118,101 @@ img, video { max-width: 100%; height: auto; }
 
     async function writeDBToLinkedFile({ forceOverwrite = false } = {}) {
       if (!linkedFileHandle || ui.demoMode) return;
+      if (isSavingToFile) {
+        saveQueued = true;
+        return;
+      }
       isSavingToFile = true;
+      let didConflict = false;
+      let autoMergedFrom = null;
       try {
-        // Pre-write conflict guard: detect external teammate edits before overwriting
+        // Pre-write guard: ignore our own cloud-drive timestamp drift, auto-merge disjoint edits, and only halt on real collisions
         if (!forceOverwrite && lastKnownFileModified) {
           const diskFile = await linkedFileHandle.getFile();
           if (diskFile.lastModified > lastKnownFileModified + 500) {
             let extMeta = { lastModifiedBy: 'a teammate', revision: '?' };
             let diskDB = null;
+            let parsed = null;
             try {
-              const parsed = JSON.parse((await diskFile.text()).replace(/^\uFEFF/, ''));
+              parsed = JSON.parse((await diskFile.text()).replace(/^\uFEFF/, ''));
               if (parsed && parsed.meta) extMeta = parsed.meta;
               diskDB = normalizeAndMigrateDB(parsed);
             } catch (parseErr) {}
-            updateSyncStatusUI('conflict');
-            openSyncConflictModal(extMeta, diskFile.lastModified, diskDB);
-            return;
+
+            const isOurOwnWrite = Boolean(parsed?.meta?.lastWriteId && lastWrittenId && parsed.meta.lastWriteId === lastWrittenId);
+            const isIdenticalToBase = Boolean(!isOurOwnWrite && diskDB && lastSyncedSnapshot && areDBDataEqual(diskDB, lastSyncedSnapshot));
+
+            if (isOurOwnWrite || isIdenticalToBase) {
+              ppDebug('INFO', isOurOwnWrite ? 'Absorbed self-write cloud timestamp drift before save' : 'Absorbed unchanged disk timestamp before save', {
+                lastWriteId: lastWrittenId,
+                diskLastModified: diskFile.lastModified,
+              });
+              lastKnownFileModified = diskFile.lastModified;
+            } else {
+              const mergeRes = (diskDB && lastSyncedSnapshot)
+                ? tryThreeWayAutoMerge(lastSyncedSnapshot, liveDB, diskDB)
+                : { ok: false, reason: 'no-base', conflicts: [] };
+
+              if (mergeRes.ok) {
+                ppDebug('INFO', 'Auto-merged buffered local edits with external disk update', {
+                  localApplied: mergeRes.localAppliedCount,
+                  diskApplied: mergeRes.diskAppliedCount,
+                  diskRev: extMeta.revision,
+                  by: extMeta.lastModifiedBy,
+                });
+                liveDB = mergeRes.mergedDB;
+                safeSetStorage(STORAGE_KEYS.LIVE_DB, JSON.stringify(liveDB));
+                lastKnownFileModified = diskFile.lastModified;
+                autoMergedFrom = {
+                  by: extMeta.lastModifiedBy || 'shared file',
+                  rev: extMeta.revision || '?',
+                };
+              } else {
+                ppDebug('WARN', 'True sync collision detected — pausing auto-save', {
+                  reason: mergeRes.reason,
+                  collisionCount: (mergeRes.conflicts || []).length,
+                  diskRev: extMeta.revision,
+                  by: extMeta.lastModifiedBy,
+                });
+                didConflict = true;
+                saveQueued = false;
+                updateSyncStatusUI('conflict');
+                openSyncConflictModal(extMeta, diskFile.lastModified, diskDB);
+                return;
+              }
+            }
           }
         }
         if (getRetentionSettings(liveDB).autoPruneOnSave) {
           enforceRollingHistory(liveDB);
         }
+        const writeId = uid('w');
+        liveDB.meta = liveDB.meta || { version: 3, revision: 1 };
+        liveDB.meta.lastWriteId = writeId;
+        liveDB.meta.lastClientId = SESSION_CLIENT_ID;
+
         const writable = await linkedFileHandle.createWritable();
         await writable.write(JSON.stringify(liveDB, null, 2));
         await writable.close();
         const file = await linkedFileHandle.getFile();
         lastKnownFileModified = file.lastModified;
+        lastWrittenId = writeId;
+        lastSyncedSnapshot = cloneSyncSnapshot(liveDB);
+        pendingAutoReload = false;
+        document.getElementById('externalUpdateBanner')?.classList.add('hidden');
         updateSyncStatusUI('synced');
-        if (ui.activeTab === 'sync') renderSyncTab();
+        if (autoMergedFrom) {
+          renderAll();
+          showToast(`Auto-merged your edit with latest update from ${autoMergedFrom.by} (Rev ${autoMergedFrom.rev})`, 'info');
+        } else if (ui.activeTab === 'sync') {
+          renderSyncTab();
+        }
       } catch (e) {
         console.warn('Auto-save failed:', e);
         if (e && (e.name === 'NotFoundError' || e.name === 'NotReadableError')) {
           const missingName = linkedFileHandle.name;
           linkedFileHandle = null;
+          saveQueued = false;
           stopFilePolling();
           setSyncWarning('missing', missingName);
           showToast(`Sync file "${missingName}" is no longer reachable! Saved locally only.`, 'error');
@@ -10854,6 +11222,14 @@ img, video { max-width: 100%; height: auto; }
         showToast('Auto-save to linked file failed. Check file permissions.', 'error');
       } finally {
         isSavingToFile = false;
+        if (!didConflict && saveQueued && linkedFileHandle && ui.autoSaveToFile && !ui.demoMode) {
+          saveQueued = false;
+          if (saveDebounceTimer) clearTimeout(saveDebounceTimer);
+          saveDebounceTimer = setTimeout(() => {
+            saveDebounceTimer = null;
+            writeDBToLinkedFile();
+          }, 150);
+        }
       }
     }
 
@@ -10882,15 +11258,34 @@ img, video { max-width: 100%; height: auto; }
     }
 
     async function checkExternalFileUpdates() {
-      if (!linkedFileHandle || ui.demoMode || isSavingToFile || isReloadingFromFile || saveDebounceTimer) return;
+      if (!linkedFileHandle || ui.demoMode || isSavingToFile || isReloadingFromFile || saveDebounceTimer || saveQueued) return;
       try {
         const file = await linkedFileHandle.getFile();
         if (lastKnownFileModified && file.lastModified > lastKnownFileModified + 500) {
+          let parsed = null;
+          let diskDB = null;
+          try {
+            const text = await file.text();
+            parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
+            diskDB = normalizeAndMigrateDB(parsed);
+          } catch (parseErr) {
+            return;
+          }
+
+          // Ignore our own write when OneDrive / Google Drive Desktop touches the local mtime after upload
+          if (parsed?.meta?.lastWriteId && lastWrittenId && parsed.meta.lastWriteId === lastWrittenId) {
+            ppDebug('INFO', 'Poll absorbed self-write cloud timestamp drift', { lastWriteId: lastWrittenId, mtime: file.lastModified });
+            lastKnownFileModified = file.lastModified;
+            return;
+          }
+          if (diskDB && lastSyncedSnapshot && areDBDataEqual(diskDB, lastSyncedSnapshot)) {
+            lastKnownFileModified = file.lastModified;
+            return;
+          }
+
           if (ui.autoReloadFromFile) {
             if (isModalOpen()) {
               pendingAutoReload = true;
-              const text = await file.text();
-              const parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
               const who = parsed.meta?.lastModifiedBy || 'a teammate';
               document.getElementById('externalUpdateMsg').textContent =
                 `New update from ${who} will auto-load when you close this dialog.`;
@@ -10899,8 +11294,6 @@ img, video { max-width: 100%; height: auto; }
             }
             await attachAndLoadFileHandle(linkedFileHandle, false, true);
           } else {
-            const text = await file.text();
-            const parsed = JSON.parse(text.replace(/^\uFEFF/, ''));
             const who = parsed.meta?.lastModifiedBy || 'a teammate';
             const when = new Date(file.lastModified).toLocaleTimeString();
             document.getElementById('externalUpdateMsg').textContent =
@@ -13193,20 +13586,28 @@ img, video { max-width: 100%; height: auto; }
         } catch (diffErr) {}
       }
 
+      const isSameUserOtherTab = Boolean(extMeta && extMeta.lastModifiedBy && ui.userName && String(extMeta.lastModifiedBy).trim().toLowerCase() === String(ui.userName).trim().toLowerCase());
+      const sourceSubtitle = isSameUserOtherTab
+        ? 'Another tab or device signed in with your name modified the same cell(s).'
+        : 'Auto-save was paused because the same cell(s) were edited elsewhere.';
+      const reloadLabel = isSameUserOtherTab
+        ? 'Reload Disk Version (Recommended)'
+        : 'Reload Teammate&rsquo;s Version (Recommended)';
+
       showModal(`
         <div class="p-5 space-y-4 text-xs">
           <div class="w-10 h-1.5 rounded-full bg-slate-300 mx-auto sm:hidden" aria-hidden="true"></div>
           <div class="flex items-start justify-between gap-2">
             <div>
               <h3 id="modalTitle" class="text-base font-bold text-rose-700">Sync Conflict Detected</h3>
-              <p class="text-[11px] text-slate-500 mt-0.5">Auto-save was paused to protect your teammate&rsquo;s edits.</p>
+              <p class="text-[11px] text-slate-500 mt-0.5">${sourceSubtitle}</p>
             </div>
             <button type="button" aria-label="Close dialog" onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none">&times;</button>
           </div>
 
           <div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 leading-relaxed space-y-1">
-            <div><strong>${who}</strong> updated <code class="px-1 rounded bg-white/70 font-mono break-all">${fname}</code> at <strong>${escapeHtml(when)}</strong> (Rev ${rev}) while you had unsaved local changes.</div>
-            <div class="text-[11px]">Review the changes below and choose how to resolve this conflict:</div>
+            <div><strong>${who}</strong> updated <code class="px-1 rounded bg-white/70 font-mono break-all">${fname}</code> at <strong>${escapeHtml(when)}</strong> (Rev ${rev}) while you had conflicting local changes on the same cell(s).</div>
+            <div class="text-[11px]">Non-overlapping edits are auto-merged automatically. Review the remaining collision below:</div>
           </div>
 
           ${diffPreviewHtml}
@@ -13214,7 +13615,7 @@ img, video { max-width: 100%; height: auto; }
           <div class="grid grid-cols-1 gap-2">
             <button type="button" onclick="closeModal(); reloadFromLinkedFile();"
               class="w-full px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs text-left flex items-center justify-between gap-2 transition">
-              <span>Reload Teammate&rsquo;s Version (Recommended)</span>
+              <span>${reloadLabel}</span>
               <span class="text-[10px] opacity-80 shrink-0">Discard my unsaved edit</span>
             </button>
             <button type="button" onclick="forceOverwriteLinkedFile()"
@@ -13488,6 +13889,8 @@ img, video { max-width: 100%; height: auto; }
         isOverallocatedSlot = pct > overT;
         const badgeCls = pct > overT ? 'bg-rose-100 text-rose-700' : pct >= warnT ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
         summaryBadgeHtml = `<span class="px-2 py-0.5 rounded-lg text-[11px] font-bold ${badgeCls}">${formatValue(fteToDisplayValue(alloc, periodKey, ui.timeUnit))} / ${formatValue(fteToDisplayValue(cap, periodKey, ui.timeUnit))} (${pct > 990 ? '&infin;' : pct + '%'})</span>`;
+      } else if (isNonFteProject(primaryRow)) {
+        summaryBadgeHtml = `<span class="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-sky-50 text-sky-700 border border-sky-200">Admin &middot; Non-FTE (Issues &amp; Meetings)</span>`;
       } else {
         const tot = getProjTotalAllocatedFte(rowId, periodKey, ui.timeUnit, db);
         summaryBadgeHtml = `<span class="px-2 py-0.5 rounded-lg text-[11px] font-bold bg-indigo-50 text-indigo-700">Total Effort: ${formatValue(fteToDisplayValue(tot, periodKey, ui.timeUnit))}</span>`;
@@ -13505,18 +13908,40 @@ img, video { max-width: 100%; height: auto; }
       });
 
       const buildCommentCardHtml = (item, deptId, projId, alloc, cmt) => {
+        const pairProj = isDeptAxis ? item : primaryRow;
+        const isAdminPair = isNonFteProject(pairProj);
         const valStr = alloc && alloc.hasData
           ? formatValue(fteToDisplayValue(alloc.avgFte, periodKey, ui.timeUnit))
           : '0 ' + unitShortLabel();
         const weekNotesHtml = (cmt && cmt.weekEntries && cmt.weekEntries.length > 0)
           ? `<div class="mt-1.5 p-2 rounded-lg bg-indigo-50/70 border border-indigo-200 text-[11px] text-indigo-900 space-y-1">
-               <div class="font-bold text-[10px] uppercase tracking-wider text-indigo-700">Weekly Comments inside ${escapeHtml(hdr.title)}:</div>
+               <div class="font-bold text-[10px] uppercase tracking-wider text-indigo-700">Weekly Notes inside ${escapeHtml(hdr.title)}:</div>
                ${cmt.weekEntries.map(we => `<div><span class="font-mono font-bold">${escapeHtml(we.weekShort)}:</span> ${escapeHtml(we.text)}</div>`).join('')}
              </div>`
           : '';
         const monthNoteRefHtml = (cmt && cmt.monthNote)
           ? `<div class="mt-1 text-[11px] text-slate-500 italic">Month note (${escapeHtml(getWeekOwningMonth(periodKey))}): ${escapeHtml(cmt.monthNote)}</div>`
           : '';
+        const rightControlsHtml = isAdminPair
+          ? `<div class="flex items-center gap-1.5 shrink-0">
+               <span class="px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-bold uppercase">Admin &middot; Non-FTE</span>
+               <button type="button" onclick="openAllocationModal('${deptId}', '${projId}', '${periodKey}')"
+                 class="px-2.5 py-1.5 sm:px-2 sm:py-0.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-indigo-700 text-[11px] font-semibold transition">Edit</button>
+             </div>`
+          : `<div class="flex items-center gap-1.5 shrink-0">
+               <div class="inline-flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
+                 <button type="button" aria-label="Decrease ${escapeHtml(item.name)} allocation" onclick="stepAllocationInCellModal('${rowId}', '${deptId}', '${projId}', '${periodKey}', -1)" title="Decrease allocation"
+                   class="px-2.5 py-1.5 sm:px-2 sm:py-0.5 hover:bg-rose-50 hover:text-rose-700 text-slate-700 font-bold transition">&minus;</button>
+                 <span class="text-xs font-bold text-slate-800 tabular-nums px-2 border-x border-slate-200">${valStr}</span>
+                 <button type="button" aria-label="Increase ${escapeHtml(item.name)} allocation" onclick="stepAllocationInCellModal('${rowId}', '${deptId}', '${projId}', '${periodKey}', 1)" title="Increase allocation"
+                   class="px-2.5 py-1.5 sm:px-2 sm:py-0.5 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-bold transition">+</button>
+               </div>
+               <button type="button" onclick="openAllocationModal('${deptId}', '${projId}', '${periodKey}')"
+                 class="px-2.5 py-1.5 sm:px-2 sm:py-0.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-indigo-700 text-[11px] font-semibold transition">Edit</button>
+             </div>`;
+        const placeholderTxt = isAdminPair
+          ? `Log expected departmental issues or requested meetings for ${escapeHtml(hdr.title)}...`
+          : `Add a few lines of comments for [${escapeHtml(item.code)}] in ${escapeHtml(hdr.title)}...`;
 
         return `
           <div class="accent-card p-3 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2" style="--accent-color:${item.color}; --accent-w:4px; border-left: 4px solid ${item.color};">
@@ -13525,22 +13950,12 @@ img, video { max-width: 100%; height: auto; }
                 <span class="font-mono font-bold text-[11px] px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700 shrink-0">${escapeHtml(item.code)}</span>
                 <span class="font-bold text-xs text-slate-900 truncate">${escapeHtml(item.name)}</span>
               </div>
-              <div class="flex items-center gap-1.5 shrink-0">
-                <div class="inline-flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden">
-                  <button type="button" aria-label="Decrease ${escapeHtml(item.name)} allocation" onclick="stepAllocationInCellModal('${rowId}', '${deptId}', '${projId}', '${periodKey}', -1)" title="Decrease allocation"
-                    class="px-2.5 py-1.5 sm:px-2 sm:py-0.5 hover:bg-rose-50 hover:text-rose-700 text-slate-700 font-bold transition">&minus;</button>
-                  <span class="text-xs font-bold text-slate-800 tabular-nums px-2 border-x border-slate-200">${valStr}</span>
-                  <button type="button" aria-label="Increase ${escapeHtml(item.name)} allocation" onclick="stepAllocationInCellModal('${rowId}', '${deptId}', '${projId}', '${periodKey}', 1)" title="Increase allocation"
-                    class="px-2.5 py-1.5 sm:px-2 sm:py-0.5 hover:bg-emerald-50 hover:text-emerald-700 text-slate-700 font-bold transition">+</button>
-                </div>
-                <button type="button" onclick="openAllocationModal('${deptId}', '${projId}', '${periodKey}')"
-                  class="px-2.5 py-1.5 sm:px-2 sm:py-0.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-300 text-indigo-700 text-[11px] font-semibold transition">Edit</button>
-              </div>
+              ${rightControlsHtml}
             </div>
             <textarea rows="3"
               aria-label="Comments for ${escapeHtml(item.name)} in ${escapeHtml(hdr.title)}"
               data-comment-dept="${deptId}" data-comment-proj="${projId}"
-              placeholder="Add a few lines of comments for [${escapeHtml(item.code)}] in ${escapeHtml(hdr.title)}..."
+              placeholder="${placeholderTxt}"
               class="cell-comment-input w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/30">${escapeHtml(cmt ? cmt.direct : '')}</textarea>
             ${weekNotesHtml}
             ${monthNoteRefHtml}
@@ -13584,7 +13999,7 @@ img, video { max-width: 100%; height: auto; }
 
           <div class="flex flex-wrap items-center gap-2 pb-2 border-b border-slate-100">
             <button type="button" onclick="openAllocationModal('${isDeptAxis ? rowId : ''}', '${isDeptAxis ? '' : rowId}', '${periodKey}')"
-              class="px-3 py-2 sm:py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-semibold transition">+ Allocate Manpower</button>
+              class="px-3 py-2 sm:py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-semibold transition">${!isDeptAxis && isNonFteProject(primaryRow) ? '+ Add Issue / Meeting Note' : '+ Allocate Manpower'}</button>
             ${isDeptAxis ? `<button type="button" onclick="openCapacityModal('${rowId}', '${periodKey}')" class="px-3 py-2 sm:py-1.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 font-semibold transition">Variable Capacity</button>` : ''}
             ${isOverallocatedSlot ? `<button type="button" onclick="openBottleneckResolverModal('${rowId}', '${periodKey}')" class="px-3 py-2 sm:py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold transition">&#9888; Fix Overallocation</button>` : ''}
             <button type="button" onclick="openMilestoneModal('', '${isDeptAxis ? '' : rowId}', '${getPeriodMidDateISO(periodKey, ui.timeUnit)}', '${isDeptAxis ? rowId : ''}')"
@@ -13741,12 +14156,14 @@ img, video { max-width: 100%; height: auto; }
         ? Math.round(fteToDisplayValue(existing.avgFte, selPeriod, ui.timeUnit) * 100) / 100
         : '';
       const existingComment = (db.comments && db.comments[getCommentKey(selDept, selProj, selPeriod)]) || '';
+      const selProjObj = db.projects.find(p => p.id === selProj);
+      const initIsAdmin = isNonFteProject(selProjObj);
 
       showModal(`
         <div class="p-5 space-y-4 text-xs">
           <div class="w-10 h-1.5 rounded-full bg-slate-300 mx-auto sm:hidden" aria-hidden="true"></div>
           <div class="flex items-center justify-between">
-            <h3 id="modalTitle" class="text-base font-bold text-slate-900">Allocate Manpower</h3>
+            <h3 id="modalTitle" class="text-base font-bold text-slate-900">${initIsAdmin ? 'Admin — Issues &amp; Meetings' : 'Allocate Manpower'}</h3>
             <button type="button" aria-label="Close dialog" onclick="closeModal()" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xl font-bold leading-none">&times;</button>
           </div>
 
@@ -13772,10 +14189,10 @@ img, video { max-width: 100%; height: auto; }
             <div>
               <label for="mAllocPeriod" class="block font-semibold text-slate-700 mb-1">${ui.timeUnit === 'month' ? 'Month' : 'ISO Week'}</label>
               <select id="mAllocPeriod" onchange="onAllocModalContextChange()" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium">
-                ${modalPeriods.map(pk => `<option value="${pk}" ${pk === selPeriod ? 'selected' : ''}>${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).title)} (${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).sub)})</option>`).join('')}
+                ${modalPeriods.map(pk => `<option value="${pk}" ${pk === selPeriod ? 'selected' : ''}>${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).title)} (${escapeHtml(formatPeriodHeader(pk, ui.timeUnit).dateRange || formatPeriodHeader(pk, ui.timeUnit).sub)})</option>`).join('')}
               </select>
             </div>
-            <div>
+            <div id="mAllocFteFieldWrap" class="${initIsAdmin ? 'hidden' : ''}">
               <label for="mAllocValue" class="block font-semibold text-slate-700 mb-1">Allocation (${unitShortLabel()})</label>
               <div class="flex items-center gap-1.5">
                 <button type="button" aria-label="Decrease allocation" onclick="stepAllocModalValue(-1)" title="Decrease allocation"
@@ -13786,11 +14203,17 @@ img, video { max-width: 100%; height: auto; }
                   class="w-10 h-10 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-base transition shrink-0">+</button>
               </div>
             </div>
+            <div id="mAllocAdminBadgeWrap" class="${initIsAdmin ? 'flex' : 'hidden'} flex-col justify-end">
+              <div class="px-3 py-2.5 sm:py-2 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 font-semibold text-[11px] leading-snug">
+                <span class="font-extrabold text-sky-700 uppercase text-[10px]">Admin &middot; Non-FTE</span>
+                <div class="mt-0.5">No FTE required &mdash; zero impact on utilisation or cost.</div>
+              </div>
+            </div>
           </div>
 
           <div>
-            <label for="mAllocComment" class="block font-semibold text-slate-700 mb-1">Cell Comments / Notes (optional, shown inside cell)</label>
-            <textarea id="mAllocComment" rows="2" placeholder="Add context, blockers, or key deliverables for this period..."
+            <label id="mAllocCommentLabel" for="mAllocComment" class="block font-semibold text-slate-700 mb-1">${initIsAdmin ? 'Expected Departmental Issues &amp; Requested Meetings (shown inside cell)' : 'Cell Comments / Notes (optional, shown inside cell)'}</label>
+            <textarea id="mAllocComment" rows="${initIsAdmin ? '3' : '2'}" placeholder="${initIsAdmin ? 'List expected departmental issues, risks, or requested meetings for this period...' : 'Add context, blockers, or key deliverables for this period...'}"
               class="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs leading-relaxed">${escapeHtml(existingComment)}</textarea>
           </div>
 
@@ -13814,10 +14237,10 @@ img, video { max-width: 100%; height: auto; }
           <div id="mAllocConversionPreview" class="p-3 rounded-xl bg-indigo-50/70 border border-indigo-200 text-indigo-950 space-y-1"></div>
 
           <div class="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-            <button type="button" onclick="deleteAllocationFromModal()" class="px-3 py-2.5 sm:py-2 rounded-xl text-rose-600 hover:bg-rose-50 font-semibold transition">Remove</button>
+            <button id="mAllocDeleteBtn" type="button" onclick="deleteAllocationFromModal()" class="px-3 py-2.5 sm:py-2 rounded-xl text-rose-600 hover:bg-rose-50 font-semibold transition">${initIsAdmin ? 'Remove Note' : 'Remove'}</button>
             <div class="flex items-center gap-2">
               <button type="button" onclick="closeModal()" class="px-3.5 py-2.5 sm:py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold transition">Cancel</button>
-              <button type="button" onclick="saveAllocationModal()" class="px-4 py-2.5 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition">Save</button>
+              <button id="mAllocSaveBtn" type="button" onclick="saveAllocationModal()" class="px-4 py-2.5 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold transition">${initIsAdmin ? 'Save Admin Note' : 'Save'}</button>
             </div>
           </div>
         </div>`);
@@ -13895,14 +14318,44 @@ img, video { max-width: 100%; height: auto; }
       const codeBadge = document.getElementById('mAllocProjCodeBadge');
 
       const proj = db.projects.find(p => p.id === projId);
+      const isAdminProj = isNonFteProject(proj);
+
+      const titleEl = document.getElementById('modalTitle');
+      const fteWrap = document.getElementById('mAllocFteFieldWrap');
+      const adminWrap = document.getElementById('mAllocAdminBadgeWrap');
+      const cmtLbl = document.getElementById('mAllocCommentLabel');
+      const cmtEl = document.getElementById('mAllocComment');
+      const delBtn = document.getElementById('mAllocDeleteBtn');
+      const saveBtn = document.getElementById('mAllocSaveBtn');
+      if (titleEl) titleEl.textContent = isAdminProj ? 'Admin — Issues & Meetings' : 'Allocate Manpower';
+      if (fteWrap) fteWrap.classList.toggle('hidden', isAdminProj);
+      if (adminWrap) {
+        adminWrap.classList.toggle('hidden', !isAdminProj);
+        adminWrap.classList.toggle('flex', isAdminProj);
+      }
+      if (cmtLbl) cmtLbl.textContent = isAdminProj ? 'Expected Departmental Issues & Requested Meetings (shown inside cell)' : 'Cell Comments / Notes (optional, shown inside cell)';
+      if (cmtEl) cmtEl.placeholder = isAdminProj ? 'List expected departmental issues, risks, or requested meetings for this period...' : 'Add context, blockers, or key deliverables for this period...';
+      if (delBtn) delBtn.textContent = isAdminProj ? 'Remove Note' : 'Remove';
+      if (saveBtn) saveBtn.textContent = isAdminProj ? 'Save Admin Note' : 'Save';
+
       if (codeBadge && proj) {
-        codeBadge.textContent = `Code: ${proj.code}`;
+        codeBadge.textContent = isAdminProj ? `Admin: ${proj.code}` : `Code: ${proj.code}`;
         codeBadge.classList.add('accent-card');
         codeBadge.style.setProperty('--accent-color', proj.color);
         codeBadge.style.setProperty('--accent-w', '3px');
         codeBadge.style.borderLeft = `3px solid ${proj.color}`;
       }
       if (!box || !pk) return;
+
+      if (isAdminProj) {
+        box.innerHTML = `
+          <div class="flex flex-wrap items-center justify-between gap-2 font-semibold">
+            <span>Admin (Non-FTE) Entry${proj ? ` (${escapeHtml(proj.code)})` : ''}:</span>
+            <span class="font-mono text-sky-700">0 FTE &bull; Notes Only</span>
+          </div>
+          <div class="text-[11px] text-indigo-800/80">Appears directly in this department&rsquo;s cell(s) without affecting FTE utilisation %, bottlenecks, or project cost burn.</div>`;
+        return;
+      }
 
       const fte = isNaN(rawVal) ? 0 : displayValueToFte(rawVal, pk, ui.timeUnit, ui.manpowerUnit);
       const days = fteToDisplayValue(fte, pk, ui.timeUnit, 'days');
@@ -13927,13 +14380,36 @@ img, video { max-width: 100%; height: auto; }
       const commentTxt = document.getElementById('mAllocComment')?.value || '';
       const repeat = Math.max(1, Math.min(24, parseInt(document.getElementById('mAllocRepeat').value, 10) || 1));
 
+      const proj = db.projects.find(p => p.id === projId);
+      const dCode = db.departments.find(d => d.id === deptId)?.code || deptId;
+      const pCode = proj?.code || projId;
+
+      if (isNonFteProject(proj)) {
+        const cleanNote = commentTxt.trim();
+        if (!cleanNote) {
+          showToast('Enter departmental issues or requested meetings, or click Remove Note.', 'warning');
+          return;
+        }
+        pushUndoState(`Update Admin note [${dCode} -> ${pCode}]`);
+        let curPk = startPk;
+        for (let i = 0; i < repeat; i++) {
+          setAllocationForPeriod(deptId, projId, curPk, ui.timeUnit, 0, db);
+          setCellProjectComment(deptId, projId, curPk, cleanNote, db);
+          curPk = ui.timeUnit === 'month' ? addMonthsToMonthKey(curPk, 1) : addWeeksToWeekKey(curPk, 1);
+        }
+        recordChange('Comment', `Updated Admin (Non-FTE) note [${dCode} -> ${pCode}] in ${startPk}${repeat > 1 ? ` (+${repeat - 1} more)` : ''}`);
+        triggerHaptic(10);
+        closeModal();
+        renderAll();
+        showToast('Admin note saved', 'success', { undoable: true });
+        return;
+      }
+
       if (isNaN(rawVal) || rawVal < 0) {
         showToast('Enter a valid non-negative allocation number.', 'warning');
         return;
       }
 
-      const dCode = db.departments.find(d => d.id === deptId)?.code || deptId;
-      const pCode = db.projects.find(p => p.id === projId)?.code || projId;
       pushUndoState(`Set [${dCode} -> ${pCode}]`);
 
       let curPk = startPk;
@@ -13957,10 +14433,20 @@ img, video { max-width: 100%; height: auto; }
       const deptId = document.getElementById('mAllocDept').value;
       const projId = document.getElementById('mAllocProj').value;
       const pk = document.getElementById('mAllocPeriod').value;
+      const proj = db.projects.find(p => p.id === projId);
       const dCode = db.departments.find(d => d.id === deptId)?.code || deptId;
-      const pCode = db.projects.find(p => p.id === projId)?.code || projId;
+      const pCode = proj?.code || projId;
       pushUndoState(`Remove [${dCode} -> ${pCode}]`);
       setAllocationForPeriod(deptId, projId, pk, ui.timeUnit, 0, db);
+      if (isNonFteProject(proj)) {
+        setCellProjectComment(deptId, projId, pk, '', db);
+        recordChange('Comment', `Removed Admin (Non-FTE) note [${dCode} -> ${pCode}] in ${pk}`);
+        triggerHaptic(10);
+        closeModal();
+        renderAll();
+        showToast('Admin note removed', 'info', { undoable: true });
+        return;
+      }
       recordChange('Allocation', `Removed [${dCode} -> ${pCode}] allocation in ${pk}`);
       triggerHaptic(10);
       closeModal();
@@ -14338,10 +14824,21 @@ img, video { max-width: 100%; height: auto; }
 
     /* ---------- Project Modal & Cleanup ---------- */
 
+    function syncProjectModalCategory() {
+      const cat = document.getElementById('mProjCategory')?.value || 'standard';
+      const isAdmin = cat === 'admin';
+      const budRow = document.getElementById('mProjBudgetRow');
+      const admInfo = document.getElementById('mProjAdminInfo');
+      if (budRow) budRow.classList.toggle('hidden', isAdmin);
+      if (admInfo) admInfo.classList.toggle('hidden', !isAdmin);
+    }
+
     function openProjectModal(projId = '') {
       const db = getActiveDB();
       const p = db.projects.find(x => x.id === projId);
       const color = p ? p.color : PALETTE[(db.projects.length + 2) % PALETTE.length];
+      const curCategory = isNonFteProject(p) ? 'admin' : (p?.tentative ? 'tentative' : 'standard');
+      const isAdmin = curCategory === 'admin';
 
       showModal(`
         <div class="p-5 space-y-4 text-xs">
@@ -14354,14 +14851,22 @@ img, video { max-width: 100%; height: auto; }
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div class="sm:col-span-2">
               <label for="mProjName" class="block font-semibold text-slate-700 mb-1">Project Name</label>
-              <input id="mProjName" type="text" value="${escapeHtml(p?.name || '')}" placeholder="e.g. Project Nova" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
+              <input id="mProjName" type="text" value="${escapeHtml(p?.name || '')}" placeholder="e.g. Project Nova or Dept Admin / Meetings" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
             </div>
             <div>
               <label for="mProjCode" class="block font-semibold text-slate-700 mb-1">Project Code</label>
               <input id="mProjCode" type="text" maxlength="8" value="${escapeHtml(p?.code || '')}" placeholder="NVA" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-mono uppercase font-bold" />
             </div>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label for="mProjCategory" class="block font-semibold text-slate-700 mb-1">Category</label>
+              <select id="mProjCategory" onchange="syncProjectModalCategory()" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold">
+                <option value="standard" ${curCategory === 'standard' ? 'selected' : ''}>Committed (FTE)</option>
+                <option value="tentative" ${curCategory === 'tentative' ? 'selected' : ''}>Pipeline / Tentative</option>
+                <option value="admin" ${curCategory === 'admin' ? 'selected' : ''}>Admin (Non-FTE)</option>
+              </select>
+            </div>
             <div>
               <label for="mProjStatus" class="block font-semibold text-slate-700 mb-1">Status</label>
               <select id="mProjStatus" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-medium">
@@ -14375,6 +14880,9 @@ img, video { max-width: 100%; height: auto; }
               </select>
             </div>
           </div>
+          <div id="mProjAdminInfo" class="${isAdmin ? '' : 'hidden'} p-3 rounded-xl bg-sky-50 border border-sky-200 text-sky-900 text-[11px] leading-relaxed">
+            <strong>Admin (Non-FTE) Category:</strong> Requires no FTE input and never affects department utilisation %, bottlenecks, or cost burn. Ideal for logging expected departmental issues, risks, and requested meetings inside each period.
+          </div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div class="sm:col-span-2">
               <label for="mProjOwner" class="block font-semibold text-slate-700 mb-1">Project Owner</label>
@@ -14385,7 +14893,7 @@ img, video { max-width: 100%; height: auto; }
               <input id="mProjColor" type="color" value="${color}" class="w-full h-10 rounded-xl border border-slate-200 cursor-pointer" />
             </div>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div id="mProjBudgetRow" class="${isAdmin ? 'hidden' : ''} grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label for="mProjBudget" class="block font-semibold text-slate-700 mb-1">Effort Budget (Person-Days, optional)</label>
               <input id="mProjBudget" type="number" inputmode="decimal" min="0" step="5" value="${Number(p?.budgetDays) > 0 ? p.budgetDays : ''}" placeholder="e.g. 120" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
@@ -14395,16 +14903,10 @@ img, video { max-width: 100%; height: auto; }
               <input id="mProjBudgetCost" type="number" inputmode="decimal" min="0" step="1000" value="${Number(p?.budgetCost) > 0 ? p.budgetCost : ''}" placeholder="e.g. 150000" class="w-full px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 font-semibold" />
             </div>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <label class="inline-flex items-center gap-2 px-3 py-2.5 sm:py-2 rounded-xl border border-violet-200 bg-violet-50/70 cursor-pointer select-none">
-              <input id="mProjTentative" type="checkbox" ${p?.tentative ? 'checked' : ''} class="rounded text-indigo-600" />
-              <span class="font-semibold text-violet-900">Tentative / Pipeline (uncommitted)</span>
-            </label>
-            <label class="inline-flex items-center gap-2 px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer select-none">
-              <input id="mProjArchived" type="checkbox" ${p?.archived ? 'checked' : ''} class="rounded text-indigo-600" />
-              <span class="font-semibold text-slate-700">Archive (hide from active Roadmap)</span>
-            </label>
-          </div>
+          <label class="inline-flex items-center gap-2 px-3 py-2.5 sm:py-2 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer select-none w-full">
+            <input id="mProjArchived" type="checkbox" ${p?.archived ? 'checked' : ''} class="rounded text-indigo-600" />
+            <span class="font-semibold text-slate-700">Archive (hide from active Roadmap)</span>
+          </label>
           <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
             <button type="button" onclick="closeModal()" class="px-4 py-2.5 sm:py-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold">Cancel</button>
             <button type="button" onclick="saveProjectModal()" class="px-4 py-2.5 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">Save Project</button>
@@ -14417,13 +14919,16 @@ img, video { max-width: 100%; height: auto; }
       const id = document.getElementById('mProjId').value;
       const name = document.getElementById('mProjName').value.trim();
       const code = (document.getElementById('mProjCode').value.trim() || name.slice(0, 3)).toUpperCase();
+      const categoryVal = document.getElementById('mProjCategory')?.value || 'standard';
+      const nonFte = categoryVal === 'admin';
+      const tentative = categoryVal === 'tentative';
+      const category = nonFte ? 'admin' : (tentative ? 'tentative' : 'standard');
       const status = document.getElementById('mProjStatus').value;
       const priority = document.getElementById('mProjPriority').value;
       const owner = document.getElementById('mProjOwner').value.trim();
       const color = document.getElementById('mProjColor').value || '#4f46e5';
-      const budgetDays = Math.max(0, parseFloat(document.getElementById('mProjBudget')?.value) || 0);
-      const budgetCost = Math.max(0, parseFloat(document.getElementById('mProjBudgetCost')?.value) || 0);
-      const tentative = Boolean(document.getElementById('mProjTentative')?.checked);
+      const budgetDays = nonFte ? 0 : Math.max(0, parseFloat(document.getElementById('mProjBudget')?.value) || 0);
+      const budgetCost = nonFte ? 0 : Math.max(0, parseFloat(document.getElementById('mProjBudgetCost')?.value) || 0);
       const archived = Boolean(document.getElementById('mProjArchived')?.checked);
 
       if (!name) { showToast('Project name is required.', 'warning'); return; }
@@ -14431,15 +14936,18 @@ img, video { max-width: 100%; height: auto; }
       pushUndoState(`${id ? 'Update' : 'Add'} project [${code}]`);
       if (id) {
         const p = db.projects.find(x => x.id === id);
-        if (p) Object.assign(p, { name, code, status, priority, owner, color, budgetDays, budgetCost, tentative, archived });
+        if (p) Object.assign(p, { name, code, status, priority, owner, color, budgetDays, budgetCost, tentative, nonFte, category, archived });
+        if (nonFte) {
+          Object.keys(db.allocations || {}).forEach(k => { if (k.split('::')[1] === id) delete db.allocations[k]; });
+        }
         db.projects = getSortedProjects(db);
         if (archived && ui.filterProj === id) ui.filterProj = 'all';
         if (archived && ui.spotlightProjId === id) ui.spotlightProjId = '';
-        recordChange('Project', `Updated project [${code}] ${name} (${status}${tentative ? ', pipeline' : ''}${budgetDays > 0 ? `, budget ${budgetDays}d` : ''}${archived ? ', archived' : ''})`);
+        recordChange('Project', `Updated project [${code}] ${name} (${status}${nonFte ? ', Admin Non-FTE' : tentative ? ', pipeline' : ''}${budgetDays > 0 ? `, budget ${budgetDays}d` : ''}${archived ? ', archived' : ''})`);
       } else {
-        db.projects.push({ id: uid('p'), name, code, status, priority, owner, color, budgetDays, budgetCost, tentative, archived });
+        db.projects.push({ id: uid('p'), name, code, status, priority, owner, color, budgetDays, budgetCost, tentative, nonFte, category, archived });
         db.projects = getSortedProjects(db);
-        recordChange('Project', `Added project [${code}] ${name}${tentative ? ' (pipeline)' : ''}${budgetDays > 0 ? ` (budget ${budgetDays}d)` : ''}`);
+        recordChange('Project', `Added project [${code}] ${name}${nonFte ? ' (Admin Non-FTE)' : tentative ? ' (pipeline)' : ''}${budgetDays > 0 ? ` (budget ${budgetDays}d)` : ''}`);
       }
       closeModal();
       renderAll();
@@ -15849,7 +16357,7 @@ img, video { max-width: 100%; height: auto; }
               <div class="font-bold text-slate-900">Clean Meeting-Ready Canvas with Full Editing Power</div>
               <ul class="space-y-1 text-slate-600 leading-relaxed">
                 <li>&bull; <strong>Grouping, Timeline &amp; Sorting:</strong> Switch rows between <strong>By Dept</strong> (capacity vs. load), <strong>By Project</strong> (effort across teams, sorted naturally by code, with <strong>&#9888; Over</strong> badges), and <strong>Timeline</strong> (Executive Gantt bars with effort intensity &amp; milestone diamonds).</li>
-                <li>&bull; <strong>Committed vs. Tentative Pipeline:</strong> Mark uncommitted proposals as <strong>Tentative / Pipeline</strong> in Project Setup (hatched/dashed cards + stacked bars in Health). Toggle <strong>Pipeline: ON / Committed Only</strong> in Filters to see capacity with or without pipeline load.</li>
+                <li>&bull; <strong>Committed, Pipeline &amp; Admin (Non-FTE) Projects:</strong> Tag projects in Setup as <strong>Committed (FTE)</strong>, <strong>Pipeline / Tentative</strong> (hatched cards, toggleable in Filters), or <strong>Admin (Non-FTE)</strong> for logging expected departmental issues and requested meetings with zero FTE impact on utilisation %, bottlenecks, or cost burn.</li>
                 <li>&bull; <strong>Time Scale, Standard vs. Overview &amp; Interval Jump:</strong> Switch between <strong>Months</strong> and <strong>Weeks</strong>. Standard View supports <strong>1&ndash;6</strong> fully editable columns; <strong>12, 18, and 24</strong> switch automatically to a compact <strong>Simplified Overview</strong> so full 1&ndash;2 year horizons fit cleanly on laptops and 4K displays. Step by 1 period with <strong>&lsaquo; / &rsaquo;</strong> (<code class="px-1 rounded bg-white font-mono">&larr;/&rarr;</code>) or jump by the full selected interval with <strong>&laquo; / &raquo;</strong> (<code class="px-1 rounded bg-white font-mono">Shift+&larr;/&rarr;</code>).</li>
                 <li>&bull; <strong>Row Labels &amp; Note Size:</strong> Inside <strong>Filters &amp; Display</strong>, toggle <strong>Row Labels</strong> between <strong>Vertical</strong> (compact 62 px spine maximizing card space) and <strong>Detailed</strong> (248 px panel showing manager/owner, priority, peak load, active teams/projects, budget progress bars, cost burn, next milestone, and row reordering), and adjust <strong>Notes</strong> size (<strong>Norm / Large / XL</strong>).</li>
                 <li>&bull; <strong>Sticky Column Headers:</strong> While scrolling down, only the Week/Month column headers (with date ranges and <strong>&lsaquo; / Today / &rsaquo;</strong> controls) stay pinned at the top of the screen.</li>
@@ -17487,13 +17995,19 @@ img, video { max-width: 100%; height: auto; }
       });
 
       const notes = [];
+      const adminNotes = [];
       periods.forEach(pk => {
         const pTitle = formatPeriodHeader(pk, ui.timeUnit).title;
         visibleDepts.forEach(d => {
           visibleProjs.forEach(p => {
-            if (notes.length >= 8) return;
             const c = getCellProjectComments(d.id, p.id, pk, ui.timeUnit, db);
-            if (c.direct) notes.push(`- ${pTitle} | ${d.code} -> [${p.code}]: ${c.direct.replace(/\s+/g, ' ').slice(0, 140)}`);
+            if (!c.direct) return;
+            const line = `- ${pTitle} | ${d.code} -> [${p.code}]: ${c.direct.replace(/\s+/g, ' ').slice(0, 140)}`;
+            if (isNonFteProject(p)) {
+              if (adminNotes.length < 12) adminNotes.push(line);
+            } else if (notes.length < 8) {
+              notes.push(line);
+            }
           });
         });
       });
@@ -17522,6 +18036,12 @@ img, video { max-width: 100%; height: auto; }
         lines.push('');
         lines.push('BUDGET WATCHLIST:');
         lines.push(...budgetWarnings);
+      }
+
+      if (adminNotes.length > 0) {
+        lines.push('');
+        lines.push('ADMIN — DEPT ISSUES & REQUESTED MEETINGS:');
+        lines.push(...adminNotes);
       }
 
       if (notes.length > 0) {

@@ -1388,6 +1388,251 @@ test('Per-dept Start/End capacity overrides with dates, unified Roadmap Cap moda
   }
 });
 
+test('Sync write queue, self-write lastWriteId cloud drift absorption, and 3-way buffered auto-merge vs true collision', async () => {
+  const prevGetById = sandbox.document.getElementById;
+  const elMap = new Map();
+  sandbox.document.getElementById = (id) => {
+    if (!elMap.has(id)) {
+      const classes = new Set(['hidden']);
+      const el = makeStubEl();
+      el.id = id;
+      el.options = [];
+      el.dataset = {};
+      el.classList = {
+        add: (...c) => c.forEach(x => classes.add(x)),
+        remove: (...c) => c.forEach(x => classes.delete(x)),
+        toggle: (x, f) => { if (f === undefined) { if (classes.has(x)) classes.delete(x); else classes.add(x); } else if (f) classes.add(x); else classes.delete(x); },
+        contains: (x) => classes.has(x),
+      };
+      elMap.set(id, el);
+    }
+    return elMap.get(id);
+  };
+  try {
+    const out = await vm.runInContext(`(async () => {
+      liveDB = createSampleDemoDB();
+      liveDB.allocations = { 'd_eng::p_nova::2026-W48': 2.0, 'd_des::p_atlas::2026-W48': 1.0 };
+      ui.demoMode = false;
+      ui.whatIfMode = false;
+      ui.userName = 'MFO';
+      ui.autoSaveToFile = true;
+      ui.autoReloadFromFile = true;
+
+      let diskJson = JSON.stringify(liveDB);
+      let diskMtime = 10000;
+      let writeCount = 0;
+
+      linkedFileHandle = {
+        name: 'pulseplan_company_roadmap.json',
+        getFile: async () => ({
+          name: 'pulseplan_company_roadmap.json',
+          lastModified: diskMtime,
+          size: diskJson.length,
+          text: async () => diskJson,
+        }),
+        createWritable: async () => ({
+          write: async (txt) => { diskJson = String(txt); },
+          close: async () => { writeCount++; diskMtime += 1000; },
+        }),
+      };
+
+      // Initial write establishes lastWrittenId & lastSyncedSnapshot
+      lastKnownFileModified = diskMtime;
+      lastSyncedSnapshot = cloneSyncSnapshot(liveDB);
+      await writeDBToLinkedFile();
+      const firstWriteId = lastWrittenId;
+      const writesAfterInit = writeCount;
+
+      // 1. Simulate Google Drive / OneDrive bumping mtime +3000ms after uploading our OWN save
+      diskMtime += 3000;
+      await checkExternalFileUpdates();
+      const bannerHiddenAfterSelfDrift = document.getElementById('externalUpdateBanner').classList.contains('hidden');
+      const mtimeAbsorbedByPoll = lastKnownFileModified === diskMtime;
+
+      // Another cloud drift + quick local edit -> zero conflict, saves cleanly!
+      diskMtime += 2500;
+      liveDB.allocations['d_eng::p_nova::2026-W48'] = 2.5;
+      await writeDBToLinkedFile();
+      const conflictAfterSelfDrift = !document.getElementById('modalOverlay').classList.contains('hidden');
+      const parsedAfterSelfEdit = JSON.parse(diskJson);
+
+      // 2. Simulate concurrent edit on DIFFERENT cell by another device/tab (d_des::p_atlas) while local edits d_eng::p_nova
+      const extObj = JSON.parse(diskJson);
+      extObj.meta.revision = (extObj.meta.revision || 1) + 1;
+      extObj.meta.lastWriteId = 'w_other_device_1';
+      extObj.meta.lastModifiedBy = 'Alice';
+      extObj.allocations['d_des::p_atlas::2026-W48'] = 1.75;
+      diskJson = JSON.stringify(extObj);
+      diskMtime += 4000;
+
+      liveDB.allocations['d_eng::p_nova::2026-W48'] = 3.0;
+      await writeDBToLinkedFile();
+      const conflictAfterDisjoint = !document.getElementById('modalOverlay').classList.contains('hidden');
+      const mergedOnDisk = JSON.parse(diskJson);
+
+      // 3. Simulate TRUE collision on the SAME cell (d_eng::p_nova::2026-W48)
+      const colObj = JSON.parse(diskJson);
+      colObj.meta.revision = (colObj.meta.revision || 1) + 1;
+      colObj.meta.lastWriteId = 'w_other_device_2';
+      colObj.meta.lastModifiedBy = 'MFO';
+      colObj.allocations['d_eng::p_nova::2026-W48'] = 4.0;
+      diskJson = JSON.stringify(colObj);
+      diskMtime += 4000;
+
+      liveDB.allocations['d_eng::p_nova::2026-W48'] = 0.75;
+      await writeDBToLinkedFile();
+      const conflictOpenedOnCollision = !document.getElementById('modalOverlay').classList.contains('hidden');
+      const conflictModalHtml = document.getElementById('modalCard').innerHTML;
+
+      // Clean up global sync handles
+      closeModal();
+      linkedFileHandle = null;
+      lastKnownFileModified = 0;
+      lastWrittenId = '';
+      lastSyncedSnapshot = null;
+      saveQueued = false;
+
+      return {
+        firstWriteId, writesAfterInit, bannerHiddenAfterSelfDrift, mtimeAbsorbedByPoll,
+        conflictAfterSelfDrift,
+        selfEditVal: parsedAfterSelfEdit.allocations['d_eng::p_nova::2026-W48'],
+        conflictAfterDisjoint,
+        mergedLocalVal: mergedOnDisk.allocations['d_eng::p_nova::2026-W48'],
+        mergedDiskVal: mergedOnDisk.allocations['d_des::p_atlas::2026-W48'],
+        conflictOpenedOnCollision, conflictModalHtml,
+      };
+    })()`, ctx);
+
+    assert.ok(out.firstWriteId && out.firstWriteId.startsWith('w_'), 'Write stamps unique meta.lastWriteId');
+    assert.equal(out.bannerHiddenAfterSelfDrift, true, 'Poll does not show reload banner on cloud timestamp drift for own writeId');
+    assert.equal(out.mtimeAbsorbedByPoll, true, 'Poll absorbs cloud mtime drift cleanly');
+    assert.equal(out.conflictAfterSelfDrift, false, 'Pre-write guard does not conflict with own cloud-drifted save');
+    assert.equal(out.selfEditVal, 2.5, 'Local edit saves cleanly after absorbing self-write drift');
+    assert.equal(out.conflictAfterDisjoint, false, 'Disjoint edits auto-merge via 3-way buffer with zero conflict modal');
+    assert.equal(out.mergedLocalVal, 3.0, '3-way auto-merge preserves buffered local edit');
+    assert.equal(out.mergedDiskVal, 1.75, '3-way auto-merge preserves external disk edit');
+    assert.equal(out.conflictOpenedOnCollision, true, 'True same-cell collision pauses save and opens Sync Conflict modal');
+    assert.ok(out.conflictModalHtml.includes('Another tab or device signed in with your name'), 'Same-user collision copy clearly indicates another tab/device');
+  } finally {
+    sandbox.document.getElementById = prevGetById;
+  }
+});
+
+test('Admin (Non-FTE) project category logs issues & meetings across periods with zero FTE impact', () => {
+  const prevGetById = sandbox.document.getElementById;
+  const elMap = new Map();
+  sandbox.document.getElementById = (id) => {
+    if (!elMap.has(id)) {
+      const classes = new Set(['hidden']);
+      const el = makeStubEl();
+      el.id = id;
+      el.clientWidth = 1440;
+      el.options = [];
+      el.dataset = {};
+      el.classList = {
+        add: (...c) => c.forEach(x => classes.add(x)),
+        remove: (...c) => c.forEach(x => classes.delete(x)),
+        toggle: (x, f) => { if (f === undefined) { if (classes.has(x)) classes.delete(x); else classes.add(x); } else if (f) classes.add(x); else classes.delete(x); },
+        contains: (x) => classes.has(x),
+      };
+      elMap.set(id, el);
+    }
+    return elMap.get(id);
+  };
+  try {
+    const out = vm.runInContext(`(() => {
+      liveDB = createSampleDemoDB();
+      ui.demoMode = false;
+      ui.whatIfMode = false;
+      ui.timeUnit = 'week';
+      ui.startWeek = '2026-W48';
+      ui.horizon = 4;
+      ui.filterDept = 'all';
+      ui.filterProj = 'all';
+      ui.matrixSearch = '';
+      ui.compactRowLabels = false;
+      ui.cellColorMode = 'fte3';
+      window.innerWidth = 1440;
+
+      // 1. Create an Admin (Non-FTE) project via Project Modal
+      openProjectModal('');
+      const projModalHtml = document.getElementById('modalCard').innerHTML;
+      document.getElementById('mProjId').value = '';
+      document.getElementById('mProjName').value = 'Dept Issues & Meetings';
+      document.getElementById('mProjCode').value = 'ADM';
+      document.getElementById('mProjCategory').value = 'admin';
+      document.getElementById('mProjStatus').value = 'Active';
+      document.getElementById('mProjPriority').value = 'High';
+      document.getElementById('mProjOwner').value = 'MFO';
+      document.getElementById('mProjColor').value = '#0ea5e9';
+      document.getElementById('mProjBudget').value = '999';
+      document.getElementById('mProjBudgetCost').value = '50000';
+      document.getElementById('mProjArchived').checked = false;
+      saveProjectModal();
+
+      const adminProj = liveDB.projects.find(p => p.code === 'ADM');
+      const optLabel = formatProjectOptionLabel(adminProj);
+
+      // Measure baseline ENG load in W48 before logging Admin note
+      const fteBefore = getDeptTotalAllocatedFte('d_eng', '2026-W48', 'week', liveDB);
+
+      // 2. Log Admin Issues & Meetings across 2 weeks via openAllocationModal (zero FTE required)
+      openAllocationModal('d_eng', adminProj.id, '2026-W48');
+      const allocModalHtml = document.getElementById('modalCard').innerHTML;
+      document.getElementById('mAllocDept').value = 'd_eng';
+      document.getElementById('mAllocProj').value = adminProj.id;
+      document.getElementById('mAllocPeriod').value = '2026-W48';
+      document.getElementById('mAllocValue').value = ''; // No FTE needed!
+      document.getElementById('mAllocComment').value = 'Server audit risk; Q4 architecture review meeting requested';
+      document.getElementById('mAllocRepeat').value = '2';
+      saveAllocationModal();
+
+      const fteAfter = getDeptTotalAllocatedFte('d_eng', '2026-W48', 'week', liveDB);
+      const projFte = getProjTotalAllocatedFte(adminProj.id, '2026-W48', 'week', liveDB);
+      const hasAllocKey = Object.keys(liveDB.allocations).some(k => k.includes('::' + adminProj.id + '::'));
+      const noteW48 = liveDB.comments['d_eng::' + adminProj.id + '::2026-W48'];
+      const noteW49 = liveDB.comments['d_eng::' + adminProj.id + '::2026-W49'];
+
+      // 3. Render By Dept, Timeline, By Project, 12-wk Overview, and Executive Briefing
+      ui.axis = 'department'; renderMatrix();
+      const deptHtml = document.getElementById('matrixWrapper').innerHTML;
+      ui.axis = 'timeline'; renderMatrix();
+      const tlHtml = document.getElementById('matrixWrapper').innerHTML;
+      ui.axis = 'project'; renderMatrix();
+      const projHtml = document.getElementById('matrixWrapper').innerHTML;
+      ui.horizon = 12; ui.axis = 'department'; renderMatrix();
+      const ovHtml = document.getElementById('matrixWrapper').innerHTML;
+      ui.horizon = 4;
+      const briefing = buildExecutiveBriefingText(liveDB);
+
+      return {
+        adminProj, projModalHtml, optLabel, allocModalHtml,
+        fteBefore, fteAfter, projFte, hasAllocKey, noteW48, noteW49,
+        deptHtml, tlHtml, projHtml, ovHtml, briefing,
+      };
+    })()`, ctx);
+
+    assert.ok(out.projModalHtml.includes('value="admin"') && out.projModalHtml.includes('Admin (Non-FTE)'), 'Project modal offers Admin (Non-FTE) category');
+    assert.equal(out.adminProj.nonFte, true, 'Admin project sets nonFte = true');
+    assert.equal(out.adminProj.category, 'admin', 'Admin project sets category = admin');
+    assert.equal(out.adminProj.budgetDays, 0, 'Admin project ignores FTE effort budget');
+    assert.equal(out.adminProj.budgetCost, 0, 'Admin project ignores cost budget');
+    assert.ok(out.optLabel.includes('(Admin · Non-FTE)'), 'Project dropdown label tags Admin (Non-FTE)');
+    assert.ok(out.allocModalHtml.includes('Admin — Issues &amp; Meetings') && out.allocModalHtml.includes('No FTE required'), 'Allocation modal adapts to Admin Note mode without requiring FTE');
+    assert.equal(out.fteAfter, out.fteBefore, 'Admin notes have strictly zero impact on department FTE utilisation');
+    assert.equal(out.projFte, 0, 'Admin project total FTE is always 0');
+    assert.equal(out.hasAllocKey, false, 'Saving Admin notes writes zero entries into db.allocations');
+    assert.ok(out.noteW48.includes('Server audit risk') && out.noteW49.includes('Server audit risk'), 'Admin notes repeat cleanly across selected weeks');
+    assert.ok(out.deptHtml.includes('Admin') && out.deptHtml.includes('Server audit risk'), 'By Dept renders Admin card and note text cleanly');
+    assert.ok(out.tlHtml.includes('Server audit risk') && out.tlHtml.includes('Admin'), 'Timeline/Gantt displays Admin issues & meetings bar');
+    assert.ok(out.projHtml.includes('Admin Notes') && out.projHtml.includes('Issues &amp; Meetings'), 'By Project renders Admin Notes header & Detailed label');
+    assert.ok(out.ovHtml.includes('ADM') && out.ovHtml.includes('&#9998;'), '12-period Simplified Overview surfaces Admin note chips');
+    assert.ok(out.briefing.includes('ADMIN — DEPT ISSUES & REQUESTED MEETINGS:') && out.briefing.includes('Server audit risk'), 'Executive Briefing groups Admin issues & meetings in its own section');
+  } finally {
+    sandbox.document.getElementById = prevGetById;
+  }
+});
+
 let passed = 0;
 let failed = 0;
 for (const t of tests) {
