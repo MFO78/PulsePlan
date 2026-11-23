@@ -44,6 +44,7 @@
       pdfOptions: {
         title: 'PulsePlan - Company Roadmap & Utilisation Report',
         colorMode: 'match',
+        periodCount: 'match',
         colsPerPage: 6,
         includeChart: true,
         includeMatrix: true,

@@ -721,6 +721,7 @@
           parsedWelcomeSeen = parsedUI.welcomeSeen;
           const mergedPdfOpts = {
             colorMode: 'match',
+            periodCount: 'match',
             colsPerPage: 6,
             ...ui.pdfOptions,
             ...(parsedUI.pdfOptions || {}),
@@ -750,7 +751,7 @@
           if (!Array.isArray(ui.expandedOverrideGroups)) ui.expandedOverrideGroups = [];
           if (!ui.linkedFilePaths || typeof ui.linkedFilePaths !== 'object' || Array.isArray(ui.linkedFilePaths)) ui.linkedFilePaths = {};
         } else {
-          ui.pdfOptions = { colorMode: 'match', colsPerPage: 6, ...ui.pdfOptions };
+          ui.pdfOptions = { colorMode: 'match', periodCount: 'match', colsPerPage: 6, ...ui.pdfOptions };
         }
       } catch (e) {}
 
