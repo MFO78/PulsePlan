@@ -111,7 +111,7 @@
       if (displayedProjects.length === 0) {
         pBody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-400">${db.projects.length > 0 ? 'All projects are archived. Click "Show Archived" above to view them.' : 'No projects yet. Click "+ Add Project" to start.'}</td></tr>`;
       } else {
-        pBody.innerHTML = displayedProjects.map((p) => {
+        pBody.innerHTML = displayedProjects.map((p, pIdx) => {
           const plannedDays = getProjectTotalPlannedDays(p.id, db);
           const budgetDays = Number(p.budgetDays) || 0;
           const pct = budgetDays > 0 ? Math.round((plannedDays / budgetDays) * 100) : 0;
@@ -119,6 +119,10 @@
           const budgetCost = Number(p.budgetCost) || 0;
           const costPct = budgetCost > 0 ? Math.round((plannedCost / budgetCost) * 100) : 0;
           const isAdminProj = isNonFteProject(p);
+          const isFirstAdminSetupRow = isAdminProj && pIdx > 0 && !isNonFteProject(displayedProjects[pIdx - 1]);
+          const swatchHtml = isAdminProj
+            ? `<span class="w-3.5 h-3.5 rounded shrink-0 admin-hashed-swatch" style="--admin-accent:${p.color}" title="Admin (Non-FTE) hashed style" aria-hidden="true"></span>`
+            : `<span class="w-3 h-3 rounded-full shrink-0" style="background:${p.color}" aria-hidden="true"></span>`;
           const effortPart = isAdminProj
             ? `<span class="px-2 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-bold">Non-FTE (Issues &amp; Meetings)</span>`
             : (budgetDays > 0
@@ -134,10 +138,10 @@
             ? `<div class="text-[10px] font-bold tabular-nums mt-1 ${budgetCost > 0 && costPct > 100 ? 'text-rose-600' : 'text-emerald-700'}">${formatCurrency(plannedCost, db)}${budgetCost > 0 ? ` / ${formatCurrency(budgetCost, db)} (${costPct}%)` : ' est.'}</div>`
             : '';
           return `
-            <tr class="hover:bg-slate-50/70 ${p.archived ? 'opacity-65' : ''}">
+            <tr class="hover:bg-slate-50/70 ${p.archived ? 'opacity-65' : ''} ${isFirstAdminSetupRow ? 'admin-row-divider' : ''}">
               <th scope="row" class="px-4 py-3 font-bold text-slate-900 text-left">
                 <div class="flex flex-wrap items-center gap-1.5">
-                  <span class="w-3 h-3 rounded-full shrink-0" style="background:${p.color}" aria-hidden="true"></span>
+                  ${swatchHtml}
                   <span>${escapeHtml(p.name)}</span>
                   ${isAdminProj ? '<span class="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-bold uppercase">Admin</span>' : ''}
                   ${p.tentative ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold uppercase">Pipeline</span>' : ''}

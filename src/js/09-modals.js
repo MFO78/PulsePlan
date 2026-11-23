@@ -452,9 +452,10 @@
       secondaryList.forEach(item => {
         const deptId = isDeptAxis ? rowId : item.id;
         const projId = isDeptAxis ? item.id : rowId;
+        const pairProj = isDeptAxis ? item : primaryRow;
         const alloc = getAllocationForPeriod(deptId, projId, periodKey, ui.timeUnit, db.allocations);
         const cmt = getCellProjectComments(deptId, projId, periodKey, ui.timeUnit, db);
-        if (alloc.hasData || cmt.hasAny) activeItems.push({ item, deptId, projId, alloc, cmt });
+        if (alloc.hasData || cmt.hasAny || (isNonFteProject(pairProj) && Boolean(cmt.monthNote))) activeItems.push({ item, deptId, projId, alloc, cmt });
         else unusedItems.push(item);
       });
 
@@ -495,7 +496,7 @@
           : `Add a few lines of comments for [${escapeHtml(item.code)}] in ${escapeHtml(hdr.title)}...`;
 
         return `
-          <div class="accent-card p-3 rounded-xl border border-slate-200 bg-slate-50/70 space-y-2" style="--accent-color:${item.color}; --accent-w:4px; border-left: 4px solid ${item.color};">
+          <div class="${isAdminPair ? 'admin-hashed-card' : 'accent-card border border-slate-200 bg-slate-50/70'} p-3 rounded-xl space-y-2" style="${isAdminPair ? `--admin-accent:${item.color}; --accent-w:4px;` : `--accent-color:${item.color}; --accent-w:4px; border-left: 4px solid ${item.color};`}">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div class="flex items-center gap-1.5 min-w-0">
                 <span class="font-mono font-bold text-[11px] px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700 shrink-0">${escapeHtml(item.code)}</span>

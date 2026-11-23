@@ -63,10 +63,11 @@
             if (!hasActive) return false;
           } else {
             const checkPks = ui.axis === 'timeline' ? periods : [selectedPk];
+            const isAdminRow = isNonFteProject(row);
             const hasActive = checkPks.some(pk => visibleDepts.some(d => {
               const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
               const c = getCellProjectComments(d.id, row.id, pk, ui.timeUnit, db);
-              return a.hasData || c.hasAny;
+              return a.hasData || c.hasAny || (isAdminRow && Boolean(c.monthNote));
             }));
             if (!hasActive) return false;
           }
@@ -266,28 +267,52 @@
           pk,
           visibleDepts.reduce((acc, d) => acc + getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte, 0),
         ]));
-        const timelineCardsHtml = rows.map(p => {
+        const timelineCardsHtml = rows.map((p, pIdx) => {
           const spotCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
+          const isAdminP = isNonFteProject(p);
+          const isFirstAdminDivider = isAdminP && pIdx > 0 && !isNonFteProject(rows[pIdx - 1]);
           const perVals = periods.map(pk => {
             const totFte = getProjTotalAllocatedFte(p.id, pk, ui.timeUnit, db);
-            const activeDeptObjs = visibleDepts.filter(d => getAllocationForPeriod(d.id, p.id, pk, ui.timeUnit, db.allocations).hasData);
+            const activeDeptObjs = isAdminP
+              ? []
+              : visibleDepts.filter(d => getAllocationForPeriod(d.id, p.id, pk, ui.timeUnit, db.allocations).hasData);
+            const noteDeptEntries = [];
+            if (isAdminP) {
+              visibleDepts.forEach(d => {
+                const cObj = getCellProjectComments(d.id, p.id, pk, ui.timeUnit, db);
+                if (cObj.hasAny || cObj.monthNote) {
+                  noteDeptEntries.push({
+                    dept: d,
+                    text: (cObj.direct || cObj.weekEntries[0]?.text || cObj.monthNote || '').trim(),
+                  });
+                }
+              });
+            }
             const activeCapFte = activeDeptObjs.reduce((acc, d) => acc + getDeptCapacityForPeriod(d.id, pk, ui.timeUnit, db).avgFte, 0) || totalCapByPeriod.get(pk) || 0;
-            return { pk, fte: totFte, activeDepts: activeDeptObjs.map(d => d.code), activeCapFte };
+            return { pk, fte: totFte, activeDepts: activeDeptObjs.map(d => d.code), noteDeptEntries, activeCapFte };
           });
           const maxFte = Math.max(0.1, ...perVals.map(v => v.fte));
           const totalHorizonDays = Math.round(perVals.reduce((acc, v) => acc + fteToDisplayValue(v.fte, v.pk, ui.timeUnit, 'days'), 0));
-          const totalCost = showCost ? getProjectTotalPlannedCost(p.id, db) : 0;
+          const totalAdminNotes = isAdminP ? perVals.reduce((acc, v) => acc + v.noteDeptEntries.length, 0) : 0;
+          const totalCost = (!isAdminP && showCost) ? getProjectTotalPlannedCost(p.id, db) : 0;
           const projMs = (db.milestones || []).filter(m => m.projectId === p.id);
           const statusCls = p.status === 'At Risk' ? 'bg-rose-100 text-rose-700' : p.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600';
           const barsHtml = perVals.map(v => {
             const h = formatPeriodHeader(v.pk, ui.timeUnit);
-            const hasLoad = v.fte > 0.001;
+            const hasLoad = !isAdminP && v.fte > 0.001;
+            const hasAdminNotes = isAdminP && v.noteDeptEntries.length > 0;
             const tentBarCls = p.tentative && hasLoad ? 'timeline-bar-tentative' : '';
             let barCls = 'border-slate-200 bg-slate-50';
             let cellStyle = '';
             let barInner = '';
             let tierTip = '';
-            if (hasLoad) {
+            let barTitle = `${h.title}: ${hasLoad ? formatValue(fteToDisplayValue(v.fte, v.pk, ui.timeUnit)) : '0'}`;
+            if (hasAdminNotes) {
+              barCls = 'admin-hashed-bar';
+              cellStyle = `--admin-accent:${p.color};`;
+              barInner = `<span class="text-[10px] font-extrabold leading-none" aria-hidden="true">&#9998;</span>`;
+              barTitle = `${h.title} (Admin · Non-FTE)\n${v.noteDeptEntries.map(n => `${n.dept.code}: ${n.text}`).join('\n')}`;
+            } else if (hasLoad) {
               if (colorMode === 'accent') {
                 barCls = `timeline-bar-accent ${tentBarCls}`;
                 cellStyle = `--accent-color:${p.color};`;
@@ -311,9 +336,10 @@
                 barCls = `border-transparent ${tentBarCls}`;
                 cellStyle = `background-color:${th.bg}; opacity:${opacity};`;
               }
+              barTitle += tierTip;
             }
             return `
-              <button type="button" onclick="openCellDetailModal('${p.id}', '${v.pk}')" title="${escapeHtml(h.title)}: ${hasLoad ? formatValue(fteToDisplayValue(v.fte, v.pk, ui.timeUnit)) : '0'}${escapeHtml(tierTip)}"
+              <button type="button" onclick="openCellDetailModal('${p.id}', '${v.pk}')" title="${escapeHtml(barTitle)}"
                 class="flex-1 min-w-[28px] flex flex-col items-center gap-1 py-1 rounded-lg hover:bg-slate-100 transition">
                 <span class="w-full h-5 rounded-md border flex items-center justify-center ${barCls}" style="${cellStyle}">${barInner}</span>
                 <span class="text-[9px] font-bold text-slate-500 truncate max-w-full">${escapeHtml(h.shortTitle.split(' ')[0])}</span>
@@ -325,19 +351,30 @@
                 return `<button type="button" onclick="openMilestoneModal('${m.id}')" class="px-2 py-1 rounded-lg bg-violet-50 border border-violet-200 text-violet-900 text-[11px] font-bold max-w-full truncate">&#9670; ${escapeHtml(m.title)} (${escapeHtml(m.date.slice(5))}${drift > 0 ? ` +${drift}d` : ''})</button>`;
               }).join('')}</div>`
             : '';
-          const tentCardCls = p.tentative ? 'tentative-card border-dashed' : '';
+          const tentCardCls = p.tentative ? 'tentative-card border-dashed' : (isAdminP ? 'border-dashed' : '');
+          const swatchHtml = isAdminP
+            ? `<span class="w-2.5 h-8 rounded-full shrink-0 mt-0.5 admin-hashed-swatch" style="--admin-accent:${p.color}" aria-hidden="true"></span>`
+            : `<span class="w-2.5 h-8 rounded-full shrink-0 mt-0.5" style="background:${p.color}" aria-hidden="true"></span>`;
+          const metricHtml = isAdminP
+            ? `<span class="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 text-[10px] font-bold">Admin &middot; Non-FTE</span>
+               <span class="tabular-nums font-semibold">${totalAdminNotes} ${totalAdminNotes === 1 ? 'note' : 'notes'}</span>`
+            : `${p.tentative ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold">Pipeline</span>' : ''}
+               <span class="tabular-nums font-semibold">${totalHorizonDays}d${totalCost > 0 ? ' • ' + formatCurrency(totalCost, db) : ''}</span>`;
+          const dividerHtml = isFirstAdminDivider
+            ? `<div class="pt-2 mt-1 border-t-2 border-dashed border-slate-300 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-500"><span>Admin (Non-FTE &middot; Issues &amp; Meetings)</span></div>`
+            : '';
           return `
+            ${dividerHtml}
             <div class="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-xs space-y-2.5 ${spotCls} ${tentCardCls}">
               <div class="flex items-start justify-between gap-2 min-w-0">
                 <div class="flex items-start gap-2 min-w-0 flex-1">
-                  <span class="w-2.5 h-8 rounded-full shrink-0 mt-0.5" style="background:${p.color}" aria-hidden="true"></span>
+                  ${swatchHtml}
                   <div class="min-w-0 flex-1">
                     <div class="text-sm font-extrabold text-slate-900 break-words leading-snug">${escapeHtml(p.name)}</div>
                     <div class="flex flex-wrap items-center gap-1.5 mt-0.5 text-[11px] text-slate-500">
                       <span class="font-mono font-bold text-indigo-700">[${escapeHtml(p.code)}]</span>
                       <span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${statusCls}">${escapeHtml(p.status)}</span>
-                      ${p.tentative ? '<span class="px-1.5 py-0.5 rounded bg-violet-100 text-violet-800 text-[10px] font-bold">Pipeline</span>' : ''}
-                      <span class="tabular-nums font-semibold">${totalHorizonDays}d${totalCost > 0 ? ' • ' + formatCurrency(totalCost, db) : ''}</span>
+                      ${metricHtml}
                     </div>
                   </div>
                 </div>
@@ -463,7 +500,7 @@
       };
 
       // 3. Semantic <details> Accordion Cards (Departments or Projects)
-      const accordionCardsHtml = rows.map(row => {
+      const accordionCardsHtml = rows.map((row, rowIdx) => {
         const isOpen = !collapsedSet.has(row.id);
 
         if (ui.axis === 'department') {
@@ -488,9 +525,27 @@
             const spotCls = spotlightId ? (spotlightId === p.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
             const tentCls = p.tentative ? (useColorFill ? 'tentative-card-filled' : 'tentative-card') : '';
             const isAdminProj = isNonFteProject(p);
-            const resolvedStyle = isAdminProj
-              ? { fillHex: p.color, tier3: null, showIdentityDot: false }
-              : resolveCardStyle(a.hasData ? a.avgFte : 0, capFte, p.color);
+            if (isAdminProj && !a.hasData && cmtObj.hasAny) {
+              const adminCmtHtml = renderMobileCommentBlock(cmtObj, null);
+              return `
+                <div class="admin-hashed-card rounded-xl p-3 shadow-2xs space-y-2 min-w-0 ${spotCls}"
+                  style="--admin-accent:${p.color}; --accent-w:5px;">
+                  <button type="button" onclick="openAllocationModal('${row.id}', '${p.id}', '${selectedPk}')" class="w-full min-w-0 text-left block">
+                    <div class="text-sm font-bold text-slate-900 break-words leading-snug">${escapeHtml(p.name)}</div>
+                    <div class="flex flex-wrap items-center gap-1.5 mt-0.5 text-[11px] font-mono font-bold text-slate-500">
+                      <span>[${escapeHtml(p.code)}]</span>
+                      <span class="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 text-[9px] font-extrabold uppercase shrink-0">Admin</span>
+                    </div>
+                  </button>
+                  <div class="flex items-center justify-between gap-1.5 pt-1.5 border-t border-slate-200">
+                    <span class="px-2 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-700 text-[11px] font-bold">&#9998; Admin &middot; Non-FTE</span>
+                    <button type="button" aria-label="More actions for ${escapeHtml(p.name)}" onclick="openMobileCardActionSheet('${row.id}', '${p.id}', '${selectedPk}')"
+                      class="h-8 px-2.5 rounded-lg bg-slate-100 text-slate-700 font-extrabold text-xs flex items-center justify-center gap-1">Actions &#8943;</button>
+                  </div>
+                  ${adminCmtHtml}
+                </div>`;
+            }
+            const resolvedStyle = resolveCardStyle(a.hasData ? a.avgFte : 0, capFte, p.color);
             const { fillHex, tier3, showIdentityDot } = resolvedStyle;
             const filledTheme = useColorFill ? getFilledCardTheme(fillHex) : null;
             const cmtHtml = renderMobileCommentBlock(cmtObj, filledTheme);
@@ -635,11 +690,15 @@
         } else {
           // Mobile Project Accordion Card
           const isAdminRow = isNonFteProject(row);
+          const isFirstAdminMobileDivider = isAdminRow && rowIdx > 0 && !isNonFteProject(rows[rowIdx - 1]);
           const totFte = getProjTotalAllocatedFte(row.id, selectedPk, ui.timeUnit, db);
-          const totStr = isAdminRow ? 'Admin' : (totFte > 0 ? formatValue(fteToDisplayValue(totFte, selectedPk, ui.timeUnit)) : '0 ' + unitShortLabel());
+          const periodAdminNotesCount = isAdminRow ? getCellTotalCommentCount(row.id, selectedPk, 'project', ui.timeUnit, db) : 0;
+          const totStr = isAdminRow
+            ? (periodAdminNotesCount > 0 ? `${periodAdminNotesCount} ${periodAdminNotesCount === 1 ? 'note' : 'notes'}` : 'Admin')
+            : (totFte > 0 ? formatValue(fteToDisplayValue(totFte, selectedPk, ui.timeUnit)) : '0 ' + unitShortLabel());
           const statusCls = row.status === 'At Risk' ? 'bg-rose-100 text-rose-700' : row.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600';
           const rowSpotCls = spotlightId ? (spotlightId === row.id ? 'spotlight-active' : 'spotlight-dimmed') : '';
-          const tentProjCls = row.tentative ? 'tentative-card border-dashed' : '';
+          const tentProjCls = row.tentative ? 'tentative-card border-dashed' : (isAdminRow ? 'border-dashed' : '');
 
           const itemsHtml = visibleDepts.map(d => {
             const a = getAllocationForPeriod(d.id, row.id, selectedPk, ui.timeUnit, db.allocations);
@@ -647,10 +706,26 @@
             if (!a.hasData && !cmtObj.hasAny) return '';
             if (searchQ && !(`${d.name} ${d.code} ${row.name} ${row.code} ${cmtObj.direct || ''}`).toLowerCase().includes(searchQ)) return '';
 
+            if (isAdminRow && !a.hasData && cmtObj.hasAny) {
+              const adminCmtHtml = renderMobileCommentBlock(cmtObj, null);
+              return `
+                <div class="admin-hashed-card rounded-xl p-3 shadow-2xs space-y-2 min-w-0"
+                  style="--admin-accent:${d.color}; --accent-w:5px;">
+                  <button type="button" onclick="openAllocationModal('${d.id}', '${row.id}', '${selectedPk}')" class="w-full min-w-0 text-left block">
+                    <div class="text-sm font-bold text-slate-900 break-words leading-snug">${escapeHtml(d.name)}</div>
+                    <div class="text-[11px] font-mono font-bold text-slate-500">[${escapeHtml(d.code)}]</div>
+                  </button>
+                  <div class="flex items-center justify-between gap-1.5 pt-1.5 border-t border-slate-200">
+                    <span class="px-2 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-700 text-[11px] font-bold">&#9998; Admin &middot; Non-FTE</span>
+                    <button type="button" aria-label="More actions for ${escapeHtml(d.name)}" onclick="openMobileCardActionSheet('${d.id}', '${row.id}', '${selectedPk}')"
+                      class="h-8 px-2.5 rounded-lg bg-slate-100 text-slate-700 font-extrabold text-xs flex items-center justify-center gap-1">Actions &#8943;</button>
+                  </div>
+                  ${adminCmtHtml}
+                </div>`;
+            }
+
             const deptCap = getDeptCapacityForPeriod(d.id, selectedPk, ui.timeUnit, db).avgFte;
-            const { fillHex, tier3, showIdentityDot } = isAdminRow
-              ? { fillHex: d.color, tier3: null, showIdentityDot: false }
-              : resolveCardStyle(a.hasData ? a.avgFte : 0, deptCap, d.color);
+            const { fillHex, tier3, showIdentityDot } = resolveCardStyle(a.hasData ? a.avgFte : 0, deptCap, d.color);
             const filledTheme = useColorFill ? getFilledCardTheme(fillHex) : null;
             const cmtHtml = renderMobileCommentBlock(cmtObj, filledTheme);
             const valStr = a.hasData ? formatValue(fteToDisplayValue(a.avgFte, selectedPk, ui.timeUnit)) : (isAdminRow ? 'Admin' : 'Note');
@@ -721,13 +796,21 @@
                 <span class="font-mono text-[11px] text-violet-700 shrink-0">${escapeHtml(m.date)}</span>
               </button>`).join('');
 
+          const mobileAdminDividerHtml = isFirstAdminMobileDivider
+            ? `<div class="pt-2 mt-1 border-t-2 border-dashed border-slate-300 flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider text-slate-500"><span>Admin (Non-FTE &middot; Issues &amp; Meetings)</span></div>`
+            : '';
+          const mobileProjSwatchHtml = isAdminRow
+            ? `<span class="w-2.5 h-9 rounded-full shrink-0 admin-hashed-swatch" style="--admin-accent:${row.color}" aria-hidden="true"></span>`
+            : `<span class="w-2 h-9 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>`;
+
           return `
+            ${mobileAdminDividerHtml}
             <details ${isOpen ? 'open' : ''} ontoggle="onMobileAccordionToggle('${row.id}', this.open)"
               class="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden min-w-0 ${rowSpotCls} ${tentProjCls}">
               <summary class="no-marker cursor-pointer p-3.5 select-none">
                 <div class="flex items-center justify-between gap-2 min-w-0">
                   <div class="flex items-center gap-2.5 min-w-0 flex-1">
-                    <span class="w-2 h-9 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
+                    ${mobileProjSwatchHtml}
                     <div class="min-w-0 flex-1">
                       <div class="text-sm font-extrabold text-slate-900 truncate">${escapeHtml(row.name)}</div>
                       <div class="text-xs text-slate-500 flex flex-wrap items-center gap-1.5">
@@ -1148,11 +1231,12 @@
             );
           });
         }
+        const isAdminRowCheck = isNonFteProject(row);
         return periods.some(pk => {
           if (visibleDepts.some(d => {
             const a = getAllocationForPeriod(d.id, row.id, pk, ui.timeUnit, db.allocations);
             const c = getCellProjectComments(d.id, row.id, pk, ui.timeUnit, db);
-            return a.hasData || c.hasAny;
+            return a.hasData || c.hasAny || (isAdminRowCheck && Boolean(c.monthNote));
           })) return true;
           return getMilestonesInPeriod(pk, ui.timeUnit, db.milestones).some(m => m.projectId === row.id);
         });
@@ -1446,10 +1530,14 @@
       const buildProjectDetailedRowHeaderHtml = ({
         row, totalDays, bottleneckCount, activeDeptCount, reorderControlsHtml, statusCls, rowSpotCls, clickAttr,
       }) => {
+        const isAdminRow = isNonFteProject(row);
         if (isCompactGrid) {
+          const compactSwatch = isAdminRow
+            ? `<span class="w-2 h-8 rounded-full shrink-0 admin-hashed-swatch" style="--admin-accent:${row.color}" aria-hidden="true"></span>`
+            : `<span class="w-1.5 h-8 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>`;
           return `<th scope="row" ${clickAttr} class="${rowSpotCls} sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left">
             <div class="flex items-center gap-1.5 min-w-0">
-              <span class="w-1.5 h-8 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
+              ${compactSwatch}
               <div class="min-w-0">
                 <div class="${s.rowName} text-slate-900 truncate">${escapeHtml(row.code)}</div>
                 <div class="${s.rowMeta} text-slate-500 truncate mt-0.5">${escapeHtml(row.name)}</div>
@@ -1457,7 +1545,6 @@
             </div>
           </th>`;
         }
-        const isAdminRow = isNonFteProject(row);
         const budgetDays = isAdminRow ? 0 : (Number(row.budgetDays) || 0);
         const allTimeDays = budgetDays > 0 ? getProjectTotalPlannedDays(row.id, db) : 0;
         const budgetPct = budgetDays > 0 ? Math.round((allTimeDays / budgetDays) * 100) : 0;
@@ -1505,11 +1592,14 @@
         const effortMetaHtml = isAdminRow
           ? `<span class="text-sky-700 font-semibold">Issues &amp; Meetings</span>`
           : `<span class="tabular-nums">${Math.round(totalDays)}d</span><span>&bull;</span><span class="tabular-nums">${activeDeptCount} dept${activeDeptCount === 1 ? '' : 's'}</span>`;
+        const detailSwatchHtml = isAdminRow
+          ? `<span class="w-2 rounded-full shrink-0 admin-hashed-swatch" style="--admin-accent:${row.color}" aria-hidden="true"></span>`
+          : `<span class="w-1.5 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>`;
         return `
           <th scope="row" ${clickAttr} class="${rowSpotCls} sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-top font-normal text-left ${clickAttr ? 'cursor-pointer' : ''}">
             <div class="flex items-stretch gap-2 min-w-0">
               ${reorderControlsHtml || ''}
-              <span class="w-1.5 rounded-full shrink-0" style="background:${row.color}" aria-hidden="true"></span>
+              ${detailSwatchHtml}
               <div class="min-w-0 flex-1">
                 <div class="flex items-start justify-between gap-1.5">
                   <div class="${s.rowName} text-slate-900 truncate leading-snug" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</div>
@@ -1604,8 +1694,8 @@
                   const notePreview = (cmtObj.direct || (cmtObj.weekEntries[0]?.text) || '').replace(/\s+/g, ' ');
                   const tipTxt = `[${p.code}] ${p.name} (Admin · Non-FTE)\n${notePreview}`;
                   return `<div onclick="event.stopPropagation(); openAllocationModal('${row.id}', '${p.id}', '${pk}')" title="${escapeHtml(tipTxt)}"
-                    class="accent-card ${spotlightCls} px-1 py-0.5 rounded bg-sky-50 border border-dashed border-sky-200 text-[9px] font-bold text-sky-800 flex items-center justify-between gap-0.5 leading-tight truncate cursor-pointer"
-                    style="--accent-color:${p.color}; --accent-w:3px; border-left:3px solid ${p.color};">
+                    class="admin-hashed-chip ${spotlightCls} px-1 py-0.5 rounded text-[9px] font-bold flex items-center justify-between gap-0.5 leading-tight truncate cursor-pointer"
+                    style="--admin-accent:${p.color};">
                     <span class="font-mono truncate">${escapeHtml(p.code)}</span>
                     <span class="shrink-0" aria-hidden="true">&#9998;</span>
                   </div>`;
@@ -1694,6 +1784,28 @@
                 const noteClickFn = isAdminProj ? `openAllocationModal('${row.id}', '${p.id}', '${pk}')` : `openCellDetailModal('${row.id}', '${pk}')`;
                 const noteKindLbl = isAdminProj ? 'Admin' : 'Note';
                 const noteTipKind = isAdminProj ? 'Admin (Non-FTE) — Issues & Meetings' : 'Comment Only';
+                if (isAdminProj) {
+                  const adminCmtHtml = renderInlineCommentHtml(cmtObj, null);
+                  const adminSpotBtn = `<button type="button" onclick="event.stopPropagation(); toggleSpotlightProject('${p.id}')" title="${spotlightId === p.id ? 'Clear project spotlight' : 'Spotlight this project across all departments'}" aria-label="Spotlight ${escapeHtml(p.name)}"
+                     class="${spotVisCls} ${spotlightId === p.id ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600 hover:bg-indigo-100 hover:text-indigo-700'} ${spotSizeCls} rounded font-bold flex items-center justify-center transition shrink-0">&#9678;</button>`;
+                  return `
+                    <div onclick="event.stopPropagation(); ${noteClickFn}"
+                      title="[${escapeHtml(p.code)}] ${escapeHtml(p.name)} — ${noteTipKind}${escapeHtml(fullTooltipNote)}"
+                      class="matrix-card admin-hashed-card group/pill ${spotlightCls} ${s.pillBox} rounded-lg cursor-pointer shadow-2xs"
+                      style="--admin-accent:${p.color}; --accent-w:${s.pillBorderW};">
+                      <div class="flex items-center justify-between gap-1.5">
+                        <div class="flex items-center gap-1.5 min-w-0">
+                          <span class="font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 ${s.pillCode} shrink-0">${escapeHtml(p.code)}</span>
+                          <span class="truncate font-bold text-slate-800">${escapeHtml(p.name)}</span>
+                        </div>
+                        <div class="flex items-center gap-1 shrink-0">
+                          ${adminSpotBtn}
+                          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 shrink-0">&#9998; Admin</span>
+                        </div>
+                      </div>
+                      ${adminCmtHtml}
+                    </div>`;
+                }
                 if (useColorFill) {
                   return `
                     <div onclick="event.stopPropagation(); ${noteClickFn}"
@@ -1968,8 +2080,11 @@
               }
               if (isAdminTlRow) {
                 const cObj = getCellProjectComments(d.id, row.id, pk, ui.timeUnit, db);
-                if (cObj.hasAny) {
-                  noteDeptEntries.push({ dept: d, text: (cObj.direct || cObj.weekEntries[0]?.text || '').trim() });
+                if (cObj.hasAny || cObj.monthNote) {
+                  noteDeptEntries.push({
+                    dept: d,
+                    text: (cObj.direct || cObj.weekEntries[0]?.text || cObj.monthNote || '').trim(),
+                  });
                   activeDeptIds.add(d.id);
                 }
               }
@@ -1995,9 +2110,11 @@
           const statusCls = row.status === 'At Risk' ? 'bg-rose-100 text-rose-700' : row.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600';
 
           const cellsHtml = perData.map((x, idx) => {
-            const hasBar = x.fte > 0.001;
-            const prevHas = idx > 0 && perData[idx - 1].fte > 0.001;
-            const nextHas = idx < perData.length - 1 && perData[idx + 1].fte > 0.001;
+            const hasBar = !isAdminTlRow && x.fte > 0.001;
+            const hasAdminBar = isAdminTlRow && x.noteDeptEntries.length > 0;
+            const hasSlotAt = (i) => isAdminTlRow ? perData[i].noteDeptEntries.length > 0 : perData[i].fte > 0.001;
+            const prevHas = idx > 0 && hasSlotAt(idx - 1);
+            const nextHas = idx < perData.length - 1 && hasSlotAt(idx + 1);
             let barEdgeCls = 'timeline-bar-single';
             if (prevHas && nextHas) barEdgeCls = 'timeline-bar-mid';
             else if (!prevHas && nextHas) barEdgeCls = 'timeline-bar-start';
@@ -2012,25 +2129,25 @@
             let barHtml = isOverview
               ? `<div class="min-h-[2.2rem] flex items-center justify-center text-[10px] text-slate-300 opacity-0 group-hover/cell:opacity-100 transition">+</div>`
               : `<div class="min-h-[3.35rem] flex items-center justify-center text-xs text-slate-300 opacity-0 group-hover/cell:opacity-100 transition">+</div>`;
-            if (isAdminTlRow && x.noteDeptEntries.length > 0) {
+            if (hasAdminBar) {
               const noteCodes = x.noteDeptEntries.map(n => n.dept.code).join(', ');
               const firstLine = (x.noteDeptEntries[0].text || '').split('\n')[0].slice(0, 70);
               const tipTxt = `[${row.code}] ${row.name} (Admin · Non-FTE)\n${x.noteDeptEntries.map(n => `${n.dept.code}: ${n.text}`).join('\n')}`;
               if (isOverview) {
                 barHtml = `
-                  <div class="timeline-bar timeline-bar-overview timeline-bar-accent timeline-bar-single ${rowSpotCls}"
+                  <div class="timeline-bar timeline-bar-overview admin-hashed-bar ${barEdgeCls} ${rowSpotCls}"
                     title="${escapeHtml(tipTxt)}"
-                    style="--accent-color:${row.color}; border-style:dashed;">
-                    <span class="truncate font-bold text-[10px] text-sky-700">&#9998; ${ovShowBarLabel ? escapeHtml(noteCodes) : x.noteDeptEntries.length}</span>
+                    style="--admin-accent:${row.color};">
+                    <span class="admin-hashed-bar-label truncate font-bold text-[10px] text-slate-800">&#9998; ${ovShowBarLabel ? escapeHtml(noteCodes) : x.noteDeptEntries.length}</span>
                   </div>`;
               } else {
-                const deptPills = x.noteDeptEntries.map(n => `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-800 font-mono text-[11px] font-bold leading-none shrink-0"><span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${n.dept.color}"></span>${escapeHtml(n.dept.code)}</span>`).join('');
+                const deptPills = x.noteDeptEntries.map(n => `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-800 font-mono text-[11px] font-bold leading-none shrink-0" title="${escapeHtml(n.dept.name)}: ${escapeHtml(n.text)}"><span class="w-1.5 h-1.5 rounded-full shrink-0" style="background:${n.dept.color}"></span>${escapeHtml(n.dept.code)}</span>`).join('');
                 barHtml = `
-                  <div class="timeline-bar timeline-bar-std timeline-bar-accent timeline-bar-single ${rowSpotCls}"
+                  <div class="timeline-bar timeline-bar-std admin-hashed-bar ${barEdgeCls} ${rowSpotCls}"
                     title="${escapeHtml(tipTxt)}"
-                    style="--accent-color:${row.color}; border-style:dashed;">
+                    style="--admin-accent:${row.color};">
                     <div class="flex items-center justify-between gap-1.5 w-full">
-                      <span class="truncate text-xs font-bold text-slate-800">&#9998; ${escapeHtml(firstLine || 'Admin Notes')}</span>
+                      <span class="admin-hashed-bar-label truncate text-xs font-bold text-slate-800">&#9998; ${escapeHtml(firstLine || 'Admin Notes')}</span>
                       <span class="px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 text-[9px] font-extrabold uppercase shrink-0">Admin</span>
                     </div>
                     <div class="flex flex-wrap items-center gap-1">${deptPills}</div>
@@ -2140,12 +2257,12 @@
           }).join('');
 
           const tlRowHeaderHtml = isCompactRow
-            ? `<th scope="row" title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)}" onclick="toggleSpotlightProject('${row.id}')"
+            ? `<th scope="row" title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)}${isAdminTlRow ? ' (Admin · Non-FTE)' : ''}" onclick="toggleSpotlightProject('${row.id}')"
                  class="meeting-row-accent ${rowSpotCls} sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 w-[62px] min-w-[62px] max-w-[62px] ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-middle font-normal text-center cursor-pointer"
                  style="--row-accent:${row.color};">
                  <div class="flex flex-col items-center justify-center gap-1">
                    <div class="meeting-vertical-text timeline-vertical-text text-xs font-extrabold text-slate-900 tracking-wide">${escapeHtml(row.name)}</div>
-                   <span class="font-mono text-[10px] font-bold ${bottleneckCount > 0 ? 'text-rose-600' : 'text-slate-500'}">${escapeHtml(row.code)}</span>
+                   <span class="font-mono text-[10px] font-bold ${isAdminTlRow ? 'text-sky-700' : (bottleneckCount > 0 ? 'text-rose-600' : 'text-slate-500')}">${isAdminTlRow ? '&#9998; ' : ''}${escapeHtml(row.code)}</span>
                  </div>
                </th>`
             : buildProjectDetailedRowHeaderHtml({
@@ -2159,7 +2276,8 @@
                 clickAttr: `onclick="toggleSpotlightProject('${row.id}')"`,
               });
 
-          return `<tr class="group/row" data-row-id="${row.id}">${tlRowHeaderHtml}${cellsHtml}</tr>`;
+          const isFirstAdminTlRow = isAdminTlRow && rowIdx > 0 && !isNonFteProject(rows[rowIdx - 1]);
+          return `<tr class="group/row ${isFirstAdminTlRow ? 'admin-row-divider' : ''}" data-row-id="${row.id}">${tlRowHeaderHtml}${cellsHtml}</tr>`;
         } else {
           // Project Row View
           let totalDays = 0;
@@ -2197,8 +2315,8 @@
                 if (!a.hasData && isAdminProjRow && cmtObj.hasAny) {
                   const notePreview = (cmtObj.direct || (cmtObj.weekEntries[0]?.text) || '').replace(/\s+/g, ' ');
                   return `<div onclick="event.stopPropagation(); openAllocationModal('${d.id}', '${row.id}', '${pk}')" title="${escapeHtml('[' + d.code + '] ' + d.name + ' (Admin)\n' + notePreview)}"
-                    class="accent-card ${rowSpotCls} px-1 py-0.5 rounded bg-sky-50 border border-dashed border-sky-200 text-[9px] font-bold text-sky-800 flex items-center justify-between gap-0.5 leading-tight truncate cursor-pointer"
-                    style="--accent-color:${d.color}; --accent-w:3px; border-left:3px solid ${d.color};">
+                    class="admin-hashed-chip ${rowSpotCls} px-1 py-0.5 rounded text-[9px] font-bold flex items-center justify-between gap-0.5 leading-tight truncate cursor-pointer"
+                    style="--admin-accent:${d.color};">
                     <span class="font-mono truncate">${escapeHtml(d.code)}</span>
                     <span class="shrink-0" aria-hidden="true">&#9998;</span>
                   </div>`;
@@ -2271,6 +2389,20 @@
               if (!a.hasData && cmtObj.hasAny) {
                 const noteClickFn = isAdminProjRow ? `openAllocationModal('${d.id}', '${row.id}', '${pk}')` : `openCellDetailModal('${row.id}', '${pk}')`;
                 const noteKindLbl = isAdminProjRow ? 'Admin' : 'Note';
+                if (isAdminProjRow) {
+                  const adminCmtHtml = renderInlineCommentHtml(cmtObj, null);
+                  return `
+                    <div onclick="event.stopPropagation(); ${noteClickFn}"
+                      title="[${escapeHtml(d.code)}] ${escapeHtml(d.name)} — Admin (Non-FTE)${escapeHtml(fullTooltipNote)}"
+                      class="matrix-card admin-hashed-card ${rowSpotCls} ${s.pillBox} rounded-lg cursor-pointer shadow-2xs"
+                      style="--admin-accent:${d.color}; --accent-w:${s.pillBorderW};">
+                      <div class="flex items-center justify-between gap-1.5">
+                        <span class="truncate font-bold text-slate-800">${escapeHtml(d.name)}</span>
+                        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-50 border border-sky-200 text-sky-700 shrink-0">&#9998; Admin</span>
+                      </div>
+                      ${adminCmtHtml}
+                    </div>`;
+                }
                 if (useColorFill) {
                   return `
                     <div onclick="event.stopPropagation(); ${noteClickFn}"
@@ -2424,14 +2556,15 @@
               </td>`;
           }).join('');
 
+          const isAdminProjRowHdr = isNonFteProject(row);
           const projRowHeaderHtml = isCompactRow
-            ? `<th scope="row" title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)}${bottleneckCount ? ' — ' + bottleneckCount + ' overallocated dept slot(s)' : ''}"
+            ? `<th scope="row" title="[${escapeHtml(row.code)}] ${escapeHtml(row.name)}${isAdminProjRowHdr ? ' (Admin · Non-FTE)' : ''}${bottleneckCount ? ' — ' + bottleneckCount + ' overallocated dept slot(s)' : ''}"
                  onclick="toggleSpotlightProject('${row.id}')"
                  class="meeting-row-accent ${rowSpotCls} sticky left-0 z-10 bg-white group-hover/row:bg-slate-50 w-[62px] min-w-[62px] max-w-[62px] ${s.tdSticky} border-b border-slate-200 sticky-col-shadow align-middle font-normal text-center cursor-pointer"
                  style="--row-accent:${row.color};">
                  <div class="flex flex-col items-center justify-center gap-1.5">
                    <div class="meeting-vertical-text text-xs font-extrabold text-slate-900 tracking-wide">${escapeHtml(row.name)}</div>
-                   <span class="font-mono text-[10px] font-bold ${bottleneckCount > 0 ? 'text-rose-600' : 'text-slate-500'}">${bottleneckCount > 0 ? '&#9888; ' : ''}${escapeHtml(row.code)}</span>
+                   <span class="font-mono text-[10px] font-bold ${isAdminProjRowHdr ? 'text-sky-700' : (bottleneckCount > 0 ? 'text-rose-600' : 'text-slate-500')}">${isAdminProjRowHdr ? '&#9998; ' : (bottleneckCount > 0 ? '&#9888; ' : '')}${escapeHtml(row.code)}</span>
                  </div>
                </th>`
             : buildProjectDetailedRowHeaderHtml({
@@ -2445,8 +2578,9 @@
                 clickAttr: '',
               });
 
+          const isFirstAdminProjRow = isNonFteProject(row) && rowIdx > 0 && !isNonFteProject(rows[rowIdx - 1]);
           return `
-            <tr class="group/row" data-row-id="${row.id}"
+            <tr class="group/row ${isFirstAdminProjRow ? 'admin-row-divider' : ''}" data-row-id="${row.id}"
               ondragover="handleRowDragOver(event, '${row.id}')"
               ondragleave="handleRowDragLeave(event)"
               ondrop="handleRowDrop(event, '${row.id}')">

@@ -32,7 +32,7 @@
       redFte: 2.5,
     };
 
-    const PULSEPLAN_BUILD_ID = '2026-11-23-v8';
+    const PULSEPLAN_BUILD_ID = '2026-11-23-v8.1';
     const _debugLogEntries = [];
     const MAX_DEBUG_LOG_ENTRIES = 120;
 
@@ -376,6 +376,9 @@
 
     function getSortedProjects(db = getActiveDB()) {
       return [...(db.projects || [])].sort((a, b) => {
+        const aAdmin = isNonFteProject(a);
+        const bAdmin = isNonFteProject(b);
+        if (aAdmin !== bAdmin) return aAdmin ? 1 : -1;
         const codeA = String(a.code || '').trim();
         const codeB = String(b.code || '').trim();
         if (codeA && codeB) {
